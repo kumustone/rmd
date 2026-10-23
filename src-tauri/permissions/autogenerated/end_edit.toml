@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-end-edit"
+description = "Enables the end_edit command without any pre-configured scope."
+commands.allow = ["end_edit"]
+
+[[permission]]
+identifier = "deny-end-edit"
+description = "Denies the end_edit command without any pre-configured scope."
+commands.deny = ["end_edit"]

@@ -1,0 +1,371 @@
+/*
+ * 设计 token —— `design/0004-ui-主题.md`（已通过 2026-10-13）
+ *             ＋ `design/0005-马克飞象默认排版.md`（已通过 2026-10-13）。
+ *
+ * # 三层结构（0004 §2.1.1）
+ *
+ *   1. **原始色板** `--p-*`   —— 只有颜色、不带语义。⛔ 组件禁止直接使用。
+ *   2. **语义层** `--ui-*` / `--reader-*` —— ⭐ 组件**只**用这一层。
+ *      「换主题 = 换这一层」，覆盖写在 `themes.css`。
+ *   3. **尺度层** `--ui-*`（外壳）/ `--reader-*`（正文）—— 也在本文件，
+ *      与颜色**同文件、不同命名空间**（0005 §3 的 R9 收口）。
+ *
+ * # ⛔ 两条硬规则（违反是缺陷，不是风格问题）
+ *
+ *   **规则 1（INV-THEME-02）**：组件样式里**不许出现字面色值**
+ *   （`#333` / `rgb()` / `hsl()`）。写死一处，深色主题下那一处就永远是不可读的深色，
+ *   而浏览器**不会报错**——只会漏出一个"忘了改"的角落。
+ *   自动化防线：`make lint-theme`（`scripts/lint-theme.sh`，查字面色值 + 最低契约）。
+ *
+ *   **规则 2（INV-THEME-04）**：主题**只覆盖颜色，不覆盖尺度**。
+ *   判据一句话：**「在深色下应该不同吗？」** 是 → 归 `0004`（颜色，可被主题覆盖）；
+ *   否 → 归 `0005`（尺度，主题⛔ 不得碰）。两半都在本文件里。
+ *
+ * # ⚠️ 为什么 `:root` 里把**全部**「必须」变量都给了一遍
+ *
+ * 《0004》§2.1.1.1：20 个「必须」变量「每套主题都要显式给值」。
+ * 这里给的是 **light 默认值**——即使某个主题文件不完整，界面也只是"颜色不对"，
+ * ⛔ 不会塌成浏览器默认色（那样会得到黑底黑字这种读不了的状态）。
+ * ⚠️ 但浏览器只会**静默回落**、不会报错 ⇒ 缺项由 `make lint-theme` 报出来，
+ * ⛔ 不靠"打开看看"。
+ *
+ * ⚠️ 单位说明：尺度里既有 `px` 也有 `em` / 无单位倍数，**这不是随意选的**——
+ * 见 0005 §2.1.7 的 A/B 两类几何，以及 §2.1.1 那句「⛔ 不使用 em 做字号阶梯」
+ * （em 会在嵌套里累积，`calc(基准 × 系数)` 不会）。
+ */
+
+:root {
+  /* ════════════════════════════════════════════════════════════════
+   * 第 1 层 · 原始色板  ⛔ 组件禁止直接使用这一层
+   * ════════════════════════════════════════════════════════════════ */
+  --p-gray-0:   #ffffff;
+  --p-gray-50:  #f8f9fa;
+  --p-gray-100: #f1f3f5;
+  --p-gray-200: #e9ecef;
+  --p-gray-300: #dee2e6;
+  --p-gray-400: #ced4da;
+  --p-gray-500: #868e96;
+  --p-gray-600: #6c757d;
+  --p-gray-700: #495057;
+  --p-gray-800: #333333;
+  --p-gray-900: #1a1a1a;
+
+  --p-blue-50:  #eaf2fe;
+  --p-blue-100: #d7e7fd;
+  --p-blue-500: #3b82f6;
+  --p-blue-600: #2f6fd8;
+
+  --p-amber-100: #fdf3d8;
+  --p-amber-300: #fcd34d;
+  --p-amber-700: #9a6b1f;
+
+  --p-red-50:   #fef2f2;
+  --p-red-200:  #fecaca;
+  --p-red-700:  #991b1b;
+
+  /* ════════════════════════════════════════════════════════════════
+   * 第 2 层 · 语义层（颜色）—— 换主题 = 覆盖这一层
+   * light 是默认值；`themes.css` 只覆盖 dark / warm。
+   * ════════════════════════════════════════════════════════════════ */
+
+  /* ── 界面外壳（0004 §9.1 B5：尺度见本文件下半，这里只有颜色）── */
+  --ui-bg:          var(--p-gray-50);   /* 窗口底色 */
+  --ui-bg-elevated: var(--p-gray-0);    /* 侧边栏 / 工具栏 / 状态条 */
+  --ui-text:        var(--p-gray-900);
+  --ui-text-muted:  var(--p-gray-500);
+  --ui-border:      var(--p-gray-200);
+  --ui-hover-bg:    var(--p-gray-100);
+  --ui-selected-bg: var(--p-blue-50);   /* 树里当前项 */
+  --ui-accent:      var(--p-blue-500);
+  --ui-indent-guide: var(--p-gray-200); /* 树的缩进参考线（B9） */
+
+  /* ⭐ `design/0014`（裁定 (d)）：编辑态 **Vim 块光标**的两个颜色。
+     ⚠️ 归 `--ui-*`（**界面**色），⛔ 不是 `--reader-*`——它跟的是外壳那一族。
+     ⚠️⚠️ 这两个是**派生别名**（指回同层的 `--ui-text` / `--ui-bg`）⇒ **只在这里写一次**、
+     ⛔ **不进 §2.1.1.1 那张「必须」契约表**（`scripts/lint-theme.sh` 的 `REQUIRED`）。
+     理由：换主题时它们**解出来的值照样跟着变**（两跳都落在「主题本来就会覆盖」的那两个变量上），
+     而契约表里每一条都该是**承重**的——给一个"漏了也无害"的变量立户头，
+     只会让那条闸门下次变红时更难判断。⭐ 同族的先例就在本仓：2026-10-16 那条滚动条
+     **刻意不新增变量**、用 `color-mix` 摊掉（`design/0012` §10.12）。
+     ⚠️ 为什么非要有这两个名字：上游把块光标的颜色**写死**在产物里
+     （`background: #ff9696` 那两条，见 `src/styles/editor.css`），而
+     `make lint-theme` 只扫 `src/styles/**` + `style.css`、⛔ 扫不到 `src/vendor/**`
+     ⇒ 那是 `INV-THEME-02` **唯一一处闸门看不见的破口**（`INV-VIM-05` 就是为它写的）。
+     判据在 `make probe-vim-keys` 的 0e（12 格）+ 它的反向对照。 */
+  --ui-caret:      var(--ui-text);   /* 块光标的**底**：与它所在的那行字同色 */
+  --ui-caret-text: var(--ui-bg);     /* 块光标里的**字**：反白 = 窗口底色 */
+
+  /* ⚠️ 下面三个**不在** §2.1.1.1 的「必须」清单里（那里只列了滚动条/阴影一类"可选"）。
+     定义它们是为了让状态条的错误态与侧边栏的灰显有出处，
+     ⛔ 不写成字面色值——那正是 INV-THEME-02 要防的。 */
+  --ui-danger-bg:     var(--p-red-50);
+  --ui-danger-text:   var(--p-red-700);
+  --ui-danger-border: var(--p-red-200);
+  --ui-muted-bg:      var(--p-gray-100); /* 忽略清单里那些条目的底 */
+
+  /* ── 正文里**随主题变化的颜色**（尺度不在此，见下半）────────── */
+  --reader-text:        var(--p-gray-800);
+  --reader-bg:          var(--p-gray-0);
+  --reader-heading:     var(--p-gray-900);
+  --reader-border:      var(--p-gray-200);
+  --reader-link:        var(--p-blue-500);
+  --reader-selection-bg: var(--p-blue-100);
+
+  /* ⚠️ 代码：**行内与块级必须分开**（0004 评审 R8）。
+     ⛔ 旧的单对 `--reader-code-bg` / `--reader-code-text` 已废弃、**不保留**——
+     行内 code 随正文行流（要克制、要融进去），块级 code 是独立的一块区域
+     （独立底色，与正文明确分区）。用同一对颜色必然有一边是错的。 */
+  --reader-inline-code-bg:   #f9f2f4;   /* 基准：粉底 */
+  --reader-inline-code-text: #c7254e;   /* 基准：粉字 */
+  /* ⭐ **2026-10-14 用户裁定（留痕）**：「亮色主题，代码块用亮色，暗色主题，
+     代码块要用暗色。」⇒ 块底**跟着主题的明暗走**。
+     ⛔ 旧值是三套主题共用的 `#23241f`（深底）——**已取代**，见 `0004` §2.2 备选 F
+     的原地留痕。取 `#f8f8f8` 的依据是一手材料：Typora 自带 `github.css:258` 与
+     `:293` 的 `.md-fences { background-color: #f8f8f8 }`
+     （`/Applications/Typora.app/Contents/Resources/TypeMark/style/themes/github.css`）。
+     ⚠️ **刻意不加描边**：这块底与页面底的对比度是 **1.062 : 1**，与 dark 那套
+     现成的块底对页面底 **1.067 : 1** 几乎相同 ⇒ 两套主题的"分区感"一样重，
+     不需要为浅色单独补一条 1px 框（Typora 的 5 个浅色主题都补了框，
+     但那是因为它们的块底更淡，⛔ 不构成我们必须跟的理由）。 */
+  --reader-block-code-bg:    #f8f8f8;              /* Typora github 主题的块底 */
+  --reader-block-code-text:  var(--p-gray-800);    /* 与正文同色：块内不另起一套字色 */
+
+  /* ── 引用块：⚠️ 是 `*-color` 与 `*-bg`，⛔ 不是 `--reader-quote-bar`
+     （评审 P1-5：原名一名两用，被 0005 定义成 4px、被这里当颜色，必然互相覆盖）。
+     **宽度归 0005**（`--reader-quote-bar-width`），这里只管颜色。 */
+  --reader-quote-bar-color: rgba(102, 128, 153, 0.40);
+  --reader-quote-bg:        #f7f9fa;
+
+  /* ⚠️ 表格框线是**可选**变量（不在 §2.1.1.1 的 20 个「必须」里），
+     但 A8 定了「全框线 `1px solid`」，而那个颜色**必须**有出处
+     （⛔ 不能写死在 typography.css 里——`INV-THEME-02` 查的正是这个）。
+     比 `--reader-border` 深一档：表格框线是**结构线**，
+     用分隔线的浅灰会读成"表格还是不明显"，那正是用户反馈的那一条。 */
+  --reader-table-border:    var(--p-gray-300);
+
+  /* ════════════════════════════════════════════════════════════════
+   * 正文内查找的两档高亮 —— `design/0011-正文内查找.md`（已通过 2026-10-14）
+   *
+   * ⭐ **四根变量 = 两档 × (底 + 字)**，⛔ 不是"一个底色走三套主题"。
+   *    `INV-FIND-07` 要的正是"明暗两套不许互抄"——深底那套落在浅底上
+   *    会**看不见**，而浏览器不会报错（`0004` §10.4 踩过的那个坑的镜像）。
+   *
+   * ⚠️ 字色**必须**跟着底走：`::highlight()` 的 `color` 会**盖掉**正文色，
+   *    只给底不给字 ⇒ 深色主题下"深底 + 深字"（`INV-THEME-02` 的同一族失败面）。
+   *
+   * ⭐ 本实现在三个主题上**逐值算过 WCAG 相对亮度**（≠ 目视验收，见 `0011` §10）：
+   *    light  字/底 13.35 : 1，底/页面底 1.30 : 1，两档底互差 1.45 : 1
+   *    warm   字/底  9.74 : 1，底/页面底 1.29 : 1，两档底互差 1.72 : 1
+   *    dark   字/底  8.16 : 1，底/页面底 1.64 : 1，两档底互差 3.76 : 1
+   *    ⇒ 两档都过 AA 正文线（4.5 : 1），且**彼此分得开**（那才是"当前那处"要表达的意思）。
+   *    ⚠️ `::highlight()` 的两档**能不能在同一处重叠共存**，本机**只验到 API 层**
+   *    （`research/notes/0015` §8 第 1 条）——所以下面两档的**特异性顺序**是刻意排的。
+   * ════════════════════════════════════════════════════════════════ */
+  --reader-find-hit-bg:      #ffe066;   /* 其余命中：淡黄 */
+  --reader-find-hit-text:    #1a1a1a;
+  --reader-find-current-bg:  #ffab2e;   /* 当前命中：橙，明显更重 */
+  --reader-find-current-text: #1a1a1a;
+
+  /* ════════════════════════════════════════════════════════════════
+   * 正文渲染增强的颜色 —— `design/0007`（已通过 2026-10-14）
+   *
+   * ⚠️ 这一族与上面**同属第 2 层语义层**（`INV-THEME-04` 的"颜色"一侧），
+   *    所以 `dark` / `warm` 必须**各写全**（`themes.css`），
+   *    缺项由 `make lint-theme` 闸门 ② 报出来，⛔ 不靠"打开看看"。
+   *
+   * ⭐ **三族的取值来源不同，⛔ 不要混为一谈**：
+   *    · `--reader-hl-*`  —— ⚠️ **两套，按块底的明暗分**：
+   *      `light` / `warm` 是**深字浅底**（本文件下面那 13 个，采自
+   *      **VS Code Light+** 的 token 色，见 `light_vs.json` / `light_plus.json`）；
+   *      `dark` 是**浅字深底**（`themes.css`，借自 One Dark）。
+   *      ⛔ 两套**不能互抄**——深底那套落在浅底上，整族最高才 3.24 : 1、
+   *      最低 **1.63 : 1**（`--reader-hl-type` `#e5c07b`），**等于看不见**。
+   *      ⚠️ 本项目没有为任何一套语法色做完整对比度实测，
+   *      只按 WCAG 相对亮度**逐值算过**（13 个全 ≥ 4.5 : 1），观感仍要人看
+   *      （`design/0007` §7.1 步骤 1/2）。
+   *    · `--reader-math-*` —— 本项目自定：回退态要"看得出没渲染"，
+   *      又**不能**抢戏（所以用最淡的底 + 最细的边）。
+   *    · `--reader-diag-*` —— ⭐ **不是自定**，是 `flowmaid 0.27.0`
+   *      自己那套色板的**逐值对照**，见 `diagram.rs` 的 `SWATCHES` 表。
+   *      light 这一栏就是"今天的观感"，⛔ 一个值都不许改动，
+   *      否则等于顺手改了图表的默认外观。
+   * ════════════════════════════════════════════════════════════════ */
+
+  /* ── 代码高亮的 token 色（light / warm = **浅底深字**）─────────────
+     ⚠️ 代码块在 light / warm 下的底色是**浅的**（`--reader-block-code-bg`），
+        所以这一族必须**深**。⛔ 别把 dark 那一套浅色 token 抄过来。
+     ⭐ 来源：VS Code Light+（`light_vs.json` 打底 + `light_plus.json` 覆盖），
+        取值的 `file` 是 `/Applications/Visual Studio Code.app/Contents/Resources/
+        app/extensions/theme-defaults/themes/`。⚠️ 两处**按本项目底色微调**：
+        VS Code 的底色是纯白，本项目是 `#f8f8f8`（更暗一档），
+        照抄会让 `constant.numeric` `#098658` 掉到 **4.33 : 1**、
+        `support.type` `#267f99` 掉到 **4.32 : 1** ⇒ 各压深一档到 ≥ 4.5 : 1。
+     ⚠️ `--reader-hl-macro` 与 `--reader-hl-type` **同值**：VS Code 的浅色
+        主题**没有独立的 `support` 色**（`support.function` 就是函数色、
+        `support.class/type` 就是类型色）——「此事无通用标准」（硬规则 1），
+        所以这里直接复用类型色，⛔ 不自己编一个青色。 */
+  --reader-hl-comment:     #008000;   /* Light+ comment */
+  --reader-hl-keyword:     #af00db;   /* Light+ keyword.control（One Dark 的紫换成品红） */
+  --reader-hl-string:      #a31515;   /* Light+ string */
+  --reader-hl-number:      #0b7a4b;   /* Light+ constant.numeric，按本底色压深 */
+  --reader-hl-function:    #795e26;   /* Light+ entity.name.function */
+  --reader-hl-type:        #1e6f85;   /* Light+ support.class/type，按本底色压深 */
+  --reader-hl-variable:    #001080;   /* Light+ variable */
+  --reader-hl-macro:       #1e6f85;   /* = type：Light+ 无独立 support 色，见上 */
+  --reader-hl-tag:         #800000;   /* Light+ entity.name.tag */
+  --reader-hl-attr:        #e50000;   /* Light+ entity.other.attribute-name */
+  --reader-hl-operator:    #333333;   /* Light+ keyword.operator 本就是默认字色 */
+  --reader-hl-punctuation: #333333;   /* 同默认字色：未列出的 scope 也落这一档 */
+  --reader-hl-invalid:     #cd3131;   /* Light+ invalid */
+
+  /* ── 公式的**回退态**（渲染成功的那条路一个字都不用）───────────── */
+  --reader-math-source-text:   var(--p-gray-700);
+  --reader-math-source-bg:     #f7f9fa;
+  --reader-math-source-border: var(--p-gray-200);
+  --reader-math-error-accent:  #b3261e;   /* 只有"解析失败"那一支换描边 */
+
+  /* ── 图表（`flowmaid` 色板的逐值对照，⛔ light 栏不许改）────────── */
+  --reader-diag-surface:     #ffffff;
+  --reader-diag-text:        #232840;
+  --reader-diag-line:        #44507a;
+  --reader-diag-line-soft:   #d5d9ec;
+  --reader-diag-green-bg:    #e5f5ea;
+  --reader-diag-green-line:  #33a35c;
+  --reader-diag-indigo-bg:   #eef1fb;
+  --reader-diag-indigo-line: #5b6dc0;
+  --reader-diag-amber-bg:    #fcf2da;
+  --reader-diag-amber-line:  #d99114;
+  --reader-diag-guide:       #aeb6d8;
+  /* ⚠️ 下面五条是 `flowmaid` 的 **sequence 参与者盒色板**（`ACCENTS`，共 8 色、
+     按参与者在图里的序号取模）。前三个已经落在上面（indigo/green/amber），
+     这里是**剩下五个**——⛔ 少一个的后果是"第 n 个参与者露出一块固定的
+     玫瑰红"，而它在深色主题下**不报任何错**（2026-10-14 实测抓到过）。 */
+  --reader-diag-rose-line:   #c2588c;
+  --reader-diag-teal-line:   #199a8e;
+  --reader-diag-violet-line: #8a5cd6;
+  --reader-diag-coral-line:  #d96459;
+  --reader-diag-steel-line:  #4d8fbf;
+
+  /* ════════════════════════════════════════════════════════════════
+   * 尺度层 · A. 界面外壳（`--ui-*`）
+   *
+   * ⭐ 这一族是 0004 §9.1 **B5** 补的——评审时发现一个**结构性缺口**：
+   *    `0004` 的 `--ui-*` 只有颜色，`0005` 的尺度清单全是 `--reader-*`（只管正文）
+   *    ⇒ **侧边栏的行高 / 缩进 / 图标尺寸两份设计都不管**。
+   *    那正是「树太丑」的结构性原因，不是"没来得及做"。
+   *    现在它与 `--ui-*` 颜色**同命名空间**，所以不违反 B1（主题只覆盖颜色）。
+   *
+   * ⛔ **B6：外壳尺度不跟随阅读字号。** 用户把正文字号调到 24px 时，
+   *    侧边栏的行高**不该**跟着变成 33px——外壳是工具，正文才是内容。
+   *    这也是它敢用固定 `px` 的理由（0005 §2.1.7 的 A/B 分类只管正文）。
+   *
+   * ⚠️ 取值来源：`docs/research/notes/0001` §6（Typora 1.14.10 与 VS Code 1.141.0
+   *    的一手样式表取值）。逐条对照见该文；下面是本项目选定的那一档。
+   * ════════════════════════════════════════════════════════════════ */
+  --ui-row-height:    22px;   /* B10：行高 22px（两家一致）*/
+  --ui-row-pad-top:    4px;   /* B10：上边距 4px → ≈26px/行 */
+  --ui-tree-indent:    8px;   /* B9：每层缩进 8px */
+  --ui-icon-size:     16px;   /* B8：节点图标边长 */
+  --ui-icon-gap:       4px;   /* 图标与文件名之间 */
+  --ui-twisty-width:  12px;   /* B7：展开箭头占位宽（⛔ 常显，见 sidebar.css）*/
+  --ui-pane-pad-x:     6px;
+  --ui-current-bar:    4px;   /* B12：当前项左侧那根条 */
+  --ui-radius:         4px;
+  --ui-font-size:     13px;   /* 侧边栏基准字号（外壳尺度，与 --reader-font-size 无关）*/
+  --ui-toolbar-height: 30px;
+
+  /* ════════════════════════════════════════════════════════════════
+   * 尺度层 · B. 正文排版（`--reader-*`）—— `design/0005` §2.1.1
+   *
+   * ⭐ 核心：**所有尺度都由 `--reader-font-size` 派生**，不出现第二个绝对尺寸锚点
+   *    （`INV-TYPE-02`）。用户调字号 → 整套排版按比例跟随，不需要逐元素写响应式。
+   * ⚠️ 这一条是本设计与基准（马克飞象）的**分歧点**：基准的标题字号是写死的绝对 px。
+   *    本项目保留单点派生，理由不是"像基准"，是**它是本项目的一项产品要求**
+   *    （`features/0001` 阶段一要求用户可调字号）。→ 0005 §2.3.2 ③。
+   * ════════════════════════════════════════════════════════════════ */
+
+  /* ── 1. 用户可调（存配置，由本项目的 config 层管）─────────────
+     §2.1.5：运行时覆盖 `documentElement.style` 上的同名变量，⛔ 不改 CSS 文件。 */
+  --reader-font-size: 14px;      /* 正文基准 —— 唯一绝对锚点（⭐ 2026-10-16 由 16 改 14） */
+  --reader-line-height: 1.6;     /* 无单位，随字号自动生效。⭐ 按基准对齐（原 1.8）*/
+  /* ⚠️ A4 的结论是「**铺满 + 一个宽松上限**」，不是 §2.1.1 原来写的裸 `none`。
+     所以默认值是这个上限本身；用户选「铺满」时前端把它覆盖成 `none`。 */
+  --reader-content-width: 1200px;
+
+  /* ── 2. 字体栈（macOS 优先）⭐ 与基准同思路：显式列出 CJK ── */
+  --reader-font-sans:
+    -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB",
+    "Microsoft YaHei", "Source Han Sans SC", "Noto Sans CJK SC",
+    system-ui, sans-serif;
+  --reader-font-mono:
+    ui-monospace, "SF Mono", Menlo, Monaco, "Cascadia Mono",
+    "Roboto Mono", Consolas, monospace;
+
+  /* ── 3. 字号阶梯：比例 → 绝对（基准 41.6/34.4/27.2/20/16/13.6 ÷ 16）── */
+  --reader-scale-h1: 2.60;   --reader-scale-h2: 2.15;
+  --reader-scale-h3: 1.70;   --reader-scale-h4: 1.25;
+  --reader-scale-h5: 1.00;   --reader-scale-h6: 0.85;
+  --reader-scale-small: 0.90;  /* 行内代码 / 脚注 / 表格内文字 */
+  --reader-size-h1: calc(var(--reader-font-size) * var(--reader-scale-h1));
+  --reader-size-h2: calc(var(--reader-font-size) * var(--reader-scale-h2));
+  --reader-size-h3: calc(var(--reader-font-size) * var(--reader-scale-h3));
+  --reader-size-h4: calc(var(--reader-font-size) * var(--reader-scale-h4));
+  --reader-size-h5: calc(var(--reader-font-size) * var(--reader-scale-h5));
+  --reader-size-h6: calc(var(--reader-font-size) * var(--reader-scale-h6));
+  --reader-size-small: calc(var(--reader-font-size) * var(--reader-scale-small));
+
+  /* ── 3b. 标题行高：⭐ 基准是分段的（h1/h2 紧、h3–h6 松）── */
+  --reader-heading-lh-top: 1.1;   /* h1 / h2 */
+  --reader-heading-lh-sub: 1.6;   /* h3 – h6 */
+
+  /* ── 4. 间距节奏：同样以基准派生 ── */
+  --reader-gap-block: calc(var(--reader-font-size) * 1.1);   /* 段落之间（基准 1.1em）*/
+  /* ⭐ 标题间距：基准是 em 相对**标题自身字号**（h1 实测 margin-top 49.92px = 41.6×1.2）。
+     这里用「系数 × --reader-size-hN」表达，效果等价且不受嵌套影响。 */
+  --reader-gap-heading-before: 1.2;
+  --reader-gap-heading-after:  0.6;
+
+  /* ── 5. 块级元素的内部几何（见 §2.1.7 的 A/B 两类规则）── */
+  --reader-code-padding: 1.3em 2.0em;  /* em → 天然跟随（基准：1.3em 2em）*/
+  --reader-code-lh: 1.6;
+  --reader-quote-lh: 1.45;             /* 引用块内行高比正文更紧（基准）*/
+  --reader-list-indent: 2em;           /* ul/ol padding-left（基准）*/
+  --reader-table-cell-pad: .5em;       /* 基准 */
+  /* ⚠️ 未核实（0005 §2.3.5 ⑤ / `INV-TYPE-05`）：基准的 td 行高有两条规则冲突
+     （table 整体 1.6 vs td 更具体的 1.5），实测有效值**未能定论**。
+     取 1.5 是**本项目自己的取舍**，⛔ 不是"基准真值"——按 `INV-TYPE-05` 标注。 */
+  --reader-table-lh: 1.5;
+
+  /* ── 5b. A 类：绝对值写成「基准 × 系数」，使其随字号等比缩放 ──
+     ⚠️ 2026-10-13 修订（评审 R9）：原先是写死的 px，把字号从 16 调到 28 时这三处不会变。
+     ⚠️ 下面注释里的 `÷ 16px` 记的是**这个系数当初是怎么算出来的**（基准取值那一夜的换算），
+     ⛔ **不是"现在渲染出来的像素数"**——⭐ 2026-10-16 基准默认由 16 改 14 之后，
+     同样是这四条系数，渲染出来的是 4.375 / 8.75 / 13.125 / 17.5px。
+     ⇒ ⛔ 别照着注释里的 `10px` 去反推 `--reader-quote-bar-width` 的当前值。 */
+  --reader-radius-factor:      0.3125;  /* 5px  ÷ 16px（代码块圆角 / 引用块右圆角）*/
+  --reader-quote-bar-factor:   0.625;   /* 10px ÷ 16px（⭐ A7：基准 10px，原设计 4px）*/
+  --reader-quote-pad-y-factor: 0.9375;  /* 15px ÷ 16px */
+  --reader-quote-pad-x-factor: 1.25;    /* 20px ÷ 16px */
+  --reader-code-radius:     calc(var(--reader-font-size) * var(--reader-radius-factor));
+  --reader-quote-bar-width: calc(var(--reader-font-size) * var(--reader-quote-bar-factor));
+  --reader-quote-padding:
+    calc(var(--reader-font-size) * var(--reader-quote-pad-y-factor))
+    calc(var(--reader-font-size) * var(--reader-quote-pad-x-factor));
+
+  /* ── 6. B 类：物理线宽，**固定像素、⛔ 不随字号变** ──
+     ⚠️ 这是**刻意的例外，不是遗漏**（0005 §2.1.7）：`1px` 是屏幕物理像素层面的
+     一条清晰线。等比缩放会让它在 28px 字号下变成 1.75px，
+     在非整数缩放的显示器上**糊掉或断续**——而它变粗没有任何可读性收益。
+     ⛔ B 类必须**逐个列名并给理由**，不允许出现"不知道算哪类所以写死了"的值。
+     V1 白名单（0005 §2.1.7）：表格边框、`hr` 的 border-top。
+     ⭐ 本项目另加一项、理由相同，已在 design/0005 §10 记录：**树的缩进参考线**
+     （见下面 `--ui-indent-guide-width`）——它同样是一条物理线。 */
+  --reader-rule-width: 1px;                 /* 表格框线 / hr */
+  --ui-indent-guide-width: 1px;             /* 缩进参考线（B9）*/
+}
+
+/* ⚠️ `@media (prefers-color-scheme: dark)` 的兜底**故意不写**：
+   《0004》§2.1.2 的 B3 结论是「应用层实现，但默认提供『跟随系统』这一档」——
+   即**由前端显式解析**成 `data-theme="dark"`（`services/theme.js`），
+   而不是让 CSS 媒体查询自己去猜。两处并存会得到"两份真值"
+   （`INV-THEME-03` 的同类错误：一个说深、一个说浅）。 */

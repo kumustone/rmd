@@ -1,0 +1,380 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <!--
+    ⚠️ 不要加 <meta http-equiv="Content-Security-Policy">。
+    CSP 由 Tauri 从 `tauri.conf.json` 的 `app.security.csp` 注入，
+    并且它会**自动为本地的注入脚本计算 nonce**。自己在这里再写一份，
+    结果是两份 CSP 取交集——出问题时极难定位是谁挡的。
+    详见 docs/design/0002 §7.2 第 6 条（批 4 要验的就是它）。
+  -->
+  <title>rmd</title>
+  <!-- ⭐ **顺序就是分层**（`design/0004` §3 / `design/0005` §3）：
+       ① tokens 先（变量的唯一声明处，`:root` 里给了 light 全量默认值）；
+       ② themes 其次（只覆盖**颜色**，且必须先有 :root 才能覆盖）；
+       ③ 然后是组件样式（⛔ 它们只引用第 2 层变量，不写字面值）。
+       ⚠️ 顺序反了会得到一个"部分变量还没定义"的首帧。 -->
+  <link rel="stylesheet" href="styles/tokens.css">
+  <link rel="stylesheet" href="styles/themes.css">
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="styles/typography.css">
+  <!-- ⚠️ 这份是 `design/0007` 加的，位置在 **typography.css 之后**：
+       它的规则要压过那里的 `.doc pre code { color: … }`（靠 `.doc` 那一层
+       把特异性提到 0,2,0，见 `highlight.css` 的文件头），
+       放在前面会得到一个"高亮全被底字色盖掉"的静默失效。 -->
+  <link rel="stylesheet" href="styles/highlight.css">
+  <link rel="stylesheet" href="styles/sidebar.css">
+  <!-- ⚠️ 这份是 `design/0009` 加的，位置在 **typography.css 之后**（§3）：
+       它与 `settings.css` 一样是**并列的一层**、⛔ 不参与正文的分层。 -->
+  <link rel="stylesheet" href="styles/quickopen.css">
+  <!-- ⚠️ 这份是 `design/0011` 加的，位置在 **quickopen.css 之后、settings.css 之前**（§3）。
+       ⭐ 与另外两层不同，它**没有遮罩**（`pointer-events` 只给面板）——
+       查找是"一边看正文一边找"，盖一层幕布等于把要读的东西挡掉。 -->
+  <link rel="stylesheet" href="styles/find.css">
+  <!-- ⚠️ 这份是 `design/0010` 加的，位置在 **typography.css 之后**（§3）。
+       覆盖层是**并列的一层**、⛔ 不参与正文的分层，所以它排最后。 -->
+  <link rel="stylesheet" href="styles/settings.css">
+  <!-- ⭐ 这份是 `design/0018` 加的，位置在 **settings.css 之后、editor.css 之前**（其 §2.7）：
+       预览层与设置覆盖层**同族**（都是并列的一层），而 `editor.css` 管的是分栏布局、
+       ⛔ 与覆盖层无关 ⇒ 它照旧排在最后。 -->
+  <link rel="stylesheet" href="styles/image-viewer.css">
+  <!-- ⚠️ 这份是 `design/0012` 加的，位置在 **最后**（§3.1）。
+       ⭐ 与前面几层不同，它**同时**管两件事：
+         ① 三栏外壳——它要压过 `style.css` 的 `html, body { overflow-y: auto }`
+            与 `.doc { max-width; margin: 0 auto }`（都靠 `body.editing` 那一条提高特异性）；
+         ② CM6 的覆盖——`src/vendor/cm6.bundle.js` 的 baseTheme 是**运行时**注入 `<head>` 的，
+            所以它排在**全部** `<link>` 之后 ⇒ 那部分**只能靠特异性赢**（见文件头）。
+       ⇒ 排最后不对它有好处，⛔ 但也无害：它对 CM6 那几条的赢法从来不是顺序。 -->
+  <link rel="stylesheet" href="styles/editor.css">
+</head>
+<body>
+  <!-- ⭐ `design/0025`（2026-10-21）起：**用户可见文案一律带 `data-i18n*`**，
+       值是 `src/services/i18n.js` 里那本字典的键；运行时由 `i18n.applyDom()` 重贴。
+       四种属性各管一样（`design/0025` §2.5 的表，逐字）：
+         `data-i18n` → `textContent`；`data-i18n-title` → `title`；
+         `data-i18n-placeholder` → `placeholder`；`data-i18n-aria-label` → `aria-label`。
+       ⛔ **别在这里再手写一份中文就算完**——那一块换语言后永远不变，
+          而且没有任何报错（`INV-I18N-01`）。闸门在 `tests/js/i18n.test.js`：
+          它扫本文件的**文本节点**与上面四类属性，漏一处就红。
+       ⚠️ 元素里保留的中文是**出厂文案**，也是脚本没跑起来时的兜底——
+          ⛔ 不能删成空标签（那样首帧是一块空白，比英文没翻更难查）。 -->
+  <!-- ⭐ 侧边栏（design/0003）。收起时用**位移**隐藏 + `inert`（INV-TREE-02），
+       ⛔ 不用 `display:none`：那会丢掉树的滚动位置，也让过渡动画无从谈起。 -->
+  <aside id="sidebar" class="sidebar" data-i18n-aria-label="a11y.sidebar" aria-label="侧边栏">
+    <div class="tabs" role="tablist">
+      <button id="tab-tree" class="tab" role="tab" aria-selected="true" data-i18n="sidebar.tab-files">文件树</button>
+      <button id="tab-toc" class="tab" role="tab" aria-selected="false" tabindex="-1" data-i18n="sidebar.tab-outline">大纲</button>
+      <span class="tab-spacer"></span>
+      <!-- ⚠️ `title` 里**不写键位**（`design/0010` `INV-SET-01`）：那是**第二份表**，
+           迟早与后端那张漂移（改一次键，三处文案全变错，而且没有任何报错）。
+           ⭐ 键位的**唯一**展示处是设置覆盖层——它由 `get_shortcuts` 现算（§7 步骤 8b）。 -->
+      <button id="btn-open-dir" class="icon-btn" data-i18n-title="sidebar.open-dir-title" title="打开目录" data-i18n="sidebar.open-dir">目录…</button>
+      <button id="btn-collapse" class="icon-btn" data-i18n-title="sidebar.collapse" title="收起侧边栏" data-i18n-aria-label="sidebar.collapse" aria-label="收起侧边栏">‹</button>
+    </div>
+    <!-- ⚠️ 树**懒加载**：只挂叶子容器，展开时才 `list_dir`（§2.1）。 -->
+    <div id="pane-tree" class="pane" role="tabpanel" aria-labelledby="tab-tree"></div>
+    <div id="pane-toc" class="pane" role="tabpanel" aria-labelledby="tab-toc" hidden></div>
+    <div id="sidebar-resizer" class="resizer" data-i18n-title="sidebar.resize-title" title="拖动调整宽度" role="separator" aria-orientation="vertical"></div>
+  </aside>
+  <button id="btn-expand" class="expand-btn" data-i18n-title="sidebar.expand" title="展开侧边栏" data-i18n-aria-label="sidebar.expand" aria-label="展开侧边栏" hidden>›</button>
+
+  <!-- 顶栏：工具栏（主题 / 阅读设置）＋ 状态条。
+       ⚠️ 两条一起 sticky（见 style.css 的 `.topbar`）——分开 sticky 会各自算 top，滚动时错位。
+       ⭐ 工具栏的位置来自 `design/0004` §2.1.4：「切换：工具栏下拉」。 -->
+  <div class="topbar">
+    <!-- ⭐ `design/0037`（2026-10-23，用户点题「这一排的展示应该可以折叠，隐藏」）：
+         顶栏折叠后的**抓手**——一条 6 px 高的横条，点一下把顶栏收回来。
+         ⚠️ 为什么必须留一条可见的抓手：折叠之后「隐藏顶栏」那个按钮自己也跟着没了，
+            只靠快捷键或"鼠标划到顶上"那种隐藏手势，用户会**找不到回来的路**
+            （`design/0012` §2.1⑤ 同一条纪律：可见控件 ⛔ 不依赖隐藏手势）。
+         ⚠️ 它**不在** `.toolbar` 里、而是 `.topbar` 的第一个孩子：折叠只隐藏
+            `.toolbar` 与 `.status` 两行，`#reload-bar` / `#preview-bar` / `#edit-prompt`
+            那几条**必须继续可见**（`INV-EXT-04` / `INV-EDIT-11`：降级与陈旧不许静默）。
+         ⚠️ 显隐**只由 CSS 决定**（`body.chrome-hidden .chrome-grip`），⛔ 不用 `hidden` 属性：
+            探针 `probe-i18n` 会把 `.topbar` 里带 `hidden` 的一律强开再量溢出，
+            用属性等于让它在**没折叠**的状态下多量一条不存在的横条。 -->
+    <button id="chrome-grip" class="chrome-grip" type="button"
+            data-i18n-title="toolbar.show-chrome" title="显示顶栏"
+            data-i18n-aria-label="toolbar.show-chrome" aria-label="显示顶栏"><span class="chrome-grip-mark"></span></button>
+    <div class="toolbar" id="toolbar">
+      <label class="toolbar-label" for="theme-select" data-i18n="toolbar.theme">主题</label>
+      <select id="theme-select" data-theme-select>
+        <option value="system" data-i18n="theme.system">跟随系统</option>
+        <option value="light" data-i18n="theme.light">浅色</option>
+        <option value="dark" data-i18n="theme.dark">深色</option>
+        <option value="warm" data-i18n="theme.warm">暖色</option>
+      </select>
+
+      <span class="toolbar-label" data-i18n="toolbar.font-size">字号</span>
+      <!-- ⚠️ 同上：键位不在 `title` 里重写一遍（`INV-SET-01`）。 -->
+      <button id="fs-dec" data-i18n-title="toolbar.font-dec" title="缩小字号" data-i18n-aria-label="toolbar.font-dec" aria-label="缩小字号">A−</button>
+      <span class="fs-val" id="fs-val" data-font-size>16 px</span>
+      <button id="fs-inc" data-i18n-title="toolbar.font-inc" title="放大字号" data-i18n-aria-label="toolbar.font-inc" aria-label="放大字号">A+</button>
+
+      <label class="toolbar-label" for="lh-select" data-i18n="toolbar.line-height">行高</label>
+      <select id="lh-select">
+        <option value="1.4" data-i18n="typo.line-height.tight">紧凑</option>
+        <option value="1.6" data-i18n="typo.line-height.normal">标准</option>
+        <option value="1.8" data-i18n="typo.line-height.loose">宽松</option>
+      </select>
+
+      <label class="toolbar-label" for="cw-select" data-i18n="toolbar.width">宽度</label>
+      <select id="cw-select">
+        <option value="0" data-i18n="typo.width.full">铺满</option>
+        <option value="1200" data-i18n="typo.width.wide">宽 1200</option>
+        <option value="900" data-i18n="typo.width.medium">中 900</option>
+        <option value="720" data-i18n="typo.width.narrow">窄 720</option>
+      </select>
+
+      <span class="toolbar-sep"></span>
+      <!-- ⭐ 2026-10-20（用户点题「Vim 模式要在一个显眼的地方，选择打勾。快速开关。」）：
+           Vim 模式的**顶栏快速开关**。
+           ⚠️⚠️ 它⛔ **不是第二个真源**：勾选状态只读 `theme.applied.vimMode`，
+              写只走 `theme.setVimMode()`（全应用唯一的写入口）；
+              设置覆盖层里那个复选框与它是**同一个状态的两张脸**，各自靠 `theme.subscribe` 回填。
+           ⚠️ 键位不在 `title` 里写（`INV-SET-01`）。 -->
+      <label class="toolbar-toggle" data-i18n-title="toolbar.vim-title" title="编辑态按 Vim 键位（普通 / 插入模式）">
+        <input type="checkbox" id="vim-toggle">
+        <span>Vim</span>
+      </label>
+      <!-- ⭐ `design/0012` §2.1⑤：编辑态**必须有可见控件**，⛔ 不依赖隐藏手势。
+           ⚠️ 键位不在 `title` 里写（`INV-SET-01`）——`⌘S` 那个显示串由后端那张表给，
+              前端要展示就现取（与上面几个按钮同一条纪律）。
+           ⚠️ 「保存」只在编辑态露出来：阅读态按它没有任何意义，
+              而一个恒亮的按钮会让人以为"是不是有不存在的改动"。 -->
+      <button id="btn-edit" data-i18n-title="editor.enter-title" title="进入编辑（在源码栏里改，右侧实时预览）" data-i18n="editor.enter">编辑</button>
+      <button id="btn-save" data-i18n-title="editor.save-title" title="保存这一份文档" data-i18n="editor.save" hidden>保存</button>
+      <!-- ⭐ `INV-THEME-06`：写盘失败要**看得见**，⛔ 不许两边都静默 -->
+      <span class="save-warn" id="save-warn" data-i18n="toolbar.save-warn" data-save-warn hidden>上次的设置未能保存</span>
+      <!-- ⭐ `design/0037`：把顶栏（工具栏 ＋ 状态条）折起来，给正文腾出整屏。
+           ⚠️ 折叠后这个按钮**自己也跟着不见了** ⇒ 回来的路是 `.chrome-grip`
+              和快捷键（`view.toggle-chrome`），两样都有，⛔ 不是隐藏手势。
+           ⚠️ 编辑态里它**不出现**（`body.editing` 那条 CSS）：`design/0012` §2.1⑤
+              要求编辑态必须有可见的退出控件，把顶栏藏掉就违背了那一条。 -->
+      <button id="chrome-hide" class="chrome-btn" type="button"
+              data-i18n-title="toolbar.hide-chrome" title="隐藏顶栏"
+              data-i18n-aria-label="toolbar.hide-chrome" aria-label="隐藏顶栏">⌃</button>
+    </div>
+
+    <!-- 状态条：批 1 起显示后端报回来的 T1/T2/T3 与规模数。
+         ⛔ 前端自己的 T4/T5/T5b/T6 是**批 2** 的事，这里不测——
+         分批开发的边界写死在 docs/design/0002 §10.4。 -->
+    <div id="status" class="status" data-i18n="status.loading">加载中…</div>
+
+    <!-- ⭐ 自动重载提示条（`design/0006` §2.1 ④ / `INV-EXT-04`）。
+         ⚠️ **降级必须显式告知**：文档太大（超过 500 ms 闸门）时我们**不**自动重载，
+           而没有这一条的话，用户改了盘、窗口一动不动，他会以为"自动刷新坏了"。
+         ⚠️ 也用来显示"监视已停止（授权已改变）"这类状态（`INV-EXT-09` 的可见那一半）。
+         ⚠️ 它在 `.topbar` **里面**（与工具栏/状态条一起 sticky）——
+            ⛔ 不放进 `#doc`：正文容器里必须是**纯渲染结果**。 -->
+    <div id="reload-bar" class="reload-bar" role="status" hidden>
+      <span id="reload-text" class="reload-text"></span>
+      <button id="reload-now" class="reload-btn" type="button" data-i18n="status.reload-now" hidden>立即重载</button>
+    </div>
+
+    <!-- ⭐ 预览提示条（`design/0012` §2.6）。⚠️ 只在编辑态出现（`editor.css` 里由
+         `body.editing` 控制显隐，⛔ 不用 `hidden` 属性——那会被 `body.editing` 那条压住）。
+         ⚠️ `INV-EDIT-11`：**陈旧必须始终可见**，⛔ 不是会自动消失的 toast ——
+            用户左栏在改、右栏不动，唯一能解释这件事的就是这一行字。
+         ⚠️ 档 C（端到端 > 1 s）下预览**不会自动更新**，"更新预览"那个按钮是
+            唯一的出路，所以它与文字一起出现（`preview.js` 的 `onStale` 管这件事）。 -->
+    <div id="preview-bar" class="preview-bar" role="status" hidden>
+      <span id="preview-text" class="preview-text"></span>
+      <button id="preview-now" class="preview-btn" type="button" data-i18n="editor.preview-now" hidden>更新预览</button>
+    </div>
+
+    <!-- ⭐ 未保存修改的**决策条**（`design/0012` §6「外部修改 + 有未保存内容」那张表）。
+         ⚠️ 为什么不是 `window.confirm`：本项目**不给前端 `dialog:*` 权限**
+            （`src-tauri/src/gui/mod.rs:885` 那句注释、`commands/fs.rs:275` 那段），
+            而 `confirm` 在 WKWebView 里的可用性从来没被验过 ⇒ ⛔ 不赌它。
+            ⭐ 用一条**行内**的条子，与 `.reload-bar` 同族：不挡正文、不抢焦点、
+            而且**不落盘**这一点与 `INV-SET-07` 的覆盖层互斥无关（它不是覆盖层）。
+         ⚠️ 按钮的文案与动作**由 JS 现填**（`main.js::askEdit`）——四种场景
+            （退出编辑 / 切换文档 / 外部改动 / 外部编辑器）各有各的两个选项，
+            ⛔ 不在这里写死任何一句。 -->
+    <div id="edit-prompt" class="edit-prompt" role="alertdialog" aria-live="assertive" hidden>
+      <span id="edit-prompt-text" class="edit-prompt-text"></span>
+      <span id="edit-prompt-actions" class="edit-prompt-actions"></span>
+    </div>
+  </div>
+
+  <!-- ⭐ 源码栏（`design/0012` §2.1 / §3.1）。⚠️ 它插在 `#doc` **左侧**，
+       两者都是 `body` 的直接子元素，编辑态由 `editor.css` 摆进网格三栏。
+       ⛔ 非编辑态整个 `display:none`：里面是 `contenteditable`，
+          留在布局里会让阅读态的 `Tab` 走进一个看不见的编辑区。
+       ⚠️ 结构 = 一条提示带（行尾/BOM 的信封提示 ＋ 脏标记 ＋ 保存结果）
+          ＋ 编辑器宿主（CM6 的 `EditorView` 挂在这里）。 -->
+  <section id="editor" class="editor" data-i18n-aria-label="a11y.editor" aria-label="源码编辑区">
+    <div id="edit-bar" class="edit-bar">
+      <span id="edit-note" class="edit-note"></span>
+      <!-- ⭐ 脏标记。⚠️ 与右边那句"已保存"**不是同一件事**：
+           那句说的是"刚发出去的那份写成功了"，它说的是"现在缓冲与磁盘不一致"。
+           保存期间用户接着打字时两者会同时成立（§2.4-4）。 -->
+      <span id="edit-dirty" class="edit-dirty" data-i18n="editor.dirty" hidden>● 未保存</span>
+      <span id="edit-status" class="edit-status"></span>
+    </div>
+    <div id="editor-host" class="editor-host"></div>
+  </section>
+  <div id="editor-splitter" class="editor-splitter" role="separator" aria-orientation="vertical" data-i18n-title="editor.splitter-title" title="拖动调整分栏"></div>
+
+  <!--
+    ⚠️ 正文容器。仍是**一次性 innerHTML**——⛔ 不要预先加虚拟列表或分块渲染的钩子，
+    "要不要分块"正是批 2 要用数字回答的问题（adr/0004）。
+  -->
+  <main id="doc" class="doc" aria-busy="true"></main>
+
+  <!-- ⚠️ 顺序 = 依赖方向。全部是**经典脚本**（不是 ES module）：
+       每个模块末尾有"浏览器挂 window / node 挂 module.exports"的双导出，
+       这样 `tests/js/` 能直接用 `node --test` 跑同一份源码，⛔ 不需要打包器。 -->
+
+  <!-- ⭐ `design/0012` §3.1：CM6 的发行产物（`make cm6` 产出，⛔ 不入库）。
+       ⚠️⚠️ **它必须最先**：本文件里其余脚本都按顺序执行，
+          而 `editor/main.js` 在**运行时**要 `window.rmdCM6` ——
+          它排在后面时那个全局还不存在，于是自证会报"bundle 没加载"，
+          而真正的原因是**顺序**（表现与"忘了跑 make cm6"一模一样，极难分辨）。
+       ⚠️ 它自己⛔ 不读任何 `window.rmd.*`：bundle 是 CM6 的一份独立构建，
+          与我们的双导出约定无关。
+       ⚠️ 文件不存在时（没跑过 `make cm6`）浏览器只会 404 并继续 ——
+          这正是我们要的形态：**编辑功能整体不可用，但阅读功能一切照常**，
+          而 `edit_ok` 那条判据会把它**响亮地**报出来。 -->
+  <script src="vendor/cm6.bundle.js"></script>
+
+  <!-- ⭐⭐ `design/0025`（2026-10-21）：**中英双语的字典与 `t()`**，`services/` 的第一条。
+       ⚠️⚠️ **位置是硬要求**（`INV-I18N-06`）：它必须是所有**使用者**之前——
+           `components/*` / `editor/*` / 根 `main.js` 都在**加载期**取
+           `window.rmd.i18n`（`design/0009` §10.3 那一族的坑：顺序反了编译不出、
+           启动路径上也不报，只有某个界面第一次用到时才炸）。
+       ⚠️ 它自己**不依赖任何 `window.rmd.*`**——这是它能排最前的前提。
+       ⚠️ 初始语言**由后端注入**（`window.__rmdLang`，`gui/mod.rs` 的 `init_script`），
+          ⛔ 本文件不读 `navigator.language`（`INV-I18N-07`：生效语言只有一个裁定点）。
+       ✅ 位次有自动闸门：`tests/js/i18n.test.js` 的「脚本位次」＋ `keymap.test.js`
+          那条「脚本加载顺序·依赖先于取值」（⚠️ 那条按 `<script src>` 的**路径串**建索引）。 -->
+  <script src="services/i18n.js"></script>
+  <script src="services/versions.js"></script>
+  <script src="services/chunked.js"></script>
+  <!-- ⭐ `design/0006`：自动重载的**纯逻辑**（闸门 / 事件判据 / 三级滚动锚点）。
+       ⚠️ 它不依赖任何东西，排在 `session.js` 之前之后都行——放这里是因为
+          `session.js` 与 `main.js` 都用不到它**在加载期**的副作用（它没有副作用）。 -->
+  <script src="services/reload.js"></script>
+  <!-- ⭐ `design/0017`：阅读进度的**纯逻辑**（形状转换 / 频控 / 恢复三态）。
+       ⚠️ 它**不取** `window.rmd.*`（无加载期依赖），但必须在 `main.js` 之前存在；
+          ⚠️ 锚点算法仍然只有 `reload.js` 一份，⛔ 这里不抄第二份。 -->
+  <script src="services/progress.js"></script>
+  <!-- ⭐ `design/0020`：目录会话的**全部前端逻辑**（包含判据 / 载荷整形 / 恢复事务 / 写者）。
+       ⚠️⚠️ **顺序是硬要求，⛔ 别挪到 `session.js` 后面**：`session.js` 与
+           `components/FileTree.js` 都在**加载期**把它取成常量
+           （`const D = … : window.rmd.dirSession;`）——`search.js` 那条事故的同族。
+       ⚠️ 它自己不取任何 `window.rmd.*`（纯函数 + 依赖全注入）⇒ 放在 `tauri.js` 之前即可。
+       ⚠️ 判据在 `tests/js/dirsession.test.js`；**接线**那半要真 DOM ⇒ `make probe-dir-session`。 -->
+  <script src="services/dirsession.js"></script>
+  <script src="services/tauri.js"></script>
+  <!-- ⭐ `design/0009`：文件名搜索的**纯逻辑**（字节→UTF-16 换算 + 提交判据）。
+       ⚠️⚠️ **顺序是硬要求，⛔ 别挪到 `session.js` 后面**：`session.js` 在**加载期**
+          就把 `window.rmd.search` **取成了常量**（`const Search = … : window.rmd.search;`），
+          而经典脚本是**按顺序执行**的——排在它后面时那个常量是 `undefined`。
+       ⚠️ 这个错**只在运行时**发作，而且**不在启动路径上**：浮层照样开、索引照样建
+          （打开时那次 `rebuild` 请求是空模式、不走 `shouldQuery`），
+          只有**你真敲了第一个字符**时才炸——2026-10-14 用 AX 驱动浮层实测到的原话是
+          「搜索失败：undefined is not an object (evaluating 'Search.shouldQuery')」。
+          ⇒ 已加一条**源码级闸门**（`tests/js/keymap.test.js` 的「脚本加载顺序」）守它。 -->
+  <script src="services/search.js"></script>
+  <!-- ⭐ `design/0011`：正文内查找的**纯逻辑**（四条截断点的判据、非重叠匹配、
+       「第几/共几」、上限说明）。
+       ⚠️ 顺序同样没有自由度：它是**纯函数**、不依赖任何别的模块，
+          但 `components/FindBar.js` 在**加载期**把它取成常量
+          （`const F = … : window.rmd.find;`）⇒ 必须排在 `FindBar.js` 之前。
+          ⚠️ 上面那条源码级闸门（「脚本加载顺序」）管的就是这一族错。 -->
+  <script src="services/find.js"></script>
+  <!-- ⭐ Q22（`design/0007` 文末追加节）：状态条上那一句「部分代码未高亮（规模限制）」。
+       ⚠️ 它是**纯函数**、不依赖任何别的模块，唯一的使用者是**最后**加载的根 `main.js`
+          ⇒ 位置本来没有自由度。抽出来单独成文件是因为**内联在 `main.js` 里就没有断言**，
+          而它的失效形态是"那一句永远不出现、屏幕上一切正常"。
+          ✅ 断言在 `tests/js/renderstat.test.js`（7 条，含"不许印 NaN"与"不许说成内容丢了"）。 -->
+  <script src="services/renderstat.js"></script>
+  <!-- ⭐ `design/0033`：命令行工具安装/卸载的结果 → 状态条那几句话。
+       ⚠️ 它是这几句话**唯一**的生成处（`INV-CLI-16` 后半句），⛔ 别在 `main.js` 里再拼一遍。
+       ⚠️ **不依赖任何 `window.rmd.*`**（字典由调用方注入）⇒ 位置本来没有自由度；
+          放这儿与其余 `services/*` 同群，且**必须在根 `main.js` 之前**——
+          后者在**加载期**就把 `window.rmd.cliTool` 取成常量。
+       ✅ 断言在 `tests/js/clitool.test.js`。 -->
+  <script src="services/clitool.js"></script>
+  <!-- ⭐ `design/0012` §11：左右滚动同步。
+       ⚠️ 它**不依赖任何别的 `window.rmd.*`**（纯逻辑 + 一层只认宿主给的那两个
+          元素的接线）⇒ 位置本来没有自由度；放这儿是为了与其余 `services/*` 同群，
+          而且**必须在根 `main.js` 之前**——后者在**加载期**就把 `window.rmd.sync` 取成常量。
+       ⚠️ 判据在 `tests/js/sync.test.js`；**接线**那半要真 DOM ⇒ 离屏探针 `make probe-scroll-sync`。 -->
+  <script src="services/sync.js"></script>
+  <!-- ⭐ `design/0018` §2.2：图片预览的**全部数学**（`INV-ZOOM-06`）。
+       ⚠️ 必须排在 `components/ImageViewer.js` **之前**（后者在加载期就取
+       `window.rmd.imagezoom` 当常量）。它不依赖任何别的 `window.rmd.*`，
+       位置本来没有自由度；放这儿是为了与其余 `services/*` 同群。
+       ⚠️ 判据在 `tests/js/imagezoom.test.js`；**接线**那半要真 DOM ⇒ `make probe-image-viewer`。 -->
+  <script src="services/imagezoom.js"></script>
+  <!-- ⭐ `design/0026` §3：文档内链接的**纯逻辑**（`href` 归一 / 锚点查找 / 结果→动作 / 存活判据）。
+       ⚠️ 它**不判授权、不拼路径**（`INV-LINK-03`：那两件事只在后端做得到）。
+       ⚠️ 必须排在根 `main.js` **之前**——后者在加载期就把 `window.rmd.links` 取成常量；
+           它本身不依赖任何别的 `window.rmd.*`，所以可以排在这一群的最前面。
+       ⚠️ 判据在 `tests/js/links.test.js`；**接线**那半要真 DOM ⇒ `make probe-link-nav`。 -->
+  <script src="services/links.js"></script>
+  <script src="services/session.js"></script>
+  <script src="services/theme.js"></script>
+  <script src="services/measure.js"></script>
+  <!-- ⭐ `design/0010`：快捷键分发器与设置覆盖层。
+       ⚠️ `keymap.js` 必须在 `main.js` 之前——`main.js` 建它、往里注册 handler，
+          并且 `main.js` 自己⛔ 不再写任何按键字面量。
+       ⚠️ `Settings.js` 只认识 `theme` 与后端那张表，⛔ 不引用侧边栏；
+           接线（`settings.open` / `view.toggle-sidebar` 两个 handler）全在 `main.js`。 -->
+  <script src="services/keymap.js"></script>
+  <!-- ⭐ `design/0034`：刷新事务 / 右键目标 / 输入行语义的**纯逻辑**。
+       ⚠️⚠️ 它**必须排在 `FileTree.js` 之前**——经典脚本按顺序执行，而 `FileTree.js`
+          在**加载期**把 `window.rmd.treeRefresh` 取成常量；顺序反了只有
+          "第一次刷新或第一次右键"时才炸（`0009` 的 `search.js` 同族）。 -->
+  <script src="services/treerefresh.js"></script>
+  <!-- ⭐ `design/0035`：剪贴板的**只读能力核对** ＋ 唯一一条写入实现。
+       ⚠️ 它同样必须排在 `FileTree.js` 之前（后者加载期取 `window.rmd.clipboard`）。
+       ⚠️ 它**不读也不写**用户剪贴板内容，除非用户真的点了「复制绝对路径」。 -->
+  <script src="services/clipboard.js"></script>
+  <script src="components/FileTree.js"></script>
+  <script src="components/Sidebar.js"></script>
+  <script src="components/ImageView.js"></script>
+  <script src="components/ThemeSwitcher.js"></script>
+  <script src="components/Settings.js"></script>
+  <!-- ⭐ `design/0009`：搜索浮层。⚠️ 必须排在 `Settings.js` **之后**——
+       它要拿后者的覆盖层登记处（`registerOverlay` / `closeOtherOverlays`，
+       `INV-SET-07`：两层覆盖层互斥，至多一层在屏幕上）。 -->
+  <script src="components/QuickOpen.js"></script>
+  <!-- ⭐ `design/0011`：正文内查找浮层。⚠️ 必须排在最后三个**之后**——
+       它同时取 `find.js`（判据）、`keymap.js`（认 `⌘G`/`⇧⌘G`）、
+       `Settings.js`（覆盖层登记处，`INV-FIND-06`：`⌘F`/`⌘P`/设置至多一层）。 -->
+  <script src="components/FindBar.js"></script>
+  <!-- ⭐ `design/0018`：图片缩放预览层（第四层覆盖层）。
+       ⚠️ 位置是硬要求——必须在 `components/Settings.js` **之后**（它要拿后者的
+       覆盖层登记处 `registerOverlay` / `closeOtherOverlays`，`INV-ZOOM-04` 的
+       与设置 / 查找 / `⌘P` **双向互斥**就靠这张表），且必须在 `main.js` **之前**
+       （后者在加载期取 `window.rmd.imageViewer`）。
+       ⚠️ 它与 `components/ImageView.js`（正文图片的加载与占位，`design/0003`）是**两件事**：
+       那一份决定"图能不能显示"，这一份决定"点开能不能放大看"。 -->
+  <script src="components/ImageViewer.js"></script>
+  <!-- ⭐ `design/0012`：编辑区（`src/editor/**`）。⚠️ 位置是硬要求——**`services/*` 之后、
+       `main.js` 之前**：`editor/keys.js` 在**加载期**就取 `window.rmd.keymap`
+       （与上面 `search.js` / `FindBar.js` 同一条纪律、同一个坑），
+       而根 `main.js` 在加载期取 `window.rmd.editor*` 这一族。
+       ⚠️ 四个文件之间的顺序：
+         · `keys.js` 依赖 `services/keymap.js`（上面已加载）；
+         · `preview.js` / `save.js` 是**纯逻辑**，不依赖任何东西；
+         · `main.js`（这一份是 `editor/main.js`）拿 CM6 全局当**参数**，
+           ⛔ 不在加载期取 `window.rmdCM6`（那是运行时的事，见上）。
+       ⚠️ 谁都**不**能在加载期取 `window.rmd.editor*`——那正是这条顺序闸门要挡的东西。
+       ⭐ `design/0014`：`vim.js` 是**纯装配**（无 DOM、无 IPC、不取任何东西），
+         排在 `save.js` 之后 / `editor/main.js` **之前**——
+         `editor/main.js` 只把它当 `opts.buildVim` 的**返回值**用（模块级取一次），
+         ⛔ 不在加载期取 `window.rmd.editorVim`。 -->
+  <script src="editor/keys.js"></script>
+  <script src="editor/preview.js"></script>
+  <script src="editor/save.js"></script>
+  <script src="editor/vim.js"></script>
+  <script src="editor/main.js"></script>
+  <script src="main.js"></script>
+</body>
+</html>

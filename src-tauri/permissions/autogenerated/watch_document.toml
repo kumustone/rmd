@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-watch-document"
+description = "Enables the watch_document command without any pre-configured scope."
+commands.allow = ["watch_document"]
+
+[[permission]]
+identifier = "deny-watch-document"
+description = "Denies the watch_document command without any pre-configured scope."
+commands.deny = ["watch_document"]

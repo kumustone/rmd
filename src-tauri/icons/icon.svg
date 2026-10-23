@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  rmd 的产品图标源（`design/0015` §2.1 ③）。
+
+  ⭐ **唯一可编辑的图标源**（`INV-APP-05`）：
+  `make icon` 由它生成 `icon.png`（1024，tauri-codegen 的窗口图标）与
+  `rmd.icns`（Dock / Finder）。⛔ 别直接改那两个产物——它们会被下一次 `make icon` 覆盖。
+
+  ⚠️ 只用几何路径 + 纯色，**不用渐变 / 滤镜 / 字体**：
+  渲染链是 `sips -s format png icon.svg`，它对 SVG 的支持是基础子集
+  （`docs/kb/0023` §6）。用花哨特性会渲染成空白或走样，而**不会报错**。
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- 纸色圆角底（暖白，取自 warm 主题的正文底色） -->
+  <rect x="64" y="64" width="896" height="896" rx="200" ry="200" fill="#FAF5EA"/>
+  <!-- 一圈极浅的描边：在浅色 Dock 背景上也能看出边界 -->
+  <rect x="64" y="64" width="896" height="896" rx="200" ry="200"
+        fill="none" stroke="#E3D8C2" stroke-width="8"/>
+
+  <!-- 左侧阅读线：把「正在读的那一栏」点出来 -->
+  <rect x="168" y="288" width="24" height="352" rx="12" ry="12" fill="#2F6FEB"/>
+
+  <!-- 标题行（强调蓝） -->
+  <rect x="256" y="288" width="600" height="72" rx="36" ry="36" fill="#2F6FEB"/>
+  <!-- 正文两行（墨色，第二行短一些） -->
+  <rect x="256" y="428" width="600" height="56" rx="28" ry="28" fill="#2B2B2B"/>
+  <rect x="256" y="548" width="408" height="56" rx="28" ry="28" fill="#2B2B2B" opacity="0.72"/>
+</svg>

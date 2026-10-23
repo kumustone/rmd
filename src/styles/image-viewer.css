@@ -1,0 +1,138 @@
+/*
+ * 图片缩放预览 —— `design/0018-图片缩放预览.md` §2.6（2026-10-19 已通过）。
+ *
+ * # ⛔ 只引用语义变量（`INV-THEME-02`）
+ *
+ * 这里**没有一处字面色值**。`make lint-theme` 的闸门 ① 会在几毫秒里证明这一点；
+ * 闸门 ② 证明三套主题都能给全所需变量（本文件只用既有变量，⛔ 不新增第 58 个）。
+ *
+ * ⚠️ 尺度全部走 `--ui-*`（`0005` 的 B 类：**不跟正文字号走**）——
+ * 用户把正文字号调大，不该让预览层的工具栏跟着变大。
+ *
+ * ⚠️ 这一张表在 `index.html` 里排在 `settings.css` **之后**、`editor.css` **之前**
+ * （`design/0018` §2.7；⛔ 顺序就是分层，别调换）。
+ *
+ * # ⚠️ `[hidden]` 必须显式写
+ *
+ * `position: fixed` 会盖掉 UA 样式表里那条 `[hidden] { display: none }`
+ * （UA 规则的优先级低于作者规则里的 `position`）⇒ 少了这一行，`hidden` 属性的
+ * 表现是"**层还在屏幕上**"，而这**不会有任何报错**。
+ */
+
+/* ────────────────────────────────────────────────────────────────
+ * 层：铺满窗口，⛔ 不占布局
+ * ──────────────────────────────────────────────────────────────── */
+.image-viewer-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 50;                       /* ⭐ 第四层：比设置(40) / 查找(45) / ⌘P(40) 都高，且互斥 */
+  background: var(--reader-bg);      /* ⭐ 铺满读者的底色（不是遮罩：预览是"换个地方看这张图"） */
+  color: var(--ui-text);
+  overscroll-behavior: contain;      /* ⚠️ 挡掉触控板"到边继续滚"冒泡给背景 */
+  font-size: var(--ui-font-size);
+}
+.image-viewer-layer[hidden] {
+  display: none;                     /* ⚠️ 见文件头：这一行**不能省** */
+}
+
+/* ────────────────────────────────────────────────────────────────
+ * 舞台：图片的坐标原点，也是所有指针事件的落点
+ * ──────────────────────────────────────────────────────────────── */
+.image-viewer-stage {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;                  /* 平移出界的部分裁掉，⛔ 不出现滚动条 */
+  cursor: grab;
+  touch-action: none;                /* ⚠️ 只影响手势：拖动平移不会被浏览器解释成滚动/缩放 */
+  z-index: 1;
+}
+.image-viewer-stage.is-panning {
+  cursor: grabbing;
+}
+
+/* ⚠️ `max-width/height: none` 不能省：正文里的 `img` 有一条"最大宽度 100%"的规则，
+   不放宽的话**缩放后的图会被那条规则按原比例压回去**，看起来像"缩放没生效"。 */
+.image-viewer-img {
+  position: absolute;
+  left: 0;
+  top: 0;
+  max-width: none;
+  max-height: none;
+  transform-origin: 0 0;              /* ⭐ 平移量与 scale 的坐标系必须和 `toTransform` 一致 */
+  user-select: none;
+  -webkit-user-drag: none;
+  will-change: transform;
+}
+
+/* ────────────────────────────────────────────────────────────────
+ * 标题：顶部居中，⛔ 不吃指针事件（点它等于点舞台空白）
+ * ──────────────────────────────────────────────────────────────── */
+.image-viewer-caption {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: min(720px, 76vw);
+  padding: 2px 10px;
+  color: var(--ui-text-muted);
+  font-size: calc(var(--ui-font-size) * 0.92);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* ────────────────────────────────────────────────────────────────
+ * 工具栏：底部居中，与设置面板同族
+ * ──────────────────────────────────────────────────────────────── */
+.image-viewer-controls {
+  position: absolute;
+  bottom: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  background: var(--ui-bg-elevated);
+  border: 1px solid var(--ui-border);
+  border-radius: calc(var(--ui-radius) * 2);
+  box-shadow: 0 8px 24px var(--ui-border);
+  font-size: var(--ui-font-size);
+  touch-action: manipulation;        /* ⭐ 只影响手势：点击与键盘激活照常 */
+  z-index: 1;
+}
+
+.image-viewer-btn {
+  font: inherit;
+  font-size: var(--ui-font-size);
+  line-height: var(--ui-row-height);
+  color: var(--ui-text);
+  background: var(--ui-bg);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius);
+  padding: 0 10px;
+  cursor: pointer;
+  outline: none;                     /* ⚠️ 焦点样式由下面 `:focus-visible` 给，⛔ 不是"不要焦点环" */
+}
+.image-viewer-btn:hover {
+  background: var(--ui-hover-bg);
+}
+.image-viewer-btn:focus-visible {
+  border-color: var(--ui-accent);
+}
+
+.image-viewer-scale {
+  min-width: 4.2em;
+  text-align: center;
+  color: var(--ui-text-muted);
+  font-variant-numeric: tabular-nums; /* ⚠️ 比例变化时数字不左右跳 */
+}
+
+/* ────────────────────────────────────────────────────────────────
+ * 正文里的可预览图：给一个"能点开"的光标
+ * ──────────────────────────────────────────────────────────────── */
+#doc img.rmd-zoomable {
+  cursor: zoom-in;
+}

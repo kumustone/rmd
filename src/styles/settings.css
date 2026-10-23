@@ -1,0 +1,207 @@
+/*
+ * 设置覆盖层 —— `design/0010-设置界面与快捷键.md` §2.1 ④（2026-10-14 已通过）。
+ *
+ * # ⛔ 只引用语义变量（`INV-THEME-02`）
+ *
+ * 这里**没有一处字面色值**。`make lint-theme` 的闸门 ① 会在几毫秒里证明这一点——
+ * 写死一个 `#333`，深色主题下那一处就永远是深色的，而**浏览器不会报错**。
+ *
+ * ⭐ **一根新语义变量都没有加**：遮罩用的是"`var(--ui-bg)` + `opacity`"，
+ * 所以 `themes.css` 的「最低契约」仍然是 **53** 个（⛔ 别顺手去改那个数）。
+ * ⚠️ 尺度也一样全部引用 `--ui-*`（`0005` 的 B 类：**不跟正文字号走**）——
+ * 用户把正文字号调大，不该让设置面板跟着变大。
+ *
+ * ⚠️ 这一张表在 `index.html` 里排在 `typography.css` **之后**
+ * （`design/0010` §3；⛔ 顺序就是分层，别调换）。
+ */
+
+/* ────────────────────────────────────────────────────────────────
+ * 层：铺满窗口，⛔ 不占布局（`position:fixed`）
+ * ──────────────────────────────────────────────────────────────── */
+.settings-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 40;          /* ⚠️ 要盖住侧边栏与顶栏；`0009` 的浮层排在它之后（互斥规则） */
+}
+
+/* ⚠️ 遮罩**不用**半透明黑：那需要一个新色值（`rgba(0,0,0,.4)`）⇒
+   破 `INV-THEME-02` 或给契约加第 54 个变量。这里用"窗口底色 + 不透明度"——
+   ⭐ 三套主题各自取自己的 `--ui-bg`，浅色主题下自然是一层浅色薄雾，同样是"后面不可读了"。 */
+.settings-scrim {
+  position: absolute;
+  inset: 0;
+  background: var(--ui-bg);
+  opacity: 0.72;
+}
+
+/* ────────────────────────────────────────────────────────────────
+ * 面板
+ * ──────────────────────────────────────────────────────────────── */
+.settings-panel {
+  position: absolute;
+  top: 8vh;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(560px, 88vw);
+  max-height: 78vh;
+  overflow-y: auto;
+  box-sizing: border-box;
+  padding: 18px 22px 22px;
+  background: var(--ui-bg-elevated);
+  color: var(--ui-text);
+  border: 1px solid var(--ui-border);
+  border-radius: calc(var(--ui-radius) * 2);
+  box-shadow: 0 12px 36px var(--ui-border);
+  font-size: var(--ui-font-size);
+  outline: none;         /* ⚠️ 焦点样式由下面的 `:focus-visible` 给，⛔ 不是"不要焦点环" */
+}
+.settings-panel:focus-visible {
+  border-color: var(--ui-accent);
+}
+
+.settings-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+.settings-title {
+  margin: 0;
+  font-size: calc(var(--ui-font-size) * 1.15);
+  font-weight: 600;
+}
+.settings-close {
+  font: inherit;
+  color: var(--ui-text);
+  background: var(--ui-bg);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius);
+  padding: 3px 10px;
+  cursor: pointer;
+}
+.settings-close:hover {
+  background: var(--ui-hover-bg);
+}
+
+/* ────────────────────────────────────────────────────────────────
+ * 分组与控件
+ * ──────────────────────────────────────────────────────────────── */
+.settings-section + .settings-section {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--ui-border);
+}
+.settings-h3 {
+  margin: 0 0 10px;
+  font-size: var(--ui-font-size);
+  font-weight: 600;
+  color: var(--ui-text-muted);
+  text-transform: none;
+}
+.settings-note {
+  margin: 0 0 10px;
+  color: var(--ui-text-muted);
+  line-height: 1.5;
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: var(--ui-row-height);
+  padding: 4px 0;
+}
+.settings-label {
+  color: var(--ui-text-muted);
+}
+.settings-control {
+  font: inherit;
+  color: var(--ui-text);
+  background: var(--ui-bg);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius);
+  padding: 3px 6px;
+  min-width: 132px;
+}
+.settings-inline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+/* ⭐ `design/0014`：设置里那个复选框（Vim 模式）。⚠️ 它**不新增契约变量**——
+   用到的 `--ui-accent` / `--ui-text-muted` 都在既有的 57 个里。
+   ⚠️ 整行是个 `<label>` ⇒ 点文字也能勾上（⛔ 不是只有 13px 的方框可点）；
+   `cursor` 跟着改，否则点上去像"点了个说明文字"。 */
+.settings-check {
+  cursor: pointer;
+}
+.settings-checkbox {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: var(--ui-accent);
+}
+.settings-check-label {
+  color: var(--ui-text);
+}
+.settings-btn {
+  font: inherit;
+  color: var(--ui-text);
+  background: var(--ui-bg);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius);
+  width: 26px;
+  height: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+.settings-btn:hover:not(:disabled) {
+  background: var(--ui-hover-bg);
+}
+.settings-btn:disabled {
+  color: var(--ui-text-muted);
+  cursor: default;
+}
+/* ⚠️ 定宽：否则字号从 `9 px` 变 `10 px` 时按钮会左右跳一下，用户按不准。 */
+.settings-value {
+  min-width: 56px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ────────────────────────────────────────────────────────────────
+ * 快捷键表（**只读**）
+ * ⚠️ 用 `dl` 而不是 `table`：它是一串"名字 → 一个键"，⛔ 不是二维数据。
+ * ──────────────────────────────────────────────────────────────── */
+.settings-keys {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 6px 12px;
+  margin: 0;
+}
+.settings-key-label {
+  color: var(--ui-text);
+}
+.settings-key-combo {
+  margin: 0;
+  text-align: right;
+}
+.settings-key-combo kbd {
+  display: inline-block;
+  min-width: 22px;
+  padding: 1px 6px;
+  font-family: inherit;
+  font-size: calc(var(--ui-font-size) * 0.95);
+  color: var(--ui-text);
+  background: var(--ui-bg);
+  border: 1px solid var(--ui-border);
+  border-bottom-width: 2px;
+  border-radius: var(--ui-radius);
+}
+
+/* ⚠️ 覆盖层开着时**正文不再滚动**——否则滚轮会滚到后面那层文档，
+   而用户以为滚的是面板。`index.html` 的滚动容器是 `#doc`，不是 `body`。 */
+body.settings-open #doc {
+  overflow: hidden;
+}
