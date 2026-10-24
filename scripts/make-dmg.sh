@@ -110,7 +110,9 @@ say "▶ 生成 DMG"
 hdiutil create -volname "rmd $VERSION" -srcfolder "$STAGE" -format UDZO -ov "$DMG" >/dev/null
 
 say "▶ 校验"
-shasum -a 256 "$DMG" | tee "$DMG.sha256"
+# ⚠️ 在 OUTDIR 里按**文件名**算，⛔ 不写绝对路径：这份 `.sha256` 会随 Release 发布，
+#    写成绝对路径既泄露构建机路径，又让下载的人 `shasum -a 256 -c` 找不到文件。
+( cd "$OUTDIR" && shasum -a 256 "$(basename "$DMG")" | tee "$(basename "$DMG").sha256" )
 say ""
 say "✓ 本地候选产物：$DMG"
 say "  ⛔ 未签名（Developer ID）、未公证、⛔ 未上传；许可证 GPL-3.0-or-later（可再分发，须随附源码）"
