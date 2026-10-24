@@ -4,9 +4,8 @@
 
 [English](README.md)
 
-> **状态：已发布。** 首个公开版本 [`0.4.0`](https://github.com/kumustone/rmd/releases/tag/v0.4.0) 已发布，附 macOS（Apple Silicon）
-> 安装包（6 MB）。源码采用 **GPL-3.0-or-later**（见文末「许可证」）；
-> 下载安装见下面「安装」，从源码构建见 [BUILDING.md](BUILDING.md)。
+> **状态：已发布。** macOS（Apple Silicon）安装包在 [Releases](https://github.com/kumustone/rmd/releases/latest)。
+> 源码采用 **GPL-3.0-or-later**（见文末「许可证」）；从源码构建见 [BUILDING.md](BUILDING.md)。
 
 [![rmd 正在阅读一份 Markdown 文档——侧边栏、工具栏与排版后的正文](assets/screenshots/theme-light.png)](assets/screenshots/theme-light.png)
 
@@ -51,44 +50,19 @@ rmd 起于一个很简单的愿望：给自己经常阅读的技术文档，一�
 
 ### 下载安装
 
-从 [Releases](https://github.com/kumustone/rmd/releases/latest) 下载 `rmd-0.4.0-arm64.dmg`（6 MB，同页附 `.sha256`），打开后把
-`rmd.app` 拖进 `/Applications`。
+从 [Releases](https://github.com/kumustone/rmd/releases/latest) 下载最新的 `.dmg`（仅 Apple Silicon），
+打开后把 `rmd.app` 拖进 `/Applications`。
 
 它是 **ad-hoc 签名**（未公证），所以第一次打开会被 Gatekeeper 拦下：右键（或 Control-点按）
 → **打开** → 再点一次 **打开**；或者到「系统设置 ▸ 隐私与安全性」里点「仍要打开」。
 放行一次之后系统会记住。
 
-⚠️ 只支持 **macOS 13+，Apple Silicon**。
+⚠️ 需要 **macOS 13+，Apple Silicon**。每个版本的校验值与变更记录在同页的 Release 里。
 
-### 从源码构建并直接运行
+### 从源码安装
 
-跑裸二进制不需要安装步骤，也不需要 `.app`：
-
-```bash
-npm ci                        # 前端工具链（Node 只在构建时需要，运行不需要）
-make cm6                      # 把 CodeMirror 6 打进 src/vendor/cm6.bundle.js
-make build-gui NO_INSTALL=1   # 不加 NO_INSTALL 的话，build-gui 还会把二进制拷到 ~/.local/bin
-./src-tauri/target/release/rmd /某篇文档.md
-```
-
-当 stdout 与 stderr 都连着终端时，二进制会把自己再拉一份到后台，提示符立刻回来。
-要留在前台看日志，加 `RMD_FOREGROUND=1`。退出码 0 只表示子进程创建成功，不表示窗口已打开。
-
-### 组装并安装 .app
-
-```bash
-make install-app NO_INSTALL=1   # 编出含 GUI 的二进制，组装 build/macos/rmd.app，再拷到 ~/Applications
-```
-
-`make install-app` 自己依赖构建与组装两步，前面不需要单独跑别的命令。它**不会**改你的默认
-Markdown 打开程序。只想组装、不安装的话，用 `make app NO_INSTALL=1`，产物在
-`build/macos/rmd.app`。
-
-`NO_INSTALL=1` 不是多余的：不加它，两个目标共同依赖的 `build-gui` 还会把二进制**拷一份
-普通文件**到 `~/.local/bin/rmd`。那份拷贝不等于应用菜单「安装命令行工具…」建的链接——
-它不跟着 `.app` 升级，而且占着菜单要放链接的位置。用 `ls -l ~/.local/bin/rmd` 看一眼，
-如果那是早先构建留下的普通文件、你也不再需要，把它挪走或删掉即可；rmd 自己不会删不是它
-建的东西。
+想自己编译，或者要一份不经过 Gatekeeper 的本地构建，见 [BUILDING.md](BUILDING.md)：
+依赖、构建命令、`.app` 的组装、以及每条命令各自产出什么东西，都在那里。
 
 ### 在终端里用 `rmd`
 
@@ -109,8 +83,8 @@ mkdir -p ~/.local/bin
 ln -sf ~/Applications/rmd.app/Contents/MacOS/rmd ~/.local/bin/rmd
 ```
 
-路径要用应用实际所在的位置——如果你把 `rmd.app` 从 DMG 拖进了 `/Applications`，那就是
-`/Applications/rmd.app`；`make install-app` 装的是 `~/Applications/rmd.app`。两个前提：目录得先存在（所以有 `mkdir -p`），而且得在 `PATH` 里。
+路径要用应用实际所在的位置——从 DMG 装的话就是 `/Applications/rmd.app`。两个前提：
+目录得先存在（所以有 `mkdir -p`），而且得在 `PATH` 里。
 指向固定路径的链接在原位升级后仍然有效；只有把应用挪走才需要重建。
 </details>
 

@@ -4,10 +4,10 @@ A Markdown reader for macOS. Opens local Markdown documents from the terminal or
 
 [中文说明](README.zh-CN.md)
 
-> **Status: released.** The first public version [`0.4.0`](https://github.com/kumustone/rmd/releases/tag/v0.4.0) is out, with a
-> macOS (Apple Silicon) build attached. The source is licensed under
-> **GPL-3.0-or-later** (see *License*). See *Install* to download it, or
-> [BUILDING.md](BUILDING.md) to build from source.
+> **Status: released.** macOS (Apple Silicon) builds are on
+> [Releases](https://github.com/kumustone/rmd/releases/latest). The source is
+> licensed under **GPL-3.0-or-later** (see *License*); to build from source see
+> [BUILDING.md](BUILDING.md).
 
 [![rmd reading a Markdown document — sidebar, toolbar and typeset body](assets/screenshots/theme-light.png)](assets/screenshots/theme-light.png)
 
@@ -42,7 +42,7 @@ A reader first, with editing you have to ask for. Open a Markdown file or a fold
 
 What it is not: a note-taking app, knowledge base or synced notebook; a Markdown editor
 product (editing exists only for the document you explicitly opened); or cross-platform —
-**macOS 13+, Apple Silicon only.**
+**macOS 13+, Apple Silicon only.** Checksums and per-version notes are on the release page.
 
 ## Themes
 
@@ -61,7 +61,7 @@ line height and width stay where you put them.
 
 ### Download
 
-Download `rmd-0.4.0-arm64.dmg` (6 MB; a `.sha256` is attached alongside) from
+Download the latest `.dmg` (Apple Silicon only) from
 [Releases](https://github.com/kumustone/rmd/releases/latest) and drag `rmd.app` into `/Applications`.
 
 The build is **ad-hoc signed** (not notarized), so Gatekeeper blocks the first launch:
@@ -69,40 +69,13 @@ right-click (or Control-click) → **Open** → **Open** again — or use
 **System Settings ▸ Privacy & Security → Open Anyway**. macOS remembers the choice after
 that.
 
-**macOS 13+, Apple Silicon only.**
+**macOS 13+, Apple Silicon only.** Checksums and per-version notes are on the release page.
 
-### Build and run from source
+### Build from source
 
-Running the bare binary needs no installation step and no `.app`:
-
-```bash
-npm ci                        # frontend toolchain (Node is needed to build, never to run)
-make cm6                      # bundle CodeMirror 6 into src/vendor/cm6.bundle.js
-make build-gui NO_INSTALL=1   # without NO_INSTALL, build-gui also copies the binary to ~/.local/bin
-./src-tauri/target/release/rmd /path/to/document.md
-```
-
-When stdout and stderr are both a terminal, the binary re-launches itself in the background
-and your prompt comes back immediately. `RMD_FOREGROUND=1` keeps it in the foreground with
-logs on stderr. Exit code 0 only means the child process was created.
-
-### Assemble and install the app
-
-```bash
-make install-app NO_INSTALL=1   # build the GUI binary, assemble build/macos/rmd.app, copy it to ~/Applications
-```
-
-`make install-app` already depends on the build and assembly steps, so there is nothing to
-run first. `make install-app` does **not** change your default Markdown handler. To assemble
-the bundle without installing it, run `make app NO_INSTALL=1` instead; the result is
-`build/macos/rmd.app`.
-
-`NO_INSTALL=1` matters: without it, `build-gui` (which both targets depend on) also drops a
-**plain copy** of the binary at `~/.local/bin/rmd`. That copy is not the link the app's
-*Install Command Line Tool…* menu creates — it does not follow `.app` upgrades, and it sits
-where the menu wants to put its link. If `ls -l ~/.local/bin/rmd` shows a regular file left
-by an earlier build and you no longer need it, move it aside or delete it; rmd itself never
-removes a file it did not create.
+To compile it yourself, or to get a local build that never meets Gatekeeper, see
+[BUILDING.md](BUILDING.md): dependencies, build commands, assembling the `.app`, and what
+each command actually produces.
 
 ### Use `rmd` from the terminal
 
@@ -127,8 +100,7 @@ ln -sf ~/Applications/rmd.app/Contents/MacOS/rmd ~/.local/bin/rmd
 ```
 
 Use the path where the app actually lives — if you dragged `rmd.app` from the DMG into
-`/Applications`, that is `/Applications/rmd.app`; `make install-app` uses
-`~/Applications/rmd.app`. Two prerequisites: the directory must
+`/Applications`, that is `/Applications/rmd.app`. Two prerequisites: the directory must
 exist (hence `mkdir -p`), and it must be on your `PATH`. A link to a fixed path survives an
 app upgrade in place; only move the app and you have to create it again.
 </details>

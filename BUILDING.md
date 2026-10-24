@@ -3,9 +3,8 @@
 rmd is a local Markdown reader for macOS (Apple Silicon). This file covers
 building and running it from a clean checkout.
 
-> **Status:** [`0.4.0`](https://github.com/kumustone/rmd/releases/tag/v0.4.0) is the first public release. This file is for
-> building from source — to install the prebuilt app instead, see the README.
-> See *License* at the end of this file.
+> This file is for building from source. To install the prebuilt app instead,
+> see the README. See *License* at the end of this file.
 
 ## Prerequisites
 
@@ -20,6 +19,37 @@ building and running it from a clean checkout.
 Node.js is needed for exactly one step: bundling the CodeMirror 6 editor into
 `src/vendor/cm6.bundle.js`. The bundle is embedded into the binary at compile
 time, so the installed application does **not** need Node.js.
+
+## What each command produces
+
+Building and packaging are three different layers — the binary, the app bundle,
+and the disk image. Pick the layer you actually need:
+
+| Command | Output | Needed by | Notes |
+|---|---|---|---|
+| `make build` | `src-tauri/target/release/rmd`, **CLI only** | probes, benchmarks, CI | Cannot open a window. |
+| `make build-gui` | the **same path**, with the GUI linked in | anyone running the app | ⚠️ Writes the *same* file as `make build` — see the warning below. |
+| `make app` | `build/macos/rmd.app` | running it as a normal macOS app; releasing | Assembled and ad-hoc re-signed by a script. |
+| `make install-app` | `~/Applications/rmd.app` | local installation | Does not change your default `.md` handler. |
+| `make install` | a **copy** at `~/.local/bin/rmd` | terminal use | The app's *Install Command Line Tool…* link is better: it follows `.app` upgrades. |
+| `make dmg` | `build/dmg/rmd-<version>-arm64.dmg` ＋ `.sha256` | **releasing only** | Packaging, not building. Nobody needs this to run rmd. |
+
+⚠️ **`make build` and `make build-gui` write the same file.** So does
+`make test`: it runs `cargo test --release` *without* the `gui` feature, which
+rebuilds `target/release/rmd` as a CLI-only binary and silently replaces the GUI
+one. Building an `.app` from that binary produces an app that **does not start** —
+`open` returns 0, the process disappears, no crash report, and no log line.
+
+One command tells you which one you are holding — hand the binary a file and
+watch what it says:
+
+```bash
+src-tauri/target/release/rmd /path/to/doc.md
+```
+
+A GUI build opens a window. A CLI-only build prints a message saying this binary
+was built without the `gui` feature and exits with status 2. If you see that,
+re-run `make build-gui` before assembling or packaging anything.
 
 ## Build
 
@@ -94,6 +124,26 @@ files it did not create untouched.
 The bundle is ad-hoc signed (no Developer ID, no notarization). On first launch,
 macOS Gatekeeper may require *System Settings → Privacy & Security → Open Anyway*.
 `make install-app` does **not** change your default Markdown handler.
+
+## Package a DMG
+
+Once `make app` works, the disk image is one more step:
+
+```bash
+make dmg          # -> build/dmg/rmd-<version>-arm64.dmg, with a .sha256 next to it
+```
+
+- It depends on `make app`, so it needs the same prerequisites — including Node for
+  `make cm6` — plus `hdiutil` (part of macOS).
+- The version comes from `tauri.conf.json` and must match both the assembled
+  `.app`'s `Info.plist` and `Cargo.toml`. A mismatch aborts the build instead of
+  producing a misnumbered image.
+- The image is **ad-hoc signed and not notarized**, exactly like the bundle, so
+  whoever installs it meets Gatekeeper on first launch (see above).
+- `hdiutil create` does not mount the result, so no Finder window pops up.
+- It refuses to overwrite an existing image with the same name: rename the old one,
+  or run `make dmg FORCE=1`.
+- The output directory `build/dmg/` is not tracked by git.
 
 ## Tests
 

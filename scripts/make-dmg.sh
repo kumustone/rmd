@@ -99,8 +99,9 @@ License:
   LICENSE file. You may redistribute this build as long as you follow the
   GPL: pass along the license and make the corresponding source available.
   Bundled third-party components and their licenses are listed in
-  THIRD-PARTY-NOTICES.md. That file currently flags a blocking issue: the
-  diagram renderer is GPL-3.0-or-later.
+  THIRD-PARTY-NOTICES.md. The diagram renderer is GPL-3.0-or-later as well,
+  so this build is redistributable under the GPL; that file lists every
+  bundled component and the obligations attached to it.
 
 Build from source: see BUILDING.md.
 TXT

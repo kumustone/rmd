@@ -6,6 +6,14 @@ and the project intends to follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- **Documentation is split by reader.** `README` now covers installing and using
+  rmd only — it no longer pins a version number, a file name or a size, and it
+  repeats no build commands. Building from source, assembling the `.app`,
+  packaging a DMG and what each `make` target actually produces moved to
+  `BUILDING.md`, which is now the single place those commands are written.
+
 ## [0.4.0] — 2026-10-23
 
 First public release. Source and a macOS (arm64) build are attached to the
