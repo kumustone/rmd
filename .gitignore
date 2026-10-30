@@ -1,0 +1,35 @@
+src-tauri/target/
+src-tauri/gen/
+
+benchmarks/corpus/
+
+build/
+src-tauri/icons/rmd.icns
+
+node_modules/
+dist/
+
+src/vendor/cm6.bundle.js
+
+# ⛔ 内部文档 / Agent 状态 / 根 CLAUDE.md **在版本控制里**（`docs/adr/0012`）：
+#    本仓是**私有源仓**，公开面由 `scripts/export-public.sh` 的 `is_public()` 决定。
+#    ⛔ 别把它们加回忽略——那会让它们重新变成"只有一块磁盘副本"。
+
+.DS_Store
+*.swp
+.idea/
+.vscode/
+
+tools/wkwebview-probe/.cm6-work/
+tools/wkwebview-probe/.rp-work/
+tools/wkwebview-probe/.iv-work/
+tools/wkwebview-probe/.ds-work/
+tools/wkwebview-probe/.i18n-work/
+tools/wkwebview-probe/.ln-work/
+tools/wkwebview-probe/.tm-work/
+tools/wkwebview-probe/.fr-work/
+tools/live-probe/.lb-work/
+tools/native-arm/.na-work/
+tools/step0-probe/target/
+__pycache__/
+*.pyc

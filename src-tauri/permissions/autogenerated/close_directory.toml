@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-close-directory"
+description = "Enables the close_directory command without any pre-configured scope."
+commands.allow = ["close_directory"]
+
+[[permission]]
+identifier = "deny-close-directory"
+description = "Denies the close_directory command without any pre-configured scope."
+commands.deny = ["close_directory"]

@@ -1,0 +1,565 @@
+/*
+ * 编辑面与**三栏布局** —— `design/0012` §2.1① / §2.2 / §3.1（已通过 2026-10-15）。
+ *
+ * # 阅读态与编辑态是**两套布局**，不是一个布局的两个变体
+ *
+ * | | 阅读态（现状） | 编辑态（本文件） |
+ * |---|---|---|
+ * | 谁在滚 | **`body`**（`style.css` 那两行 `height:100%` + `overflow-y:auto`） | ⛔ body 不滚：**两栏各自滚** |
+ * | 列 | `aside#sidebar`（fixed）＋ `main#doc`（`margin:0 auto` + 宽度上限） | 侧边栏 ＋ **源码** ＋ 分隔条 ＋ **预览** |
+ * | `#doc` | 铺满页面的**唯一**内容 | 第三栏，`max-width` 取消、自己滚 |
+ *
+ * ⚠️ 为什么非要"body 不滚"：编辑态下两个栏各有各的滚动位置，
+ *    而**外层再叠一个滚动条**会让滚轮落点变成一件要靠猜的事
+ *    （§2.6-2 要的是"预览不跳"，两个滚动容器互相顶是最容易让它跳的形态）。
+ *
+ * # ⛔ 本文件一个**字面色值**都不许有（`INV-THEME-02`）
+ *
+ * 尺度全部**从 `tokens.css` 派生**（`--ui-*` 外壳尺度 / `--reader-*` 正文尺度），
+ * 自动化防线 `make lint-theme`。⚠️ 那个脚本 2026-10-15 起**恰好**多排一个文件
+ * （`src/vendor/cm6.bundle.js`，`make cm6` 的产物，主题色是上游写死的）——
+ * ⛔ 那不是"放宽"，见那个脚本里 `VENDOR=` 上面那段。
+ *
+ * # ⚠️ CM6 自带的那份 baseTheme 是**运行时**注入的
+ *
+ * `src/vendor/cm6.bundle.js` 里的 `baseTheme` 在 EditorView 建出来时才把
+ * `<style>` 追加进 `<head>`（`StyleModule`），所以它**排在全部 `<link>` 之后**。
+ * ⇒ 本文件对 CM6 那些类的覆盖**必须靠特异性赢**，⛔ 不能靠"我排得靠后"
+ *   （事实恰好相反）。下面每一处 `.cm-*` 覆盖都写了它是靠哪一条赢的。
+ */
+
+/* ⚠️ 初值只是"打开 CSS 之前别把两栏算成 0 宽"的兜底。
+   真正的值由 `editor/main.js` 在拖动/挂载时写进 `:root`
+   （与 `sidebar.css` 的 `--sidebar-width` 是同一形态、同一条纪律：
+   取值范围来自代码或后端，⛔ 不在这里定业务取值）。 */
+:root {
+  /* 源码栏占**整条**编辑区宽度的比例。⚠️ 用百分比而不是 px：
+     窗口一缩，两栏按比例收，⛔ 不会出现"源码栏比窗口还宽"。 */
+  --editor-ratio: 50%;
+  /* 分隔条**命中区**宽（视觉上只有中间那一条细线，见 `.editor-splitter::before`）。 */
+  --editor-splitter-width: 6px;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+ * 三栏外壳：`body.editing` 一挂上，body 从"块级滚动容器"变成"网格"
+ *
+ * ⚠️ **只加一个类**（`body.editing`），⛔ 不动任何已有的选择器：
+ *    阅读态那套（`.doc` 的 `margin: 0 auto`、`.topbar` 的 sticky）在
+ *    退出编辑态时要**一个字节不差**地回来。
+ * ════════════════════════════════════════════════════════════════════ */
+body.editing {
+  display: grid;
+  /* ①源码栏（比例） ②分隔条（固定） ③预览栏（吃掉剩下的）
+     ⚠️ ②占了 6px ⇒ ①真正的占比比 `--editor-ratio` 少 3px。
+        这是**故意**的：为半个分隔条宽度去做 `calc()` 只会让这条式子难读，
+        而 3px 在一个可拖动的分栏上不可感知。 */
+  grid-template-columns: minmax(0, var(--editor-ratio)) var(--editor-splitter-width) minmax(0, 1fr);
+  /* 第一行 = 顶栏（`auto`），第二行 = 两栏（`1fr`）。
+     ⚠️ `minmax(0, 1fr)` 里的那个 `0` **不是**装饰：写 `1fr` 时网格行的
+        min-height 是 `auto`，CM6 那份长文档会把它撑到比窗口还高，
+        于是顶栏被顶出视口、两栏一起长成"没有滚动条"。 */
+  grid-template-rows: auto minmax(0, 1fr);
+  height: 100%;
+  /* ⛔ 外层**不再滚**（见文件头那张表）：两栏各自滚。 */
+  overflow: hidden;
+}
+
+/* ⚠️ 下面四条把 body 的直接子元素**显式**摆进网格。
+   ⛔ 不靠 DOM 顺序自动排：`#btn-expand`（`position:fixed`）会随收起状态
+   在 DOM 里进进出出，自动排版下它会**把后面每一个都挪一格**。 */
+body.editing > .topbar {
+  grid-column: 1 / -1;
+  grid-row: 1;
+}
+body.editing > #editor {
+  grid-column: 1;
+  grid-row: 2;
+}
+body.editing > #editor-splitter {
+  grid-column: 2;
+  grid-row: 2;
+}
+body.editing > .doc {
+  grid-column: 3;
+  grid-row: 2;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+ * 源码栏（`<section id="editor">` = 一条编辑提示带 + 编辑器宿主）
+ * ════════════════════════════════════════════════════════════════════ */
+
+/* ⚠️ 非编辑态**必须**是 `display: none`：它里面有 `contenteditable`，
+   留在布局里会让阅读态的 `Tab` 走进一个看不见的编辑区。
+   ⚠️⚠️ 这里刻意**不用 `hidden` 属性**：`[hidden] { display:none }` 是**UA 样式**，
+   特异性 (0,1,0)，而下面 `body.editing #editor { display: flex }` 是 (1,1,1)
+   —— 一旦给 `#editor` 加 `hidden`，那条 UA 规则就永远压不住我们这条，
+   表现是"退出编辑态之后源码栏还在屏幕上"。⇒ 显隐**只有这一个判据**：`body.editing`。 */
+#editor { display: none; }
+
+body.editing > #editor {
+  display: flex;
+  flex-direction: column;
+  /* ⚠️ grid item 的 min-width 默认是 `auto`，CM6 里一行长文本会把它顶宽，
+       于是"两栏各一半"变成"源码栏吃掉预览栏"——经典 min-content 陷阱。 */
+  min-width: 0;
+  overflow: hidden;
+  background: var(--ui-bg);
+  /* ⛔ **没有 `border-right`**（2026-10-16 删）。原来这里是
+     `border-right: 1px solid var(--ui-border)`，而分隔条自己也画了一条 1px 的线
+     （`.editor-splitter::before`）⇒ 边界上是**两条相距 2~3px 的灰线**，
+     读起来是一条发虚的双线。分隔线**只由分隔条一个人画**（见下面那一段）。 */
+}
+
+/* 编辑提示带：行尾/BOM 的信封提示、脏标记、保存结果。
+   ⚠️ 与 `.reload-bar` 同族（`INV-EXT-04` 的"降级要显式告知"）：
+   **提示常驻、⛔ 不弹窗、⛔ 不挡编辑**。 */
+.edit-bar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+  padding: 0 0.75em;
+  height: var(--ui-toolbar-height);
+  font-size: 0.8em;
+  background: var(--ui-bg-elevated);
+  border-bottom: var(--reader-rule-width) solid var(--ui-border);
+  color: var(--ui-text-muted);
+  /* ⚠️ 撑宽比截断更糟：路径/提示一长就会把这一栏顶宽，进而挤掉预览栏。 */
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.edit-note {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ⭐ 脏标记。⚠️ 与提示带上那句"已保存"**是两件事**：
+   那句说的是"刚发出去的那份写成功了"，它说的是"**现在**缓冲与磁盘不一致"——
+   保存期间用户接着打字时，两者会**同时**成立（`design/0012` §2.4-4）。 */
+.edit-dirty {
+  flex: 0 0 auto;
+  color: var(--ui-accent);
+}
+
+.edit-status { flex: 0 0 auto; }
+
+/* ⚠️ 保存**失败**要看得见（`INV-EDIT-05`）。
+   ⚠️ 复用 `--ui-danger-*` 那一族，⛔ 不为它新增一族颜色：
+   新增一族的代价是三套主题各要配一遍（`themes.css` 那 57 个必须变量那笔账）。 */
+.edit-status.is-error {
+  color: var(--ui-danger-text);
+  background: var(--ui-danger-bg);
+  border: var(--reader-rule-width) solid var(--ui-danger-border);
+  border-radius: var(--ui-radius);
+  padding: 1px 6px;
+}
+
+/* 编辑器宿主：CM6 的 `EditorView` 挂在这里。
+   ⚠️ 它是 flex 子项 ⇒ 必须有 `min-height: 0`，否则 `.cm-scroller` 的
+   `height: 100%` 会算在一个"被内容撑高"的盒子上，滚动条就不出现了。 */
+.editor-host {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* ── CM6 的覆盖（全部靠**特异性**赢过运行时注入的 baseTheme） ────────── */
+
+/* ⚠️ baseTheme 给 `.cm-editor` 的是 `display:flex !important` 与
+   `box-sizing: border-box`，但**没有高度**；`.cm-scroller` 的 `height: 100%`
+   于是落在一个 auto 高的盒子上 ⇒ 不滚。
+   特异性：`body.editing` (0,1,0) + `.editor-host` (0,1,0) + `.cm-editor` (0,1,0) + `#doc`? 无
+   ⇒ (0,3,1)，高于 baseTheme 的单类选择器。 */
+body.editing .editor-host .cm-editor {
+  height: 100%;
+  background: var(--ui-bg);
+  color: var(--ui-text);
+}
+
+/* ⚠️ baseTheme 给 `.cm-focused` 的是 `outline: 1px dotted <写死的深色>`（上游色），
+   与工具栏那圈 `outline: 2px solid var(--ui-accent)` 不是一套语言。
+   特异性 (0,4,1) > baseTheme 的 (0,2,0)。
+ * ⭐⭐ **2026-10-16 改**（用户：「滚动条和分割线，搞得小一点，干扰视线」）：
+ * 这里原本是 `outline: 2px solid var(--ui-accent)` —— 一圈**围住整个源码栏**的蓝矩形。
+ * ⛔ 它的问题不是"2px 太粗"，是**位置**：这个矩形正好把两条边推到了用户盯的地方——
+ * `outline-offset: -2px` 让**上边**落在 `.edit-bar` 正下方（读作一条蓝色横线），
+ * **右边**落在分栏边界上（读作一条蓝色竖线，与分隔线、滚动条挤在同一处）。
+ * ⇒ 改成**只在左缘留一条 2px 的竖条**（`box-shadow` 内阴影，⛔ 不动布局）：
+ * 焦点该有的信号（"键盘现在在源码栏"）还在，而**边界那一带一条线都不多**。
+ * ⚠️ 与 `sidebar.css` 的 B12「当前项左侧那根条」是同一套语言。
+ * ⛔ `outline` 必须显式关掉：baseTheme 那条点线是**上游写死的色**，
+ * 本仓不接管它就会在深色主题下漏出一圈黑点线。 */
+body.editing .editor-host .cm-editor.cm-focused {
+  outline: none;
+  box-shadow: inset 2px 0 0 0 var(--ui-accent);
+}
+
+/* ⭐ 源码的字号/行高跟随**正文**（`--reader-*`），⛔ 不跟外壳（`--ui-*`）。
+   理由：这一栏是**内容**（它旁边的预览就是同一份内容的另一种呈现），
+   用户把正文字号调大时两栏该一起变大——否则并排看会像两份不同的文档。
+   ⚠️ 这与 `sidebar.css` 的 B6「外壳尺度不跟随阅读字号」**不矛盾**：
+   那边管的是侧边栏/工具栏（工具），这边管的是源文本（内容）。 */
+body.editing .editor-host .cm-scroller {
+  font-family: var(--reader-font-mono);
+  font-size: var(--reader-font-size);
+  line-height: var(--reader-line-height);
+}
+
+/* ⭐⭐ **2026-10-16 新增**（用户：「光标无论在白色主题还是暗色主题下，光标颜色都是黑色，
+ * 不合理。光标的颜色应该随主题颜色变动」）。
+ *
+ * ⛔ **根因在 CM6 的 `baseTheme`，不在我们没有设颜色**：它把光标色**两套写死**、
+ * 并用 `EditorView.darkTheme` 这个 **facet** 二选一
+ * （`src/vendor/cm6.bundle.js` 里的**源码形态**是 `&light .cm-content { caretColor: "black" }` /
+ * `&dark .cm-content { caretColor: "white" }`，`&dark` 那一支由那个 facet 打开）。
+ * ⚠️ **而本仓从不设它**（`editor/main.js` 的封闭扩展清单里没有它）
+ * ⇒ baseTheme **永远停在 `&light` 那一支** ⇒ 在 rmd 的 dark / warm 主题下，
+ * 正文是浅色而光标是黑的。
+ * ⭐ 这一条**不是推的**（2026-10-16 在离屏探针里把 `document.styleSheets` 逐条打出来看过）：
+ * 运行时那两条的**真实选择器**是 `.<hashA> .cm-content { caret-color: black; }` 与
+ * `.<hashB> .cm-content { caret-color: white; }`（StyleModule 把 `&light`/`&dark` 编成
+ * 混淆类名，⛔ 不是 `.cm-light`/`.cm-dark`），而 `.cm-editor` 的类名实测是
+ * `cm-editor <hashA> cm-focused`——**只有浅色那个**，白色那条在 rmd 里永不命中。
+ *
+ * ⚠️ **为什么覆盖点在 `.cm-content` 而不是 `.cm-cursor`**：
+ * `drawSelection()` ⛔ **不在** §2.1① 那张封闭清单里（它是"视觉类"扩展，装了就是改设计），
+ * ⇒ 光标是**原生 caret**，受 `caret-color` 管；`.cm-cursor` 那个 div **根本不存在**。
+ * ⭐ 所以 `.cm-cursor` / `.cm-dropCursor` 那两条是**给将来用的**：
+ * 哪天有人往白名单里加了 `drawSelection`，`borderLeft: 1.2px solid black` 会**立刻**复活
+ * （它是上游写死的色，且不走那个 facet、只走 `&dark`）——
+ * 那正是同一条投诉的**第二个来源**，一次堵掉比下次再查一遍便宜。
+ *
+ * 特异性：(0,4,1) ＞ baseTheme 的 `&light .cm-content` (0,2,0) ⇒ 赢（见文件头那条纪律）。
+ * ⭐ 取值 `var(--ui-text)` = 同一条规则里正文那个色 ⇒ **光标与它所在的那行字同色**，
+ * 三套主题各自动跟随（`INV-THEME-04`：主题只改颜色，这里一个尺度都没动）。 */
+body.editing .editor-host .cm-editor .cm-content {
+  caret-color: var(--ui-text);
+}
+body.editing .editor-host .cm-editor .cm-cursor,
+body.editing .editor-host .cm-editor .cm-dropCursor {
+  border-left-color: var(--ui-text);
+}
+
+/* ⭐⭐ **2026-10-16 新增**（`design/0014` 裁定 (d)：编辑态 Vim 键位）。
+ *
+ * Vim 扩展在 `normal` 模式下**自绘一个块光标**（`.cm-fat-cursor`），同时把原生插入符
+ * 设成透明（`!important`）——那是它用来避免"两个光标同时可见"的机制（§1.6）。
+ * ⛔ **它的两个颜色都是上游写死的**，三套主题下都是那个粉：
+ *   · `.<生成类> .cm-fat-cursor { position: absolute; background: rgb(255,150,150); … }`
+ *   · `.<生成类>:not(.cm-focused) .cm-fat-cursor { background: none; outline: 1px solid rgb(255,150,150); color: transparent !important; }`
+ * ⇒ 这就是 `INV-VIM-05` 说的那件事：**同一份主题不变量在 Vim 面内被破了，而闸门是绿的**
+ *   （`make lint-theme` 只扫 `src/styles/**` + `style.css`，⛔ 扫不到产物 `src/vendor/**`）。
+ *
+ * ⛔⛔ **不许把 `caret-color` 抢回来**（裁定 (d) 第三条）：要改的是**块光标自己的颜色**，
+ * ⛔ 不是"把原生插入符还回来"。所以下面两条**只碰 `background-color` / `color` / `outline-color`**——
+ * `caret-color` 那个旋钮归上面 §10.13 的 `.cm-content` 管，两处各管一个模式
+ * （`normal` 里上游那条 `.cm-vimMode .cm-line{caret-color:transparent!important}` 照旧生效；
+ * `insert` 里 `.cm-vimMode` 不在，插入符由 §10.13 那条接管）。
+ *
+ * ⚠️ **特异性是量出来的，⛔ 不是算出来的**（用户口述：「具体选择器由锁定版本的真实样式验证，
+ * 不把 (0,4,0) 当通用保证」）：上面那两条实测是 (0,2,0) 与 (0,4,0)，且
+ * `background` / `outline` **不带 `!important`**、只有 `color` 带 ⇒ 本表这两条
+ * (0,7,1) / (0,8,1) 两条路都赢（`!important` 之间比特异性）。⚠️ ⛔ **别化简成
+ * `.cm-editor .cm-fat-cursor`**——那是 (0,2,0)，与上游打平后**按文档顺序输**，
+ * 而 CM6 的 baseTheme 是**运行时注入**的（见文件头），顺序不是我们能指望的东西。
+ * ⭐ 证据在 `make probe-vim-keys` 的 **0e-规则原文**（把命中规则的 `cssText` 打出来）
+ * 与 **0e-反向对照**（把**本表整体**停用一次，同格必须掉回 `rgb(255,150,150)`
+ * —— 那才是"我们的规则真的赢了"）。这四个面的 12 格判据见 `design/0014` §7.1 步骤 0e。
+ *
+ * ⚠️ 焦点态那条同时覆盖了 `normal` 里的**反白**：底色 `--ui-caret`、字色 `--ui-caret-text`
+ * （＝ `--ui-bg`），所以"块上那一个字"仍然读得出来；失焦态只留一圈 1px 轮廓，
+ * 底色透明（**与上游"失焦变空心"的行为一致，我们只换了它的颜色**）。 */
+body.editing .editor-host .cm-editor .cm-scroller .cm-cursorLayer.cm-vimCursorLayer .cm-fat-cursor {
+  background-color: var(--ui-caret) !important;
+  color: var(--ui-caret-text) !important;
+}
+body.editing .editor-host .cm-editor:not(.cm-focused) .cm-scroller .cm-cursorLayer.cm-vimCursorLayer .cm-fat-cursor {
+  background-color: transparent !important;
+  outline-color: var(--ui-caret) !important;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+ * Vim 面的**选区**（可视模式 `v` / `V` / `⌃V`）
+ *
+ * ⚠️ **2026-10-21 复审更正**：这行原来写的是「以及插入态的鼠标拖选」——**那是错的**，
+ *    上游 `vimPlugin.updateClass()`（`dist/index.js:1407-1412`）在**插入模式把
+ *    `cm-vimMode` 整个摘掉** ⇒ 下面那两条透明规则在插入模式**根本不匹配**，
+ *    插入态的鼠标拖选从来没有被藏过，⛔ 也不需要本表去救（选择器要求 `.cm-vimMode`）。
+ *    证据：`make probe-vim-keys` 的 **`0j-1`**。⚠️ `docs/bugs/0008` 的同一句已原地改并留痕。
+ *
+ * ⚠️⚠️ **不写这两条，可视模式"选了但屏幕上什么都没有"**（2026-10-21 用户报障
+ *    「vim 为什么没有实现 shift + V 单行选中」的**真因**）：
+ *    · 上游 `vim()` 里有一项 `hideNativeSelection`（`@replit/codemirror-vim@6.4.0`
+ *      `dist/index.js:1215`，`Prec.highest(EditorView.theme(themeSpec))`），它把
+ *      `.cm-vimMode .cm-line` 的 `::selection` 底色**强制设成透明**；
+ *    · 那个前提是**宿主装了 `drawSelection()`**（它另画一层 `.cm-selectionLayer`）——
+ *      上游 README 原话："if you are not using basicSetup, make sure you include the
+ *      drawSelection plugin to correctly render the selection in visual mode"。
+ *    · 而本仓库的 §2.1① 白名单**明确不装 `drawSelection`**（`tools/cm6/entry.mjs`
+ *      也明令不导出）⇒ 原生选区被藏了、替代的绘制层又不存在 ⇒ **视觉上等于没选中**
+ *      （状态与 DOM `getSelection()` 都对，`V`+`d` 也真能删整行——所以"功能是好的，
+ *      只是看不见"，这类缺陷最容易在"测试全绿"下漏掉）。
+ *
+ * ⇒ 修法是**把原生选区的绘制权夺回来**，⛔ **不是**去装 `drawSelection`（那是改白名单）。
+ *   ⚠️ 上游那两条带 `!important`，且是运行时注入 `<head>`、**排在所有 `<link>` 之后**
+ *   ⇒ ⛔ 靠文档顺序赢不了，**只能靠特异性**：上游实测 (0,3,1)（`.ͼo .cm-vimMode .cm-line`
+ *   带一个 StyleModule 生成的混淆类），本表这两条 (0,6,1)。
+ *   ⚠️ 底色必须是**语义变量**（`INV-THEME-02`：⛔ 不许字面色值）——
+ *   `--reader-selection-bg` 早就定义好了（三套主题各一份），此前**无人引用**，这两条是它的第一处。
+ *   ⭐ 实测过 WKWebView 在 `::selection` 里**认 `var()`**（探针 **`0h-3`** 打的就是解析后的值）。
+ * ⚠️ `.cm-scroller.cm-vimMode` 是**同一个元素**（`cm-vimMode` 挂在滚动容器上，
+ *   由 `vimPlugin` 加）——⛔ 别写成 `.cm-scroller .cm-vimMode`，那是"后代"，
+ *   永远匹配不上，而**症状与本条要修的完全一样**：规则在、算出来的还是透明。
+ *    ⭐ 这一处 2026-10-21 真踩过（**`0h-3`** 第一条就是它红的）。
+ *    ⚠️ 上面那两处引用原来写的是 `0g-4` / `0g-3`——**那是错的编号**（`0g` 是「回归面」那一行），
+ *    判据实际叫 `0h-*`；2026-10-21 复审时**原地更正**（⛔ 不是又加一条判据）。
+ * ════════════════════════════════════════════════════════════════════ */
+body.editing .editor-host .cm-editor .cm-scroller.cm-vimMode .cm-line::selection,
+body.editing .editor-host .cm-editor .cm-scroller.cm-vimMode .cm-line ::selection {
+  background-color: var(--reader-selection-bg) !important;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+ * Vim 的**命令行 / 搜索行**（`:` 与 `/` 打开的那一条，`div.cm-vim-panel`）
+ *
+ * ⚠️⚠️ **不写这一条，`:w` 与 `/` 里敲进去的字在"rmd 主题 ≠ 系统外观"时是隐形的**
+ *    （2026-10-21 复审发现，`docs/bugs/0009`）：
+ *    · 上游 `vimStyle`（`@replit/codemirror-vim@6.4.0` `dist/index.js:1304-1319`）
+ *      给 `.cm-vim-panel` 的是 `padding / fontFamily: monospace / minHeight / display`，
+ *      给 `.cm-vim-panel input` 的是 `border / outline / backgroundColor: inherit`——
+ *      ⛔ **一个 `color` 都没有、一个 `font` 也没有**；
+ *    · `<input>` **不继承** `color` / `font`（UA 表单控件的 `fieldtext`）⇒ 它的字色跟
+ *      **`color-scheme` / 系统外观**走，⛔ 不是我们 `data-theme` 那一套：深色主题配
+ *      浅色系统 ⇒ 黑字压在深底上（实测对比度 **1.26 : 1**）；浅色/暖色主题配深色系统 ⇒
+ *      白字压浅底（**1.05 / 1.15 : 1**）。两个方向都是"看不见"，只有 `system` 主题安全。
+ *    · 字号同样是 UA 的 11px ＋ 系统字体，而源码栏是 `--reader-font-size` / `--reader-font-mono`。
+ * ⇒ 四条一律走语义变量，⛔ 不新增 token（`INV-THEME-02`，57/57 × 3 照旧）。
+ *   ⚠️ 上游没给这四个属性，所以这里买的不是"特异性赢"，而是**把 UA 的默认值换掉**；
+ *   但它同样是**运行时注入**的 baseTheme，⛔ 别改成更弱的选择器去"简化"。
+ *    ⭐ 证据：`make probe-vim-keys` 的 **`0i-1`～`0i-4`**（含 `0i-4` 反向对照）。
+ * ════════════════════════════════════════════════════════════════════ */
+body.editing .editor-host .cm-editor .cm-vim-panel input {
+  color: var(--ui-text);
+  caret-color: var(--ui-text);
+  font-family: var(--reader-font-mono);
+  font-size: var(--reader-font-size);
+}
+
+/* 行号：唯一一项"视觉类"扩展（§2.1① 的白名单里就它一个）。
+   ⚠️ baseTheme / `lineNumbers()` 都**不给颜色** ⇒ 不写这一条它就继承
+      `.cm-editor` 的 `--ui-text`（与正文同色），行号会抢正文的注意力。 */
+body.editing .editor-host .cm-gutters {
+  background: var(--ui-bg-elevated);
+  color: var(--ui-text-muted);
+  border-right: var(--reader-rule-width) solid var(--ui-border);
+}
+
+/* ⚠️ 行号的数字要**等宽对齐**，否则行数一多那一列会左右抖。 */
+body.editing .editor-host .cm-lineNumbers .cm-gutterElement {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+ * 分隔条（⭐ 比例可在窗口内拖动，⛔ **不落盘**，`design/0012` §4 第 3 条）
+ *
+ * ⚠️ 拖动**不持久化**是本设计的明说取舍：重开应用后比例回到 1:1。
+ *    要它记住是给 `Config` 加字段的**另一次改动**，⛔ 不塞在这里。
+ * ════════════════════════════════════════════════════════════════════ */
+#editor-splitter { display: none; }
+
+body.editing > #editor-splitter {
+  display: block;
+  position: relative;
+  cursor: col-resize;
+  /* ⚠️ **透明**（2026-10-16 改，原为 `--ui-bg-elevated`）。理由两条：
+   * ① 两栏的底色在**深色主题下是同一个值**（`--ui-bg` 与 `--reader-bg` 取值相同），
+   *    所以这一条 1px 的线是**唯一**的分界依据——底色带不该再叠一层；
+   * ② 原来那条 `--ui-bg-elevated` 的带子（三套主题下都比两栏**亮**）本身就是第三样东西。
+   *    **分界只留一条线**（用户原话：「分割线…干扰视线」）。
+   * ⚠️ 与侧边栏 `.resizer` 的 `background: transparent` 是同一形态。 */
+  background: transparent;
+}
+
+/* 可见的那条线只有 1px，命中区是整条 6px（`--editor-splitter-width`）——
+   与侧边栏 `.resizer` 同一条手感纪律：**看得见的那条线不该等于能抓住的区域**。
+   ⚠️ 这条线是**唯一**画分界的人（`#editor` 的 `border-right` 已删，见上文）。 */
+.editor-splitter::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: var(--reader-rule-width);
+  transform: translateX(-50%);
+  background: var(--ui-border);
+}
+
+/* ⚠️ 变色**只在悬停/拖动时**发生（一次性、随着鼠标离开就没了）——
+   ⛔ 常量级的强调色分界线正是 2026-10-16 那次投诉的对象。 */
+.editor-splitter:hover::before,
+.editor-splitter.is-dragging::before {
+  background: var(--ui-accent);
+}
+
+/* 拖动期间：全局光标与禁选（照 `sidebar.css` 的 `body.resizing`）。
+   ⚠️ 少了 `user-select: none`，拖过预览正文时会把文字选蓝一片。 */
+body.editor-splitting {
+  cursor: col-resize;
+  user-select: none;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+ * 预览提示条（`design/0012` §2.6）
+ *
+ * ⚠️ 它**住在 `.topbar` 里**（与 `.reload-bar` 同处），而不是浮在预览栏之上：
+ *    `.topbar` 是 `sticky`、横跨三栏，放这里就不会被某一栏的滚动裁掉。
+ *    ⭐ 2026-10-16 起它**在里面但脱离常规流**（见下一条）——两个条件同时成立，
+ *    所以下面这条注释与那条定位**不矛盾**：住址不变，只是不占行。
+ * ⚠️ 陈旧提示**必须始终可见**（`INV-EDIT-11`）——⛔ 不是"过一会儿自己消失"的 toast。
+ * ════════════════════════════════════════════════════════════════════ */
+#preview-bar { display: none; }
+
+/**
+ * ⭐⭐ 2026-10-16：**提示条一出现就在改布局** —— 这正是用户报的"打字时页面上下晃动"的
+ *    主因（`docs/bugs/0006`，实测数字见 `design/0012` §10.14）。
+ *
+ * ⚠️⚠️ 机制：`.topbar` 是编辑态那套**三栏网格的 `auto` 行**，
+ *    提示条在里面 ⇒ 它显/隐一次，`auto` 行就长/短一次 ⇒ **两栏一起变矮/变高**。
+ *    实测：顶栏 `64.38 → 88.03 px`（+23.66），源码栏与预览栏 `735.63 → 711.97 px`（−23.66）。
+ *    而它**每打一阵字要翻两次**（`onStale true` … `false`，写它的是 `preview.js` 的调度器）
+ *    ⇒ 视觉上就是"打字的时候两栏一起上下抽"。
+ *
+ * ⭐ 处置 = **留在这层、但脱离常规流**：`absolute` 钉在 `.topbar` 的下沿。
+ *    `.topbar` 是 `sticky`（本身就是定位上下文），所以：
+ *    ① 住址仍是 `.topbar` 内部 ⇒ ⛔ 不会被某一栏的滚动裁掉（上面那条约束照旧成立）；
+ *    ② 不再参与 `auto` 行的计算 ⇒ 显隐**一次都不改任何栏的高度**。
+ * ⚠️ 代价是它盖住 `.status` 那一行（**调试用**的状态条，见 `style.css`）。
+ *    ⛔ 不接受反过来盖正文顶部：那会挡住用户正在读的第一行字。
+ *    ⚠️ 它 **`bottom: 0` + 单行**（`.preview-text` 是 `nowrap` + 省略号）⇒ 高度恒为一行，
+ *    不会长到把顶栏内容盖掉。
+ */
+body.editing #preview-bar {
+  display: flex;
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  /* ⚠️ 必须显式抬一层：`.toolbar` 与 `.status` 在 DOM 上都排在它**前面**，
+     静态定位的后代本来也压不住谁——但同层里将来若加 `position` 就得靠这个数。 */
+  z-index: 1;
+}
+
+/* ⚠️ 这一条**必须**比上面那条更具体：(1,2,1) > (1,1,1)。
+   ⛔ 只说 `#preview-bar[hidden]`（(1,1,0)）是**压不住** `body.editing #preview-bar` 的
+   —— 表现是"没有提示时那一条空带子还占着一行高"。 */
+body.editing #preview-bar[hidden] { display: none; }
+
+.preview-bar {
+  align-items: center;
+  gap: 0.5em;
+  padding: 0.3em 0.75em;
+  font-size: 0.8em;
+  background: var(--ui-bg-elevated);
+  border-bottom: var(--reader-rule-width) solid var(--ui-border);
+  color: var(--ui-text-muted);
+}
+
+.preview-text {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ⭐ 档 C（端到端 > 1 s）时"预览已过期，点此更新"那个按钮（§2.6-2）。
+   ⚠️ 它**比 `.preview-text` 醒目**是刻意的：档 C 下预览不会自动更新，
+   而用户看着左侧在改、右侧一动不动，**多半会以为预览坏了**。 */
+.preview-btn {
+  flex: 0 0 auto;
+  font: inherit;
+  color: var(--ui-accent);
+  background: transparent;
+  border: var(--reader-rule-width) solid var(--ui-border);
+  border-radius: var(--ui-radius);
+  padding: 1px 8px;
+  cursor: pointer;
+}
+
+.preview-btn:hover { background: var(--ui-hover-bg); }
+
+/* ⚠️ 陈旧**且**处于档 C ⇒ 用警示那一族（同一族的复用理由见 `.edit-status.is-error`）。 */
+.preview-bar.is-stale {
+  color: var(--ui-text);
+  background: var(--ui-danger-bg);
+  border-bottom-color: var(--ui-danger-border);
+}
+
+/* ════════════════════════════════════════════════════════════════════
+ * 未保存修改的**决策条**（`design/0012` §6，「外部修改 + 有未保存内容」那张表）
+ *
+ * ⚠️ 它**不是**覆盖层：⛔ 不设遮罩、⛔ 不抢焦点、⛔ 不进 `Settings` 的覆盖层登记处
+ *    （那个登记处管的是"至多一层在屏幕上"，`INV-SET-07`）。它是一条**行内**的条子，
+ *    与 `.reload-bar` / `.preview-bar` 同族。
+ * ⚠️ 用警示那一族颜色（`--ui-danger-*`）是刻意的：这条出现时**磁盘上已经有一份
+ *    与用户屏幕上不同的内容**，而这一步的选择会决定哪一份被丢掉。
+ * ════════════════════════════════════════════════════════════════════ */
+#edit-prompt {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+  padding: 0.3em 0.75em;
+  font-size: 0.8em;
+  color: var(--ui-danger-text);
+  background: var(--ui-danger-bg);
+  border-bottom: var(--reader-rule-width) solid var(--ui-danger-border);
+}
+
+/* ⚠️ 特异性：(1,1,0) **必须**高过上面那条 (1,0,0)。
+   ⛔ 少了它，"没有待决问题"时那条红带子会**一直挂在顶上**。 */
+#edit-prompt[hidden] { display: none; }
+
+.edit-prompt-text {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ⚠️ 按钮**不许**换行掉到第二行：窗口一窄，两个按钮挤下去会让这一条
+   高度翻倍，于是顶栏在编辑态里抖一下（用户正在打字的时候抖）。 */
+.edit-prompt-actions {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 0.5em;
+  white-space: nowrap;
+}
+
+.edit-prompt-actions button {
+  font: inherit;
+  color: var(--ui-text);
+  background: var(--ui-bg-elevated);
+  border: var(--reader-rule-width) solid var(--ui-danger-border);
+  border-radius: var(--ui-radius);
+  padding: 1px 8px;
+  cursor: pointer;
+}
+
+.edit-prompt-actions button:hover { background: var(--ui-hover-bg); }
+
+/* ════════════════════════════════════════════════════════════════════
+ * 预览栏（`#doc` 在编辑态里的那一份）
+ *
+ * ⚠️ 阅读态那两条（`max-width` + `margin: 0 auto`）在这里**必须**让位：
+ *    预览栏只占窗口的一部分，再居中一次会得到"内容贴着栏中间、两侧空一大片"。
+ * ⛔ 但 `.doc` 的**内边距**（`style.css` 里那三条 `calc(--reader-font-size * …)`）
+ *    一个字都不动——那正是"预览就是现有阅读视图"这句话的落点。
+ * ════════════════════════════════════════════════════════════════════ */
+body.editing > .doc {
+  max-width: none;
+  margin: 0;
+  min-width: 0;
+  /* ⚠️ 预览栏自己滚（`design/0012` §2.6 说的"预览不跳"就是这一条的前提）。 */
+  overflow: auto;
+}

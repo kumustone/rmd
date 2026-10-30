@@ -1,0 +1,16 @@
+[package]
+name = "live-probe"
+version = "0.0.0"
+edition = "2024"
+publish = false
+description = "0047 候选原型探针：只出可运行证据，⛔ 不接入产品默认路径"
+
+[[bin]]
+name = "live-probe"
+path = "src/main.rs"
+
+[dependencies]
+# ⚠️ 必须与产品**逐字同版本**：sourcepos 的取值只有在同一份 comrak 下才可比。
+comrak = { version = "=0.56.0", default-features = false }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

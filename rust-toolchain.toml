@@ -1,0 +1,18 @@
+# rmd 的 Rust 工具链声明（`docs/design/0024` §10.3：评审 P2「工具链的机器可读声明」）。
+#
+# ⚠️ `channel = "stable"` 是**刻意的**，⛔ 不是漏写了版本号：
+#   1. 真正的下限（MSRV）写在 `src-tauri/Cargo.toml` 的 `rust-version = "1.89"` 里，
+#      那是 cargo 自己会强制执行的机器可读声明 —— 本文件不重复它、也不改写它。
+#   2. ⚠️ 本仓**没有在 1.89 上构建过**：本机 rustup 只装了 `stable`
+#      （实测 `rustc 1.98.1`）。在这里写 `channel = "1.89"` 会让每个构建者
+#      （含 CI）**强制下载一份从没被验证过的工具链** ⇒ 声明跑得比事实快。
+#   3. 写 `stable` 的实际作用：显式声明「跟 stable 走」，并让 rustup
+#      不被某个全局 `default` 指向的旧版本悄悄带偏。
+#   ⇒ ⛔ 别把本文件读成「支持 1.89 即可」；那是 `Cargo.toml` 的 MSRV 在管的事，
+#      而且 1.89 这一档**未测**（`BUILDING.md` 同样写着 1.89+ / 实测 1.98.1）。
+#
+# ⚠️ **不含 `components`**：CI 用 `dtolnay/rust-toolchain@stable`，本机也没装
+#    clippy / rustfmt 的额外组件 ⇒ 写进来等于给所有构建者加一次下载，
+#    而本仓库没有任何目标依赖它们（`make check` 是 `cargo check`）。
+[toolchain]
+channel = "stable"
