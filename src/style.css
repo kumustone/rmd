@@ -1,0 +1,679 @@
+/*
+ * rmd 前端样式 —— **布局与外壳**。
+ *
+ * # 三份样式表的分工（`design/0004` §3 / `design/0005` §3）
+ *
+ * | 文件 | 管什么 |
+ * |---|---|
+ * | `styles/tokens.css` | ⭐ **变量的唯一声明处**（颜色 + 尺度，两个命名空间） |
+ * | `styles/themes.css` | 只覆盖**颜色**（dark / warm） |
+ * | `styles/typography.css` | **正文排版规则**（只引用变量，⛔ 不写字面值） |
+ * | `styles/sidebar.css` | **界面外壳**（侧边栏 / 工具栏 / 树） |
+ * | 本文件 | **布局**：能不能滚、容器宽度、空态、图片占位、⭐ **滚动条** |
+ *
+ * ⛔⛔ **本文件里不许出现字面色值**（`INV-THEME-02`）——全走 `var(--ui-*)`。
+ *    这正是"主题"能成立的前提：写死一处，深色下那一处就永远是不可读的深色，
+ *    而浏览器**不会报错**。自动化防线：`make lint-theme`。
+ *
+ * 🗓 **2026-10-13 起不再是占位**：`design/0004` 与 `design/0005` 同日通过
+ *    （用户原话「**通过，开干**」，两份的 §9 记了裁定范围）。
+ *    此前本文件刻意"一个领域取值都不定"，那些 ⚠️ 占位注释已随本次替换。
+ */
+
+html, body {
+  margin: 0;
+  padding: 0;
+  /* ⚠️ 这两行是"能滚"的关键：WebView 里 html/body 的默认高度是 auto，
+     内容超出时**不产生滚动条**的情况很常见。 */
+  height: 100%;
+  overflow-y: auto;
+}
+
+body {
+  font-family: var(--reader-font-sans);
+  background: var(--ui-bg);
+  color: var(--ui-text);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+ * 顶栏：工具栏（主题 / 阅读设置）＋ 状态条
+ * ⚠️ 两条一起 sticky，⛔ 分开 sticky 会各自算 top，滚动时错位。
+ * ⚠️ `design/0004` §2.1.4：「切换：工具栏下拉」——主题控件住在这里。
+ * ════════════════════════════════════════════════════════════════════ */
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--ui-bg-elevated);
+  border-bottom: var(--reader-rule-width) solid var(--ui-border);
+}
+
+/* ⭐⭐ 2026-10-29（`bugs/0036`）：**界面外壳不参与文本选区**。
+   ⚠️ 没有这一条时，`⌘A` 的原生全选（`Menu::default` 自带的 `Select All`，走 AppKit，
+      ⛔ 不经过我们的任何一行 JS）会把侧边栏的文件名、顶栏的状态条**一起选进去**，
+      于是 `⌘C` 复制出来的东西里混着界面文字 —— 用户看到的是"全选选错了"。
+   ⚠️ 放 `user-select` 而不改 DOM：这**不改**任何布局与可访问性（元素照样可点、可聚焦、
+      AX 树不变），只是不让它们成为文本选区的边界。
+   ⚠️ 表单控件要**放回来**：侧边栏的改名框靠 `input.select()` 全选默认名，
+      搜索框里也要能拖选 —— `user-select: none` 会把它们一起禁掉。
+   ⛔ 范围只到外壳：`#doc`（正文）必须保持可选，那是这一条要保护的东西。 */
+
+/* ⚠️⚠️ **这条能力的代价单**（评审第 20 条，2026-10-29 列清）：
+   从此 `.topbar` 与 `.sidebar` 里的**全部文字**都不可选，逐个过一遍：
+
+   | 位置 | 用户会想复制吗 | 处置 |
+   |---|---|---|
+   | 侧边栏文件名 / 目录名 | 会（发给人、贴进终端） | ✅ 有**显式入口**：右键「复制路径」（`design/0035`），⛔ 不用拖选 |
+   | 状态条里的报错（常含路径） | 会 | ⚠️ **今天没有替代入口**——这是本条唯一的净损失，登记在此 |
+   | 工具栏文案 / 主题名 | 很少 | — |
+   | 阅读设置里的数字 | 否（有输入框，已放回 `text`） | — |
+   | 正文 `#doc` | 会 | ✅ 保持可选（这一条的**目的**） |
+
+   ⛔ 别为了"状态条能选"把整片放回来：原生 `⌘A` 走 AppKit、不经过任何 JS，
+   放回一处就等于把 `bugs/0036` 那个症状请回来。要做得对，得给状态条**单独**一个
+   「复制这条」的动作——那是产品决定，⛔ 不在这一条评审的范围内。 */
+.topbar,
+.sidebar {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.topbar input,
+.topbar textarea,
+.sidebar input,
+.sidebar textarea {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+  padding: 0 0.75em;
+  height: var(--ui-toolbar-height);
+  font-size: var(--ui-font-size);
+  color: var(--ui-text);
+  border-bottom: var(--reader-rule-width) solid var(--ui-border);
+}
+
+.toolbar-label {
+  color: var(--ui-text-muted);
+  font-size: 0.92em;
+}
+
+.toolbar-sep { flex: 1 1 auto; }
+
+.toolbar select,
+.toolbar button {
+  font: inherit;
+  color: var(--ui-text);
+  background: var(--ui-bg-elevated);
+  border: var(--reader-rule-width) solid var(--ui-border);
+  border-radius: var(--ui-radius);
+  padding: 2px 6px;
+  cursor: pointer;
+}
+
+.toolbar button:hover { background: var(--ui-hover-bg); }
+
+.toolbar button:focus-visible,
+.toolbar select:focus-visible {
+  outline: 2px solid var(--ui-accent);
+  outline-offset: 1px;
+}
+
+.toolbar .fs-val {
+  min-width: 3.2em;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  color: var(--ui-text-muted);
+}
+
+/* ⭐ 2026-10-20（用户点题）：Vim 模式的**显眼**快速开关（顶栏）。
+   ⚠️ 它看起来像一个按钮，行为是一个**复选框**——用户要的就是"能看见有没有打勾"，
+      所以⛔ 不要做成"按一下变个色"的普通按钮（那种形态看不出当前状态）。
+   ⚠️ `accent-color` 让勾选态跟着主题走（`INV-THEME-02`：⛔ 不写字面色值）。 */
+.toolbar-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35em;
+  padding: 2px 8px 2px 6px;
+  color: var(--ui-text);
+  background: var(--ui-bg-elevated);
+  border: var(--reader-rule-width) solid var(--ui-border);
+  border-radius: var(--ui-radius);
+  cursor: pointer;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.toolbar-toggle:hover { background: var(--ui-hover-bg); }
+
+.toolbar-toggle:focus-within {
+  outline: 2px solid var(--ui-accent);
+  outline-offset: 1px;
+}
+
+.toolbar-toggle input {
+  margin: 0;
+  accent-color: var(--ui-accent);
+  cursor: pointer;
+}
+
+/* 打开时整块也变一下（⛔ 只靠那个小方框太细，远看读不出来）。
+   ⚠️ `:has` 在 WKWebView（Safari 15.4+）可用；万一不支持就退化成"只有勾选框"，
+      ⛔ 不会坏，所以不额外加类名兜底。 */
+.toolbar-toggle:has(input:checked) {
+  background: var(--ui-hover-bg);
+  border-color: var(--ui-accent);
+}
+
+/* ⭐ `INV-THEME-06`：写盘失败要**可见**，⛔ 不许两边都静默。
+   用户以为设置存住了、实际下次启动回退——这是最难被归因的一类抱怨。 */
+.save-warn {
+  color: var(--ui-danger-text);
+  background: var(--ui-danger-bg);
+  border: var(--reader-rule-width) solid var(--ui-danger-border);
+  border-radius: var(--ui-radius);
+  padding: 1px 6px;
+  font-size: 0.92em;
+}
+
+/* —— 状态条 —— ⚠️ 仍是调试用的；它显示后端报回来的 T1/T2/T3 —— */
+.status {
+  padding: 0.35em 0.75em;
+  font-size: 0.78em;
+  font-family: var(--reader-font-mono);
+  background: var(--ui-bg-elevated);
+  color: var(--ui-text-muted);
+  /* 长路径要能省略，不能把页面撑宽 */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.status-error {
+  background: var(--ui-danger-bg);
+  color: var(--ui-danger-text);
+}
+
+/* ════════════════════════════════════════════════════════════════════
+ * ⭐ 顶栏折叠（`design/0037`，2026-10-23）
+ *
+ * 用户原话：「这一排的展示应该可以折叠，隐藏。」
+ * 折叠掉的是 **工具栏 ＋ 状态条** 两行，⛔ **不是整个 `.topbar`**——
+ * `#reload-bar` / `#preview-bar` / `#edit-prompt` 都在 `.topbar` 里，
+ * 它们承担的是「降级必须显式告知」（`INV-EXT-04`）与「陈旧必须始终可见」
+ * （`INV-EDIT-11`），折叠不许把它们一起吞掉。
+ * ⚠️ 所以这里**逐条点名** `.toolbar` 与 `.status`，⛔ 别图省事写 `body.chrome-hidden .topbar`。
+ *
+ * ⚠️ 抓手的显隐也只走 CSS（⛔ 不用 `hidden` 属性，理由见 `index.html` 那段）。
+ * ⚠️ 色值一律走语义变量（`INV-THEME-02`）；尺度是常量（`INV-THEME-04`：主题不改尺度）。
+ * ════════════════════════════════════════════════════════════════════ */
+body.chrome-hidden .toolbar,
+body.chrome-hidden .status { display: none; }
+
+/* 折叠后的抓手：一条 6 px 的横条，中间一道短杠。
+   ⚠️ 它只有折叠时才占位——未折叠时 `display: none`，⛔ 不占 6 px。 */
+.chrome-grip {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 6px;
+  padding: 0;
+  border: 0;
+  background: var(--ui-bg-elevated);
+  cursor: pointer;
+}
+
+body.chrome-hidden .chrome-grip { display: flex; }
+
+.chrome-grip:hover { background: var(--ui-hover-bg); }
+
+.chrome-grip:focus-visible {
+  outline: 2px solid var(--ui-accent);
+  outline-offset: -2px;
+}
+
+.chrome-grip-mark {
+  display: block;
+  width: 28px;
+  height: 2px;
+  border-radius: 999px;
+  /* ⚠️ 半透明走 `color-mix`，⛔ 不写字面色值、⛔ 不新增契约变量（`lint-theme` 的两条闸门）。 */
+  background: color-mix(in srgb, var(--ui-text-muted) 45%, transparent);
+}
+
+.chrome-grip:hover .chrome-grip-mark { background: var(--ui-accent); }
+
+/* 工具栏右端那个「收起顶栏」按钮。⚠️ 编辑态不出现（见 `index.html` 那段注释）。 */
+.chrome-btn { padding: 2px 8px; line-height: 1; }
+
+body.editing .chrome-btn { display: none; }
+
+/* ⭐ 自动重载提示条（`design/0006` §2.1 ④ / `INV-EXT-04`）。
+   ⚠️ 它**不是**一个可关闭的浮层，也不需要新的颜色：
+     用现有的 `--ui-bg-elevated` / `--ui-border` / `--ui-accent` 就够——
+     新增一族的代价是**三套主题各要配一遍**（`themes.css` 的 53 个必须变量那笔账）。
+   ⚠️ 它的 height 由内容撑开，⛔ 不写死：否则中文字符串一长就被截成半行。 */
+.reload-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+  padding: 0.3em 0.75em;
+  font-size: 0.8em;
+  background: var(--ui-bg-elevated);
+  border-bottom: var(--reader-rule-width) solid var(--ui-border);
+  color: var(--ui-text-muted);
+}
+
+.reload-text {
+  flex: 1 1 auto;
+  /* ⚠️ 路径可能很长，撑宽页面比截断更糟 */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reload-btn {
+  flex: 0 0 auto;
+  font: inherit;
+  color: var(--ui-accent);
+  background: transparent;
+  border: var(--reader-rule-width) solid var(--ui-border);
+  border-radius: var(--ui-radius);
+  padding: 1px 8px;
+  cursor: pointer;
+}
+
+.reload-btn:hover {
+  background: var(--ui-hover-bg);
+}
+
+/* ⭐ 目录监视降级提示（`design/0050` §2.3.4 / `INV-DISK-06`，2026-10-27）。
+   ⚠️ 与上面那条 `.reload-bar` 同族：**降级必须显式告知，⛔ 不许静默**。
+      它单独是一行，⛔ 不与自动重载那条共用——两者的"出路"不同
+      （那边是"立即重载一次"，这边是"重新监视一条管道"）。
+   ⚠️ 它**不在** `body.chrome-hidden` 的点名里（那条只点 `.toolbar` / `.status`，
+      `INV-CHROME-01`）⇒ 顶栏折叠时它照样可见：降级不是装饰。
+   ⚠️ 颜色只走语义变量、⛔ 不新增契约变量（`INV-THEME-02`，`make lint-theme` 两个闸门）。 */
+.disk-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+  padding: 0.3em 0.75em;
+  font-size: 0.8em;
+  background: var(--ui-bg-elevated);
+  border-bottom: var(--reader-rule-width) solid var(--ui-border);
+  color: var(--ui-text-muted);
+}
+
+/* ⚠️ `[hidden]` 必须显式写：UA 的 `[hidden] { display: none }` 是一条**元素选择器**
+   （0,0,1），压不住上面 `.disk-bar { display: flex }`（0,1,0）——不写这条，
+   `hidden` 属性等于没写（`image-viewer.css` / `edit-prompt` 同款坑）。 */
+.disk-bar[hidden] { display: none; }
+
+/* 持久档（真坏了）vs 临时档（`rescan`，自己会好）：只换字色，⛔ 不加新变量。 */
+.disk-bar-warn .disk-text { color: var(--ui-danger-text); }
+
+.disk-text {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.disk-btn {
+  flex: 0 0 auto;
+  font: inherit;
+  color: var(--ui-accent);
+  background: transparent;
+  border: var(--reader-rule-width) solid var(--ui-border);
+  border-radius: var(--ui-radius);
+  padding: 1px 8px;
+  cursor: pointer;
+}
+
+.disk-btn:hover { background: var(--ui-hover-bg); }
+
+/* ════════════════════════════════════════════════════════════════════
+ * 正文容器
+ *
+ * ⚠️ 内容宽度 = A4 的结论「**铺满 + 一个宽松上限**」（默认 1200px）。
+ *    「铺满」不是"没有上限"——超宽屏上行宽过长会明显掉可读性，
+ *    所以这里是一个**宽松**的上限，而不是一条固定的窄栏。
+ *    ⚠️ 这是评审时明说的**折中方案**，⛔ 不是"跟基准"（基准是裸 `none`）。
+ * ⛔ 字号/行高/颜色**不在这里**——那是 `typography.css` 的事。
+ * ════════════════════════════════════════════════════════════════════ */
+.doc {
+  max-width: var(--reader-content-width);
+  margin: 0 auto;
+  padding: calc(var(--reader-font-size) * 1.5) calc(var(--reader-font-size) * 1.5)
+           calc(var(--reader-font-size) * 4);
+}
+
+/* 正文区空态（打开目录但还没选文件时）。⛔ 不自动打开第一个文件（`0003` §2.1）。 */
+.doc-empty {
+  padding: 2em 0;
+  color: var(--ui-text-muted);
+  font-size: 0.95em;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+ * 启动页 —— `#doc` 空态里的「最近的目录」表（`design/0038` §2.1 ②）
+ *
+ * ⚠️ 它只在 `.doc-empty` 里（`INV-START-01`）：有正文时 `.start` **不存在**。
+ * ⚠️ 全部颜色走语义变量（`INV-THEME-02`，`make lint-theme` 盯着）；
+ *    尺度是固定值（`INV-THEME-04`：主题只改颜色）。
+ * ⚠️ 行是 `<button>`（原生可聚焦 + `Enter` 原生触发），所以这里要把 UA 的
+ *    按钮外观**整个压掉**（背景 / 边框 / 字体 / 对齐），否则三套主题下都是系统灰。
+ * ════════════════════════════════════════════════════════════════════ */
+.doc-empty-text {
+  margin: 0;
+}
+
+.start {
+  /* ⚠️ 与上面那句提示语之间留白；⛔ 不用 `margin` 简写（会顺手清掉别处的值）。 */
+  margin-top: 1.8em;
+  max-width: 46em;
+}
+
+.start-title {
+  margin: 0 0 0.6em;
+  color: var(--ui-text-muted);
+  font-size: 0.85em;
+  letter-spacing: 0.04em;
+}
+
+.start-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.start-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.7em;
+  width: 100%;
+  padding: 0.45em 0.6em;
+  border: 1px solid transparent;
+  border-radius: var(--ui-radius);
+  background: transparent;
+  color: var(--ui-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.start-row:hover,
+.start-row:focus-visible {
+  background: var(--ui-hover-bg);
+  border-color: var(--ui-border);
+  outline: none;
+}
+
+/* ⭐ 数字 = 键盘映射（`1`–`9`）。⚠️ 前 9 行才有这一格（第 10 行没有键）。 */
+.start-num {
+  flex: 0 0 1.6em;
+  color: var(--ui-text-muted);
+  font-family: var(--reader-font-mono);
+  font-size: 0.85em;
+  text-align: right;
+}
+
+.start-name {
+  flex: 0 0 auto;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.start-path {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--ui-text-muted);
+  font-size: 0.85em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 上次读的文件名：跟在路径后面，用竖线隔开（⛔ 不另起一行——行高会跳）。 */
+.start-file {
+  flex: 0 1 auto;
+  max-width: 38%;
+  padding-left: 0.7em;
+  border-left: 1px solid var(--ui-border);
+  color: var(--ui-text-muted);
+  font-size: 0.85em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 「上次打开」标记（`last_directory` 那一条）。⚠️ 只有一行有。 */
+.start-last {
+  flex: 0 0 auto;
+  padding: 0 0.4em;
+  border-radius: var(--ui-radius);
+  background: var(--ui-hover-bg);
+  color: var(--ui-text-muted);
+  font-size: 0.75em;
+  white-space: nowrap;
+}
+
+/* ⭐ `INV-START-07`：打不开的目录**必须看得出来**（配上状态条那一句）。 */
+.start-row[data-missing='1'] {
+  color: var(--ui-danger-text);
+  cursor: default;
+}
+
+.start-row[data-missing='1'] .start-name,
+.start-row[data-missing='1'] .start-path,
+.start-row[data-missing='1'] .start-file,
+.start-row[data-missing='1'] .start-num {
+  color: var(--ui-danger-text);
+}
+
+/* 一次点击在路上：⛔ 不许再点（双触发会让代次 +2、树重挂两次）。 */
+.start-row[data-busy='1'] {
+  pointer-events: none;
+  opacity: 0.6;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+ * 启动页 · 收藏段、行菜单与「清空」（`design/0043` §2.6 / `design/0045`）
+ *
+ * ⚠️ 收藏段与最近表**共用** `.start-list` / `.start-row` / `.start-name` /
+ *    `.start-path` / `[data-missing]` / `[data-busy]` 那一整套——这里只补四件
+ *    它没有的东西：段间距、段标题右边那个「清空」、以及那一层菜单
+ *    （⛔ 不复用 `.tree-menu`：它属于侧边栏那张表，两处样式表分层不同）。
+ * ⭐ `0045` 起**收藏在前、最近在后**（用户 2026-10-25 点题）⇒ 段间距只加在
+ *    "后面那一段"上（`.start-list + .start-head`），⛔ 别再给 `.start-fav-title` 加。
+ * ⚠️ 全部颜色走语义变量（`INV-THEME-02`）、尺度是固定值（`INV-THEME-04`）。
+ * ════════════════════════════════════════════════════════════════════ */
+
+/* 最近段那一行的标题 ＋「清空」。⚠️ 标题是 `<p>`、清空是 `<button>`。 */
+.start-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.6em;
+  /* ⚠️ 标题自己那 0.6em 下边距挪到这里：留着会让按钮把这一行顶高一截。 */
+  margin-bottom: 0.6em;
+}
+
+.start-head .start-title {
+  margin: 0;
+}
+
+/* 两段之间：收藏那段列表之后、最近段标题之前。 */
+.start > .start-list + .start-head {
+  margin-top: 1.6em;
+}
+
+/* ⭐ `design/0045`（隐私）：段标题右边那个「清空」。
+   ⚠️ 它是 `<button>` ⇒ 必须把 UA 外观压掉，否则三套主题下都是系统灰。 */
+.start-clear {
+  flex: 0 0 auto;
+  padding: 0.15em 0.55em;
+  border: 1px solid transparent;
+  border-radius: var(--ui-radius);
+  background: transparent;
+  color: var(--ui-text-muted);
+  font: inherit;
+  font-size: 0.8em;
+  cursor: pointer;
+}
+
+.start-clear:hover,
+.start-clear:focus-visible {
+  background: var(--ui-hover-bg);
+  border-color: var(--ui-border);
+  color: var(--ui-text);
+  outline: none;
+}
+
+/* ⭐ 第一下之后按钮就是"确认"那一格：3 s 内再点才真清空
+   （判据 `start.js::clearConfirm`；超时由 `StartScreen` 摘掉这个标记）。 */
+.start-clear[data-armed='1'] {
+  border-color: var(--ui-danger-text);
+  color: var(--ui-danger-text);
+}
+
+/* `Shift+F10` / 右键打开的那一层（⛔ 不是原生菜单：探针要能读到它）。 */
+.start-menu {
+  position: fixed;
+  z-index: 30;
+  min-width: 148px;
+  padding: 4px;
+  border: var(--reader-rule-width) solid var(--ui-border);
+  border-radius: var(--ui-radius);
+  background: var(--ui-bg-elevated);
+  color: var(--ui-text);
+  font-size: var(--ui-font-size);
+}
+
+.start-menu-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  line-height: var(--ui-row-height);
+  padding: 2px 8px;
+  border-radius: var(--ui-radius);
+  cursor: pointer;
+}
+
+.start-menu-item:hover:not(.disabled) { background: var(--ui-hover-bg); }
+
+.start-menu-item:focus-visible {
+  outline: 2px solid var(--ui-accent);
+  outline-offset: -2px;
+}
+
+.start-menu-item.disabled { color: var(--ui-text-muted); cursor: default; }
+
+
+/* ════════════════════════════════════════════════════════════════════
+ * 正文里的图片占位（`design/0003` §2.1.4 + §7 步骤 18）
+ * ⛔ **绝不静默破图**：用户会把"我们的安全策略"当成 bug。
+ *    （远程图 / 未授权 / 缺失三种情形都会渲染成它，`ImageView.js`。）
+ * ════════════════════════════════════════════════════════════════════ */
+.img-placeholder {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.3em;
+  border: var(--reader-rule-width) dashed var(--ui-border);
+  border-radius: var(--ui-radius);
+  padding: 0.4em 0.6em;
+  font-size: 0.85em;
+  color: var(--ui-text-muted);
+  max-width: 100%;
+}
+
+.img-placeholder-text { word-break: break-all; }
+
+/* ════════════════════════════════════════════════════════════════════
+ * 滚动条 —— ⭐ 2026-10-16（用户：「滚动条和分割线，搞得小一点，干扰视线」）
+ *
+ * # 之前为什么是"又粗又深"的一条
+ *
+ * 全仓**此前一处 `::-webkit-scrollbar` 都没有**（`grep` 实测），
+ * 所以渲染的是 **WKWebView 的默认滚动条**：15px 宽、拇指是一块**不透明**的深灰。
+ * ⚠️ 编辑态把它推到了最刺眼的位置——源码栏自己滚（`editor.css` 文件头那张表），
+ * 于是它就贴在**分栏边界**上，与分隔线叠在一起看。
+ *
+ * # 两家产品怎么做的（一手材料，采集方式见 `docs/research/notes/0017`）
+ *
+ * | | 轨道宽 | 拇指（静止） | 拇指（hover/active） |
+ * |---|---|---|---|
+ * | **Typora** 1.x | 12px | `rgba(0,0,0,.3)` ＋ `border-left:4px solid transparent` ＋ `background-clip:padding-box` ⇒ **看得见只有 8px** | `border-left:0` ⇒ 长回 12px |
+ * | **VS Code**（自带 workbench CSS） | 轨道**全透明** | `.slider:before { inset: …; border-radius: circle }`，颜色走主题变量 | 只换颜色 |
+ *
+ * ⭐ **两家的共识**：① 拇指是**半透明**的（不是一块实色）；② 静止时**比轨道窄**；
+ *   ③ 轨道本身**没有底色**。下面是同一条思路，只是用本仓的语义变量表达。
+ *
+ * # ⛔ 两条实现纪律
+ *
+ * ① **颜色只能来自语义变量**（`INV-THEME-02`）。拇指要半透明，用
+ *    `color-mix(… , transparent)` **由 `--ui-text-muted` 现算**——
+ *    ⛔ **不是**给契约加第 58/59 个变量（那要三套主题各配一遍），
+ *    ⛔ 也**不是**写死 `rgba(0,0,0,.3)`（那在深色下是一条黑拇指压在深底上，看不见）。
+ *    ⚠️ 这与 `settings.css` 的 `.settings-scrim`（"token + `opacity`"）**同一个意图**：
+ *    那边能这么写是因为它是个**盒子**；`::-webkit-scrollbar-thumb` 是伪元素，
+ *    盒子级的 `opacity` 在这些伪元素上**没有规范保证**，所以这里改用**颜色函数**。
+ *    ✅ `color-mix()` 需要 Safari 16.2+；⚠️ 本仓**已经**在 `find.css` 里用了
+ *    `::highlight()`（Safari 17.2+）⇒ 这条依赖**不构成新的最低版本要求**。
+ * ② ⚠️ 改拇指颜色**必须用 `background-color`**，⛔ 不能用 `background` 简写——
+ *    简写会把 `background-clip` 复位成 `border-box`，"看得见的那条 = 整条轨道宽"，
+ *    表现是**hover 一下拇指反而变粗**（正是要消灭的那个观感）。
+ *
+ * # 尺度
+ *
+ * 轨道 12px（外壳尺度，**固定 px**，不跟阅读字号——B6），拇指靠 3px 透明边框 + `padding-box`
+ * ⇒ **看得见 6px**，命中区仍是**整条 12px**——与 `.resizer` / `.editor-splitter` 同一条纪律
+ * 「**看得见的那条线不该等于能抓住的区域**」。
+ * ⚠️ 用 `::-webkit-scrollbar`（**经典**滚动条）而**不是** `scrollbar-width`：
+ *    后者在 WebKit 上不被支持，且它**给不了**圆角拇指。
+ * ⚠️ 它是**全局**的（含阅读态）：只改编辑态会让同一个程序里出现两种滚动条。
+ * ════════════════════════════════════════════════════════════════════ */
+::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+  /* 轨道不上色：两家的共识 ③。⚠️ `transparent` 是**关键字**，不是字面色值。 */
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  /* ⚠️ 只写 background-color（见上文纪律 ②）。 */
+  /* ⭐ 2026-10-21（开源准备）：先给一条**不支持 `color-mix` 时的回退**。
+     没有它时，Safari < 16.2 会把上面那行当无效声明丢掉 ⇒ 拇指**没有底色**，
+     表现是"滚动条消失了"（轨道本来就不上色），而**浏览器不报错**。
+     回退用的是同一个语义变量的**实色**：只是不半透明，仍然跟主题走。 */
+  background-color: var(--ui-text-muted);
+  background-color: color-mix(in srgb, var(--ui-text-muted) 40%, transparent);
+  /* 这四行合起来 = "可见宽度 6px、可抓宽度 12px"。 */
+  border: 3px solid transparent;
+  background-clip: padding-box;
+  border-radius: 999px;
+  /* ⚠️ 与 Typora 的 `min-height:42px` 同族：长文档下拇指不该缩成一个小点。 */
+  min-height: 40px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: color-mix(in srgb, var(--ui-text-muted) 62%, transparent);
+}
+
+::-webkit-scrollbar-thumb:active {
+  background-color: color-mix(in srgb, var(--ui-text) 72%, transparent);
+}
+
+/* 两轴相交处那个小方块：默认会画成一格底色，⛔ 与"轨道不上色"矛盾。 */
+::-webkit-scrollbar-corner { background: transparent; }

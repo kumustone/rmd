@@ -1,0 +1,182 @@
+/*
+ * 正文渲染增强的样式 —— `design/0007-正文渲染增强.md`（已通过 2026-10-14）。
+ *
+ * # 这个文件只管三件事
+ *
+ *   1. **代码高亮的 token 色**（`.rmd-*`）—— `syntect` 的 class-only 输出，
+ *      类名是 **scope 路径展开**：`storage.type.function.rust` 会同时带上
+ *      `rmd-storage rmd-type rmd-function rmd-rust` 四个类。
+ *      ⚠️ 所以**规则顺序就是优先级**（同一个元素上四个类的特异性相同，
+ *      后写的规则赢）——⛔ 不是"类名越靠后越优先"，那是另一回事。
+ *   2. **公式回退态的观感**（`.rmd-math-*`）。
+ *   3. **图表外壳与缩放**（`.rmd-diagram`）。
+ *
+ * ⛔ **不出现字面色值**（`INV-THEME-02`）：色值只来自
+ *    `--reader-hl-*` / `--reader-math-*` / `--reader-diag-*`，
+ *    定义在 `tokens.css`（light）与 `themes.css`（dark / warm）。
+ *    `make lint-theme` 闸门 ① 查的就是这一条。
+ *
+ * ⚠️ **为什么每条规则都写成 `.doc .rmd-…`，而不是裸 `.rmd-…`**：
+ *    `typography.css` 里有一条 `.doc pre code { color: … }`（特异性 0,1,2）；
+ *    裸类名（0,1,0）**压不过它** ⇒ token 色会被块级底字色整片盖掉，
+ *    表现是"高亮看起来没生效"而控制台一声不响。加一层 `.doc`（0,2,0）就够，
+ *    ⛔ 不需要 `!important`——那会让后来的规则再也改不动。
+ *
+ * ⚠️ **代码块的底色 / 底字仍归 `0004`**（`--reader-block-code-*`，
+ *    规则在 `typography.css`）——本文件只管**块内那些 token**。
+ *
+ * ⚠️ **块底的明暗随主题走（2026-10-14 起，用户裁定）**：
+ *    `dark` 是**深底 + 浅色 token**，`light` / `warm` 是**浅底 + 深色 token**。
+ *    ⇒ `--reader-hl-*` **有两套**，⛔ **不能互抄**——深底那套落在浅底上，
+ *    整族最高才 3.24 : 1、最低 **1.63 : 1**（`--reader-hl-type`），等于看不见。
+ *    ⭐ 本文件里的规则**一条都不改**：它只引用变量，换的是变量值。
+ */
+
+/* ════════════════════════════════════════════════════════════════════
+ * 1. 代码高亮
+ *
+ * ⚠️ 顺序敏感（见文件头）：容器 → 通用族 → 细分族 → 关键词收口。
+ * ⛔ 未列出的 scope **自然后落**到 `--reader-block-code-text`
+ *    （`typography.css` 的 `.doc pre code`）——那是正确的兜底，
+ *    比"给未知 scope 随便配个颜色"稳。
+ * ════════════════════════════════════════════════════════════════════ */
+
+/* 容器族：本身不该有颜色，让子 span 各自上色。 */
+.doc .rmd-meta {
+  color: inherit;
+}
+
+.doc .rmd-comment {
+  color: var(--reader-hl-comment);
+}
+
+.doc .rmd-punctuation {
+  color: var(--reader-hl-punctuation);
+}
+
+.doc .rmd-operator {
+  color: var(--reader-hl-operator);
+}
+
+.doc .rmd-constant {
+  color: var(--reader-hl-number);
+}
+
+/* ⚠️ `string` 放在 `punctuation` 之后：字符串里的引号同时带
+   `rmd-punctuation rmd-definition rmd-string rmd-begin`，
+   按"整串一个颜色"更好看（这也是多数编辑器的做法）。 */
+.doc .rmd-string {
+  color: var(--reader-hl-string);
+}
+
+.doc .rmd-function {
+  color: var(--reader-hl-function);
+}
+
+/* ⭐ 细分族：generic 在前、具体在后。 */
+.doc .rmd-entity {
+  color: var(--reader-hl-function);
+}
+
+.doc .rmd-entity.rmd-name.rmd-type,
+.doc .rmd-entity.rmd-name.rmd-class {
+  color: var(--reader-hl-type);
+}
+
+.doc .rmd-entity.rmd-name.rmd-tag {
+  color: var(--reader-hl-tag);
+}
+
+.doc .rmd-entity.rmd-other.rmd-attribute-name {
+  color: var(--reader-hl-attr);
+}
+
+.doc .rmd-support {
+  color: var(--reader-hl-macro);
+}
+
+.doc .rmd-variable {
+  color: var(--reader-hl-variable);
+}
+
+/* ⚠️ `storage` 与 `keyword` 同一色系。顺序上 `keyword` 收口在后：
+   `fn` 这类同时带 `rmd-storage rmd-type rmd-function`，
+   我们希望它读成**关键字**，⛔ 不是函数名。 */
+.doc .rmd-storage,
+.doc .rmd-keyword {
+  color: var(--reader-hl-keyword);
+}
+
+/* ⭐ 收口：`invalid` / `illegal` / `deprecated` 永远最后，任何族都不该盖过它。 */
+.doc .rmd-invalid,
+.doc .rmd-illegal,
+.doc .rmd-deprecated {
+  color: var(--reader-hl-invalid);
+}
+
+/* ════════════════════════════════════════════════════════════════════
+ * 2. 公式
+ *
+ * ⚠️ **渲染成功的那些一个字都不碰**：MathML 只带结构不带样式
+ *    （`kb/0013` §1.1 实测"零 CSS 零字体"），颜色从 `currentColor` 继承，
+ *    所以它**自动跟着主题走**——这正是我们要的，⛔ 不要给它定色。
+ *
+ * ⭐ 下面四条全是**回退态**（解析失败 / 空公式 / 超尺寸 / 累计触顶）。
+ *    四者共用一个底（`.rmd-math-source`），只有 error 那一支换个描边色。
+ * ════════════════════════════════════════════════════════════════════ */
+
+.doc .rmd-math-source {
+  color: var(--reader-math-source-text);
+  background: var(--reader-math-source-bg);
+  border: 1px solid var(--reader-math-source-border);
+  border-radius: var(--reader-code-radius);
+  font-family: var(--reader-font-mono);
+  font-size: var(--reader-size-small);
+}
+
+/* 块级回退是一整块，给点内边距；行内的只描个边。 */
+.doc div.rmd-math-source {
+  padding: 0.5em 0.75em;
+  overflow-x: auto;
+}
+
+.doc span.rmd-math-source {
+  padding: 0.1em 0.35em;
+  /* ⚠️ 长公式不要撑破行：行内元素不能 `overflow-x`，只能允许换行。 */
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* ⭐ 只有"解析失败"这一支换描边色——它与另外三种"故意不渲染"不是一回事：
+   那三种是**尺寸策略**，这一种是**作者写错了**，值得在视觉上区分。 */
+.doc .rmd-math-error {
+  border-color: var(--reader-math-error-accent);
+}
+
+/* ⚠️ 块级公式的**溢出**兜底（`wrap()` 外面那层 div）：长公式横向撑破内容宽时，
+   给它一条自己的滚动条，⛔ 不让它把整篇正文顶宽。 */
+.doc .rmd-math-display {
+  overflow-x: auto;
+  text-align: center;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+ * 3. 图表
+ *
+ * ⚠️ `flowmaid` 输出的 `<svg>` 带**固定的 `width` / `height` 属性**
+ *    （它对内容自适应，没考虑容器宽度）。⛔ 不改那两个属性——
+ *    用 CSS 的 `max-width` 压住即可：SVG 会按比例缩放。
+ *    ⚠️ 漏掉这条的表现是**整篇正文被横向顶宽**（一个 289px 宽的图
+ *    在窄窗口里就能干这事），而不是"图变小了"。
+ * ════════════════════════════════════════════════════════════════════ */
+
+.doc .rmd-diagram {
+  margin: var(--reader-gap-block) 0;
+  overflow-x: auto;
+  text-align: center;
+}
+
+.doc .rmd-diagram svg {
+  max-width: 100%;
+  height: auto;
+}

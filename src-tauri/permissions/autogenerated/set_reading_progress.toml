@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-set-reading-progress"
+description = "Enables the set_reading_progress command without any pre-configured scope."
+commands.allow = ["set_reading_progress"]
+
+[[permission]]
+identifier = "deny-set-reading-progress"
+description = "Denies the set_reading_progress command without any pre-configured scope."
+commands.deny = ["set_reading_progress"]

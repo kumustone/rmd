@@ -1,0 +1,687 @@
+/*
+ * 界面外壳（侧边栏 / 工具栏的控件 / 树）—— 结构来自 `design/0003` §2.1.1，
+ * 尺度与形态来自 `design/0004` §9.1 的 **B6–B13**（2026-10-13 已通过）。
+ *
+ * # 收录了什么、为什么
+ *
+ * 结构那四条（`0003` §2.1.1）**不是审美，是功能前提**，⛔ 改之前先读：
+ *   1. 两栏布局，宽度由 `--sidebar-width` 驱动（取值来自后端配置）
+ *   2. ⭐ 收起用**位移**（`left:-30000px` + `transition`），⛔ 不用 `display:none`
+ *      —— ① `display` 不可过渡，收起会"啪"地消失；
+ *         ② `display:none` 后元素脱离布局，**树的 `scrollTop` 归零**。
+ *      ⛔ 原设计写的"展开状态也会丢"**是错的**：展开状态在 `FileTree.expanded`（数据层）。
+ *   3. ⭐ `contain:strict`：元素虽移出视口**仍在布局树里**。它是位移隐藏的**必要配套**。
+ *   4. ⭐ 收起后 `inert` 由 JS 在 `transitionend` 里设（`INV-TREE-02`）：
+ *      位移的元素**仍在 DOM 且仍可聚焦**，`Tab` 会进一个看不见的侧边栏。
+ *
+ * # ⭐ B6：外壳尺度**不跟随阅读字号**
+ *
+ * 用户把正文字号调到 24px 时，侧边栏的行高**不该**变成 33px——
+ * 外壳是工具，正文才是内容。所以下面全走 `--ui-*`（固定 px，见 `tokens.css`），
+ * ⛔ **一处都不要写 `--reader-*`**。
+ *
+ * ⛔ **不许出现字面色值**（`INV-THEME-02`）：全走 `var(--ui-*)`。
+ *    本文件此前满是"占位色"——那正是"树太丑"的一部分原因，现已替换。
+ */
+
+/* ⚠️ 初值只是"打开 CSS 之前别塌成 0 宽"的兜底；
+   真正的值由后端配置在启动时写进来（前端 `Sidebar.applyWidth`）。 */
+:root {
+  --sidebar-width: 280px;
+}
+
+.sidebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: var(--sidebar-width);
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  /* ⭐ 第 2 条：让浏览器知道侧边栏内部重排不外溢。
+     上千节点时近乎免费——与本设计"不做虚拟列表"是配套的。 */
+  contain: strict;
+  background: var(--ui-bg-elevated);
+  color: var(--ui-text);
+  font-family: var(--reader-font-sans);
+  font-size: var(--ui-font-size);
+  border-right: var(--reader-rule-width) solid var(--ui-border);
+  /* ⚠️ `visibility` 与 `left` 同一条 transition：展开时 0 延迟（立刻可见），
+     收起时延迟到动画结束（过渡期仍可见）。这就是"延迟切换"。 */
+  transition: left 0.18s ease, visibility 0s linear 0s;
+  visibility: visible;
+}
+
+.sidebar.collapsed {
+  left: -30000px;
+  visibility: hidden;
+  transition: left 0.18s ease, visibility 0s linear 0.18s;
+}
+
+/* 正文整体让开侧边栏的宽度。⚠️ 用 `padding-left` 而不是 `margin-left`：
+   正文容器自己有 `margin: 0 auto`（`style.css`），两者的盒模型不冲突。 */
+body {
+  padding-left: var(--sidebar-width);
+  transition: padding-left 0.18s ease;
+}
+
+body.sidebar-collapsed { padding-left: 0; }
+
+/* ════════════════════════════════════════════════════════════════════
+ * 顶部两个 tab + 收起按钮（§2.1：切换控件放侧边栏顶部，⛔ 不额外占工具栏）
+ * ════════════════════════════════════════════════════════════════════ */
+.tabs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 4px;
+  height: var(--ui-toolbar-height);
+  border-bottom: var(--reader-rule-width) solid var(--ui-border);
+  flex: 0 0 auto;
+}
+
+.tab {
+  border: 0;
+  background: transparent;
+  padding: 3px 8px;
+  cursor: pointer;
+  font: inherit;
+  color: var(--ui-text-muted);
+  border-radius: var(--ui-radius);
+}
+
+.tab:hover { background: var(--ui-hover-bg); }
+
+.tab.active {
+  background: var(--ui-selected-bg);
+  color: var(--ui-accent);
+  font-weight: 600;
+}
+
+/* ⭐ B13：键盘焦点态。⚠️ 它**与"当前项"是两件事**——
+   当前项是"正文正在显示哪份文件"，焦点是"键盘现在停在哪一行"。
+   两家（Typora / VS Code）都把这两个态分开，而 rmd 此前只有 `.current`。 */
+.tab:focus-visible,
+.icon-btn:focus-visible,
+.btn:focus-visible,
+.expand-btn:focus-visible {
+  outline: 2px solid var(--ui-accent);
+  outline-offset: -1px;
+}
+
+.tab-spacer { flex: 1 1 auto; }
+
+.icon-btn {
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  color: var(--ui-text-muted);
+  padding: 2px 6px;
+  border-radius: var(--ui-radius);
+  line-height: 1;
+}
+
+.icon-btn:hover { background: var(--ui-hover-bg); color: var(--ui-text); }
+
+/* ════════════════════════════════════════════════════════════════════
+ * 两个面板
+ * ════════════════════════════════════════════════════════════════════ */
+.pane {
+  flex: 1 1 auto;
+  overflow: auto;
+  padding: 4px 0 12px;
+  /* ⚠️ 一个 tab 停靠点：行本身是 `tabindex="-1"`，靠方向键在行之间移动
+     （roving focus）。⛔ 不给每行 `tabindex="0"`——
+     5000 项的目录会变成 5000 个 Tab 停靠点，键盘用户只能一格一格爬出去。 */
+  outline-offset: -2px;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+ * ⭐ 根头（`design/0044` §2.1）——「不可折叠的当前目录那一行」
+ *
+ * ⚠️ 它与原树是**两个 host**（`.tree-root-wrap > #tree-root-header + #tree-host`）：
+ *    树刷新时 `textContent=''` 只清得到后者。所以这里⛔ 不给 `.tree-root-wrap`
+ *    任何影响布局的假设（不加 `position: relative`、不加 `overflow`）。
+ * ⚠️ 左内边距多留一个箭头位，名字才与**顶层树行**对齐（顶层行里那个
+ *    `visibility:hidden` 的 `.twisty` 是占位的）。
+ * ════════════════════════════════════════════════════════════════════ */
+.tree-root-header {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-icon-gap);
+  padding: calc(var(--ui-row-pad-top) / 2) var(--ui-pane-pad-x);
+  padding-left: calc(var(--ui-pane-pad-x) + var(--ui-twisty-width));
+  line-height: var(--ui-row-height);
+  white-space: nowrap;
+  border-radius: var(--ui-radius);
+  color: var(--ui-text);
+  font-weight: 600;
+  /* ⚠️ 它是**可聚焦**的（`tabindex="0"`，菜单键要用），但⛔ 不抢焦点：
+     焦点只在用户 Tab / 方向键走到它时才来。 */
+  outline-offset: -2px;
+  cursor: default;
+}
+
+.tree-root-header[hidden] { display: none; }
+
+.tree-root-header:hover { background: var(--ui-hover-bg); }
+
+.tree-root-header:focus-visible {
+  outline: 2px solid var(--ui-accent);
+  outline-offset: -2px;
+}
+
+.tree-root-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ⭐ `⋯` 按钮：常显（与 B7 的箭头同一条理由——可发现性），⛔ 不只在 hover 时出现 */
+.tree-root-more {
+  margin-left: auto;
+  flex: 0 0 auto;
+  border: 0;
+  background: transparent;
+  color: var(--ui-text-muted);
+  font: inherit;
+  line-height: 1;
+  padding: 0 4px;
+  border-radius: var(--ui-radius);
+  cursor: pointer;
+}
+
+.tree-root-more:hover { background: var(--ui-hover-bg); color: var(--ui-text); }
+
+.tree-root-more:focus-visible {
+  outline: 2px solid var(--ui-accent);
+  outline-offset: -2px;
+}
+
+#pane-toc .toc-item {
+  display: block;
+  padding: 2px calc(var(--ui-tree-indent) * 1.5);
+  cursor: pointer;
+  color: inherit;
+  text-decoration: none;
+  line-height: var(--ui-row-height);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  border-left: var(--ui-current-bar) solid transparent;
+}
+
+#pane-toc .toc-item:hover { background: var(--ui-hover-bg); }
+
+#pane-toc .toc-item:focus-visible {
+  outline: 2px solid var(--ui-accent);
+  outline-offset: -2px;
+}
+
+/* 缩进**靠层级类累积**，⛔ 不用 JS 算像素（那样深度一多就多一个真值） */
+#pane-toc .toc-l2 { padding-left: calc(var(--ui-tree-indent) * 2.5); }
+#pane-toc .toc-l3 { padding-left: calc(var(--ui-tree-indent) * 3.5); }
+#pane-toc .toc-l4,
+#pane-toc .toc-l5,
+#pane-toc .toc-l6 {
+  padding-left: calc(var(--ui-tree-indent) * 4.5);
+  color: var(--ui-text-muted);
+}
+
+/* ════════════════════════════════════════════════════════════════════
+ * 树 —— ⭐ B7–B13
+ *
+ * 一手取值来自 `docs/research/notes/0001` §6（Typora 1.14.10 与 VS Code 1.141.0
+ * 的随附样式表）。三条判断见其 §7。
+ * ════════════════════════════════════════════════════════════════════ */
+.node > .row {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-icon-gap);
+  /* B10：行高 22px。⚠️ 那个"上边距 4px"这里**上下各一半**——
+     边框块是画在行自己身上的（B11 的整行底色），
+     只加上边距会让文字贴在块的下缘。总高 26px/行，与 B10 的 ≈26px 一致。 */
+  padding: calc(var(--ui-row-pad-top) / 2) var(--ui-pane-pad-x);
+  line-height: var(--ui-row-height);
+  cursor: default;
+  /* ⛔ 全程不换行（B11）：超长名用省略号，而不是把行撑成两行——
+     两行会让每行高度不一致，整棵树的行距节奏就散了。 */
+  white-space: nowrap;
+  /* B11：hover 是**整行底色**（Typora 改的是文字颜色，VS Code 是整行底色，取后者）。
+     底块要有圆角，否则行首的 4px 条与底色会打架。 */
+  border-radius: var(--ui-radius);
+  color: var(--ui-text);
+}
+
+.node > .row:hover { background: var(--ui-hover-bg); }
+
+/* ⭐ B12：当前项 = **4px 左边条 + 底块**。
+   ⚠️ 用 `inset` 阴影画那条边而不是 `border-left`：`border` 会撑动内容，
+   整行的文字会跟着右移 4px——一排里只有当前项偏移，看起来像没对齐。 */
+.node.current > .row {
+  background: var(--ui-selected-bg);
+  box-shadow: inset var(--ui-current-bar) 0 0 0 var(--ui-accent);
+  font-weight: 600;
+}
+
+/* ⭐ B13：键盘焦点态（与 `.current` **分开**）。 */
+.node > .row:focus-visible {
+  outline: 2px solid var(--ui-accent);
+  outline-offset: -2px;
+}
+
+/* —— B7：展开箭头 **常显** ——
+   ⚠️ 原设计（学 Typora）是"hover 才显示"，已由 B7 改掉：
+   **静止时目录与文件长得一模一样**，看不出哪一行能展开——那是可发现性问题。
+   ⚠️ 文件的箭头是 `visibility:hidden` 而不是不渲染：**占位要留着**，
+   否则同一层的目录名与文件名会错开一个箭头的宽度。 */
+.twisty {
+  flex: 0 0 auto;
+  width: var(--ui-twisty-width);
+  text-align: center;
+  color: var(--ui-text-muted);
+  font-size: 0.85em;
+  /* ⚠️ 展开时箭头转 90°，**只转样式不重排**——这也是"状态在数据层"的一个副产品 */
+  transition: transform 0.12s ease;
+}
+
+.node:not(.dir) > .twisty,
+.node.ignored > .twisty { visibility: hidden; }
+
+.node.expanded > .row > .twisty { transform: rotate(90deg); }
+
+/* —— B8：节点图标 **常显** ——
+   ⚠️ 这一条是**补做**：`design/0003` §2.1.1 第 5 条要的是「树节点图标 / 展开箭头」
+   **两样**，而此前只做了箭头那一半（§10.5 记了这处漏做）。 */
+.node-icon {
+  flex: 0 0 auto;
+  width: var(--ui-icon-size);
+  height: var(--ui-icon-size);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ui-text-muted);
+}
+
+.node-icon svg { width: 100%; height: 100%; display: block; }
+
+/* ⭐ B11b：文件名**超长用省略号**（⛔ 不是换行，理由见 `.row` 的注释）。
+   `min-width: 0` 是必须的：flex 子项的默认 `min-width: auto` 会让它
+   宁愿溢出也不收缩，`text-overflow` 就永远不会生效。 */
+.node > .row > .name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* —— 层级缩进 **靠嵌套累积**（子节点容器缩进），⛔ 不用 JS 算像素 ——
+   ⭐ B9：每层 **8px** + **缩进参考线**。
+   ⚠️ 参考线的位置对着父节点箭头的中心，这样"这条线属于哪一行"是一眼可见的。 */
+.node > .children {
+  padding-left: var(--ui-tree-indent);
+  border-left: var(--ui-indent-guide-width) solid var(--ui-indent-guide);
+  margin-left: calc(var(--ui-pane-pad-x) + var(--ui-twisty-width) / 2);
+}
+
+.node:not(.expanded) > .children { display: none; }
+
+/* 忽略清单里的目录：**可见但灰显、点击无任何反应**
+   （⛔ 不弹错、⛔ 不展开；后端已经**没有扫描**它们的子项）。
+   ⛔ 不隐藏、不划线——它要"看得见但点不动"（§2.1 两个集合的判据）。 */
+.node.ignored > .row {
+  color: var(--ui-text-muted);
+  cursor: default;
+}
+
+/* 这一层读不出来（权限/IO）：保留已渲染的内容，只标一行 */
+.node.unreadable > .row { color: var(--ui-text-muted); font-style: italic; }
+
+.note {
+  padding: 2px 8px;
+  font-size: 0.92em;
+  color: var(--ui-text-muted);
+  line-height: 1.4;
+}
+
+/* ⭐ 搜索定位失败那一条（`design/0009` §2.1 ⑤，`INV-SEARCH-07`）。
+   ⚠️ 它扎在树**顶上**（`insertBefore(host.firstChild)`），压着根节点——
+      所以给一道左侧竖线，让人一眼看出"这行不是树的一部分"。
+   ⚠️ 颜色仍只走语义变量（`INV-THEME-02`）：`--ui-border` 在四套主题里都有定义。 */
+.note.note-reveal {
+  margin: 4px 6px;
+  padding: 4px 8px;
+  border-left: 3px solid var(--ui-border);
+  border-radius: var(--ui-radius);
+  background: var(--ui-muted-bg);
+}
+
+/* ════════════════════════════════════════════════════════════════════
+ * 未授权态（`design/0003` §2.1.4）
+ * ⚠️ 它**不是**一个残缺的树，是一段显式说明 + 一个按钮。
+ * ════════════════════════════════════════════════════════════════════ */
+.unauth {
+  padding: 12px 10px;
+  color: var(--ui-text);
+}
+
+.unauth-title { margin: 0 0 8px; line-height: 1.5; }
+.unauth-dir {
+  margin: 0 0 6px;
+  font-size: 0.92em;
+  word-break: break-all;
+  color: var(--ui-text-muted);
+}
+.unauth-file {
+  padding: 3px 6px;
+  border-radius: var(--ui-radius);
+  line-height: var(--ui-row-height);
+  word-break: break-all;
+}
+.unauth-hint { margin: 10px 0 0; font-size: 0.92em; color: var(--ui-text-muted); line-height: 1.5; }
+
+.btn {
+  border: var(--reader-rule-width) solid var(--ui-border);
+  background: var(--ui-bg-elevated);
+  font: inherit;
+  padding: 4px 10px;
+  border-radius: var(--ui-radius);
+  cursor: pointer;
+  color: var(--ui-text);
+  margin-top: 6px;
+}
+
+.btn:hover { background: var(--ui-hover-bg); }
+.btn.small { padding: 2px 6px; margin: 0 0 0 6px; }
+
+/* ════════════════════════════════════════════════════════════════════
+ * 宽度拖拽手柄 / 收起后露出来的展开按钮
+ * ════════════════════════════════════════════════════════════════════ */
+.resizer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 5px;
+  cursor: col-resize;
+  background: transparent;
+}
+
+.resizer:hover { background: var(--ui-border); }
+
+body.resizing { cursor: col-resize; user-select: none; }
+
+.expand-btn {
+  position: fixed;
+  top: 6px;
+  left: 6px;
+  z-index: 21;
+  border: var(--reader-rule-width) solid var(--ui-border);
+  background: var(--ui-bg-elevated);
+  color: var(--ui-text);
+  font: inherit;
+  line-height: 1;
+  padding: 4px 8px;
+  border-radius: var(--ui-radius);
+  cursor: pointer;
+}
+
+.expand-btn:hover { background: var(--ui-hover-bg); }
+
+/* ════════════════════════════════════════════════════════════════════
+ * ⭐ `design/0034`：右键菜单与就地输入行
+ *
+ * ⚠️ 与树同族，所以放在本文件末尾（⛔ 不新开一张样式表、⛔ 不动加载顺序）。
+ * ⚠️ **只用既有语义变量**：⛔ 不新增第 58 个契约变量（`make lint-theme` 的
+ *    57 × 3 就是这条的判据）、⛔ 不写字面色值（`INV-THEME-02`）。
+ * ════════════════════════════════════════════════════════════════════ */
+.tree-menu {
+  position: fixed;
+  z-index: 30;
+  min-width: 148px;
+  padding: 4px;
+  border: var(--reader-rule-width) solid var(--ui-border);
+  border-radius: var(--ui-radius);
+  background: var(--ui-bg-elevated);
+  color: var(--ui-text);
+  font-size: var(--ui-font-size);
+}
+
+.tree-menu-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  line-height: var(--ui-row-height);
+  padding: 2px 8px;
+  border-radius: var(--ui-radius);
+  cursor: pointer;
+}
+
+.tree-menu-item:hover:not(.disabled) { background: var(--ui-hover-bg); }
+
+.tree-menu-item:focus-visible {
+  outline: 2px solid var(--ui-accent);
+  outline-offset: -2px;
+}
+
+.tree-menu-item.disabled { color: var(--ui-text-muted); cursor: default; }
+
+.tree-menu-sep {
+  height: var(--ui-indent-guide-width);
+  margin: 4px 2px;
+  background: var(--ui-border);
+}
+
+/* 就地输入行：间距与 `.node > .row` 同一套，看起来就是树里的一行 */
+.tree-input-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ui-icon-gap);
+  padding: calc(var(--ui-row-pad-top) / 2) var(--ui-pane-pad-x);
+  border-radius: var(--ui-radius);
+  background: var(--ui-selected-bg);
+}
+
+/* ⚠️ 提交在飞：整行淡一点。⛔ 不用 `disabled`（那会丢焦点、也看不出还在等） */
+.tree-input-row.busy { opacity: 0.7; }
+
+.tree-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: var(--reader-rule-width) solid var(--ui-accent);
+  border-radius: var(--ui-radius);
+  background: var(--ui-bg-elevated);
+  color: var(--ui-text);
+  font: inherit;
+  font-size: var(--ui-font-size);
+  line-height: var(--ui-row-height);
+  padding: 0 4px;
+}
+
+.tree-input:focus { outline: 2px solid var(--ui-accent); outline-offset: -1px; }
+
+/* ⚠️ 错误占满整行（`flex-basis: 100%`），否则会挤在输入框右边；
+   缩进对齐到文字（让过图标那一格） */
+.tree-error {
+  flex: 1 0 100%;
+  color: var(--ui-danger-text);
+  font-size: 0.92em;
+  line-height: 1.4;
+  padding: 2px 2px 0 calc(var(--ui-icon-size) + var(--ui-icon-gap));
+}
+
+/* ════════════════════════════════════════════════════════════════════
+ * ⭐ 文档列表（平铺视图）—— `design/0041` §2.3
+ *
+ * 每行**两段**（⚠️ `INV-DOCS-05`：⛔ 不读正文，所以没有摘要、没有时间）：
+ *   ① 文件名（扩展名单独一段、降透明度——纯 CSS，学 Typora）
+ *   ② 父目录（相对 root，单行省略；root 直接下的一层显示 `/`）
+ * ⛔ 不出现字面色值（`INV-THEME-02`），全走 `--ui-*`；尺度也全是 `--ui-*`
+ *    （B6：外壳尺度**不跟随阅读字号**）。
+ * ════════════════════════════════════════════════════════════════════ */
+.doclist-items {
+  display: flex;
+  flex-direction: column;
+}
+
+.doclist-row {
+  display: flex;
+  flex-direction: column;
+  /* ⚠️ 一格间距：两行文字贴在一起就分不清"名字"与"父目录" */
+  gap: 1px;
+  padding: calc(var(--ui-row-pad-top) / 2) var(--ui-pane-pad-x);
+  border-radius: var(--ui-radius);
+  cursor: pointer;
+}
+
+.doclist-row:hover { background: var(--ui-hover-bg); }
+
+/* ⭐ B13 同款：键盘焦点态与 hover 分开（行的 `tabindex` 是 -1，焦点由点击/编程给） */
+.doclist-row:focus-visible {
+  outline: 2px solid var(--ui-accent);
+  outline-offset: -2px;
+}
+
+.doclist-name {
+  display: block;
+  font-size: var(--ui-font-size);
+  line-height: var(--ui-row-height);
+  color: var(--ui-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ⚠️ 扩展名只是"降透明度"：⛔ 不改成另一套排版（否则文件名会看起来断成两截） */
+.doclist-ext { color: var(--ui-text-muted); }
+
+.doclist-parent {
+  display: block;
+  font-size: calc(var(--ui-font-size) * 0.92);
+  line-height: calc(var(--ui-row-height) * 0.85);
+  color: var(--ui-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 末尾那几条**常驻**说明行（截断 / 收录不完整 / 空态）。
+   ⚠️ 它们⛔ 不参与分片：`DocList` 在整批画完之后才补上（被丢弃的那一份一句都不留）。 */
+.doclist-note {
+  margin: 6px var(--ui-pane-pad-x) 2px;
+  font-size: calc(var(--ui-font-size) * 0.92);
+  line-height: 1.45;
+  color: var(--ui-text-muted);
+}
+
+.doclist-note-error { color: var(--ui-danger-text); }
+
+/* ════════════════════════════════════════════════════════════════════
+ * ⭐ `design/0042`：底部常驻的文件名搜索框 ＋ 结果层
+ *
+ * · 结果层复用 `.pane`（`flex: 1 1 auto` ＋ `overflow: auto`）——它是**第三个面板**，
+ *   与树 / 列表互斥但不卸载（可见性由 `Sidebar.applyPanes` 唯一计算）。
+ * · 输入框那一行是 `flex: 0 0 auto`：面板吃掉剩余高度，它钉在侧边栏最下方。
+ * · ⛔ 无字面色值（`INV-THEME-02`），尺度全走 `--ui-*`（B6：外壳不跟正文字号走）。
+ * · 命中高亮沿用 `quickopen.css` 那套：**只改底、不改字色**——叠字色会在某个主题下
+ *   变成"深底深字"。
+ * ════════════════════════════════════════════════════════════════════ */
+
+.sidebar-search {
+  flex: 0 0 auto;
+  padding: 6px var(--ui-pane-pad-x);
+  border-top: 1px solid var(--ui-border);
+  background: var(--ui-bg-elevated);
+}
+
+/* ⚠️ `type=text` 而不是 `type=search`：后者在 WKWebView 里带一个系统清除按钮，
+   样式跟主题走不了（那是 UA 画的原生控件）。清空由 `Esc` 负责。 */
+.sidebar-search-input {
+  font: inherit;
+  font-size: var(--ui-font-size);
+  color: var(--ui-text);
+  background: var(--ui-bg);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius);
+  padding: 5px 8px;
+  width: 100%;
+  box-sizing: border-box;
+  outline: none;
+}
+.sidebar-search-input:focus {
+  border-color: var(--ui-accent);
+}
+
+/* 结果区上方那一行说明（条数 / 索引年龄 / 正在建索引）。⚠️ 它不滚动：
+   面板是滚动容器，说明行由组件挂在**列表之前**，长列表滚动时它自己会走。 */
+.sidebar-search-note {
+  margin: 2px var(--ui-pane-pad-x) 4px;
+  font-size: calc(var(--ui-font-size) * 0.92);
+  line-height: 1.45;
+  color: var(--ui-text-muted);
+  min-height: calc(var(--ui-font-size) * 1.4);
+}
+
+.sidebar-search-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.sidebar-search-item {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-height: var(--ui-row-height);
+  /* 结果在窄栏里，左右各留一个 `--ui-pane-pad-x`，与树 / 列表的缩进对齐 */
+  padding: var(--ui-row-pad-top) var(--ui-pane-pad-x);
+  border-radius: var(--ui-radius);
+  cursor: default;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.sidebar-search-item.selected {
+  background: var(--ui-selected-bg);
+}
+
+/* ⚠️ 文件名不缩：它是这一行的主角（相对路径那一列先让位）。 */
+.sidebar-search-name {
+  flex: 0 0 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ⭐ 命中片段：只改底、不改字色（理由同 `quickopen.css`）。 */
+.sidebar-search-hit {
+  background: var(--ui-selected-bg);
+  color: inherit;
+  border-radius: calc(var(--ui-radius) / 2);
+}
+/* 选中行本来就是那个底 ⇒ 命中片段换回面板底，否则同色叠同色 = 看不见。 */
+.sidebar-search-item.selected .sidebar-search-hit {
+  background: var(--ui-bg-elevated);
+}
+
+/* 相对路径：灰、可缩、靠右。⚠️ `direction: rtl` 让长路径**从左侧**截断，
+   好让人看到文件名所在的那一段（与 `quickopen-rel` 同一招）。 */
+.sidebar-search-rel {
+  flex: 0 1 auto;
+  margin-left: auto;
+  color: var(--ui-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  direction: rtl;
+  text-align: right;
+}
+
+.sidebar-search-empty {
+  padding: 8px var(--ui-pane-pad-x);
+  color: var(--ui-text-muted);
+}
