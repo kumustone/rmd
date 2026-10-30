@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-recent-apply"
+description = "Enables the recent_apply command without any pre-configured scope."
+commands.allow = ["recent_apply"]
+
+[[permission]]
+identifier = "deny-recent-apply"
+description = "Denies the recent_apply command without any pre-configured scope."
+commands.deny = ["recent_apply"]

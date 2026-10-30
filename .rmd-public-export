@@ -1,0 +1,4 @@
+format=rmd-public-export/1
+source-commit=4f8dd298558492b2a693deb2ebaa3eb9f5ac44b3
+source-dirty=no
+generated-by=scripts/export-public.sh

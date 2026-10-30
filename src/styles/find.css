@@ -1,0 +1,192 @@
+/*
+ * 正文内查找浮层与两档高亮 —— `design/0011-正文内查找.md`（已通过 2026-10-14）。
+ *
+ * # ⛔ 只引用语义变量（`INV-THEME-02`）
+ *
+ * 这里**没有一处字面色值**。`make lint-theme` 的闸门 ① 会在几毫秒里证明这一点——
+ * 写死一个 `#333`，深色主题下那一处就永远是那个颜色，而**浏览器不会报错**。
+ * ⚠️ 具体到本文件还有一个更刺眼的失败面：`::highlight()` 的 `color` 会**盖掉**正文色，
+ * 所以只给底不给字 ⇒ 深色主题下"深底 + 深字"（`INV-FIND-07`）。
+ *
+ * ⚠️ 尺度全部引用 `--ui-*`（`design/0005` 的 B 类：**外壳不跟正文字号走**）——
+ * 用户把正文字号调大，查找框不该跟着变大。
+ *
+ * ⚠️ 这一张表在 `index.html` 里排在 `quickopen.css` **之后**、`settings.css` **之前**
+ * （⛔ 顺序就是分层，别调换）。三层浮层**互斥**（`INV-FIND-06` / `INV-SET-07`），
+ * 所以它们的 `z-index` 谁高谁低都不会同时出现在屏幕上。
+ *
+ * # ⭐ 两档高亮：两条路线共用同一对变量
+ *
+ * · `::highlight(rmd-find)` / `::highlight(rmd-find-current)` —— 首选（零 DOM 变更）。
+ *   ⚠️ 这两个名字必须与 `src/services/find.js` 的 `HL_ALL`/`HL_CURRENT` **逐字相同**，
+ *   `tests/js/find.test.js` 有一条断言把它们读出来去 grep 本文件（⛔ 不靠人对照）。
+ * · `.rmd-find-hit` / `.rmd-find-current`（`<mark>`）—— 0a 探测失败时的回退。
+ *   ⚠️ `<mark>` 有浏览器默认底色（**亮黄**）⇒ 必须显式覆盖，否则深色主题下它是一块刺眼的白光。
+ *
+ * ⚠️ **顺序**：`current` 那一档写在 `hit` **之后**——两档在同一处重叠时（当前命中
+ * 同时属于"其余命中"的集合），`::highlight()` 的层叠规则**与本文件里的先后无关**
+ * （那是注册顺序决定的，见 `FindBar.js`），但 `<mark>` 那条路上 `<mark>` 会嵌套，
+ * 内层后写的那条赢。两条路的观感因此一致。
+ */
+
+/* ────────────────────────────────────────────────────────────────
+ * 一 · 高亮两档
+ * ──────────────────────────────────────────────────────────────── */
+
+/* 其余命中。 */
+::highlight(rmd-find) {
+  background-color: var(--reader-find-hit-bg);
+  color: var(--reader-find-hit-text);
+}
+
+/* ⭐ 当前命中：**两档都要给**——`:root` 里有兜底，但覆盖遗漏会静默回落（闸门 ② 管这个）。 */
+::highlight(rmd-find-current) {
+  background-color: var(--reader-find-current-bg);
+  color: var(--reader-find-current-text);
+}
+
+/* 回退路线：与上面两条**同一对变量**（⛔ 不另开一套值——两套值迟早会漂开）。 */
+mark.rmd-find-hit,
+mark.rmd-find-current {
+  background-color: var(--reader-find-hit-bg);
+  color: var(--reader-find-hit-text);
+  border-radius: 2px;
+}
+mark.rmd-find-current {
+  background-color: var(--reader-find-current-bg);
+  color: var(--reader-find-current-text);
+}
+
+/* ⛔ 打印/导出时不留标记底（`<mark>` 路线下它是真节点，会被带走）。 */
+@media print {
+  mark.rmd-find-hit,
+  mark.rmd-find-current {
+    background-color: transparent;
+    color: inherit;
+  }
+}
+
+/* ────────────────────────────────────────────────────────────────
+ * 二 · 浮层
+ *
+ * ⭐ **没有遮罩**——这是本浮层与 `⌘P` / 设置那两层**最明显的形态差别**：
+ * 查找是"一边看正文一边找"，盖一层 72% 的幕布等于把要读的东西挡掉。
+ * ⇒ `pointer-events: none` 给层、`auto` 给面板，正文照常能点能选。
+ * ──────────────────────────────────────────────────────────────── */
+
+.find-layer {
+  position: fixed;
+  /* ⚠️ 从**顶栏下沿**开始，⛔ 不是 `top: 0`——压住顶栏会盖掉主题切换与设置入口，
+     而且那些控件正是"我要一边搜一边点"的东西。 */
+  top: var(--ui-toolbar-height);
+  right: 0;
+  left: 0;
+  z-index: 45;                 /* 与另外两层互斥（INV-FIND-06），高低不影响 */
+  pointer-events: none;        /* ⛔ 不吃正文的点击 */
+  display: flex;
+  justify-content: flex-end;
+  padding: 8px 12px 0;
+  box-sizing: border-box;
+}
+.find-layer[hidden] {
+  display: none;
+}
+
+.find-panel {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--ui-space-2);
+  box-sizing: border-box;
+  max-width: min(560px, 92vw);
+  padding: 6px 8px;
+  background: var(--ui-bg-elevated);
+  color: var(--ui-text);
+  border: 1px solid var(--ui-border);
+  border-radius: calc(var(--ui-radius) * 2);
+  box-shadow: 0 8px 24px var(--ui-border);
+  font-size: var(--ui-font-size);
+}
+
+.find-input {
+  box-sizing: border-box;
+  width: 220px;
+  min-width: 0;
+  padding: 4px 6px;
+  font-family: inherit;
+  font-size: var(--ui-font-size);
+  color: var(--ui-text);
+  background: var(--ui-bg);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius);
+  outline: none;
+}
+.find-input:focus-visible {
+  border-color: var(--ui-accent);
+}
+/* ⚠️ WebKit 给 `type=search` 的输入框自动加一个清除按钮（`-webkit-search-cancel-button`），
+   它在深色主题下是**系统画的**、不跟我们的变量走 ⇒ 隐掉，清除靠 `Esc`（见键盘模型）。 */
+.find-input::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+/* 「第几个 / 共几个」。⚠️ 定宽 + 右对齐：数字从 `1 / 9` 变成 `1 / 1234` 时，
+   后面的按钮不该跟着左右跳（那是在**搜索**时最让人分心的一种动）。 */
+.find-count {
+  min-width: 5.5em;
+  text-align: right;
+  color: var(--ui-text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.find-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  font-family: inherit;
+  font-size: var(--ui-font-size);
+  line-height: 1;
+  color: var(--ui-text);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--ui-radius);
+  cursor: pointer;
+}
+.find-btn:hover {
+  background: var(--ui-hover-bg);
+}
+.find-btn:focus-visible {
+  border-color: var(--ui-accent);
+}
+
+/* 说明行（**搜索范围** / 键位提示 / 上限说明 / 排障数）。⚠️ 它是**第二行**，压在面板下方。
+   ⚠️⚠️ **它是会换行的**（`white-space: normal`，2026-10-16 改）：那一行现在**常驻**一句
+   搜索范围（`F.SCOPE_HINT`），配上键位提示后**在 560 px 上限里放不下**——
+   若沿用 `nowrap` + `ellipsis`，被截掉的恰好是**范围那句话的尾巴**，
+   而它正是**唯一**告诉用户"为什么搜不到源码里的 `##`"的地方。
+   ⇒ 宁可多占一行，⛔ 不用省略号（截断是**静默**的：界面上看不出少了半句）。 */
+.find-note {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 4px;
+  max-width: min(560px, 92vw);
+  color: var(--ui-text-muted);
+  font-size: var(--ui-font-size);
+  white-space: normal;
+  text-align: right;
+}
+.find-note:empty {
+  display: none;
+}
+
+/* ⚠️ 说明行是 `position:absolute` ⇒ 它需要一个定位祖先，而这正是 `.find-panel`
+   被 `position: relative` 拿下的原因（⛔ 别删这一行）。 */
+.find-panel {
+  position: relative;
+}

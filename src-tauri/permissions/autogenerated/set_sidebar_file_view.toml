@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-set-sidebar-file-view"
+description = "Enables the set_sidebar_file_view command without any pre-configured scope."
+commands.allow = ["set_sidebar_file_view"]
+
+[[permission]]
+identifier = "deny-set-sidebar-file-view"
+description = "Denies the set_sidebar_file_view command without any pre-configured scope."
+commands.deny = ["set_sidebar_file_view"]

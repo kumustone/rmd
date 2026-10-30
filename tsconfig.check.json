@@ -1,0 +1,20 @@
+{
+  "//": "⭐ `design/0052` U8：**只**给 `src/live/**`（＋它那批测试）开 `checkJs`。⛔ 不做全仓迁移（`adr/0005` 不动）。入口是 `make typecheck`，几秒钟，已并入 `make test`。",
+  "//why": "为什么要它：`bugs/0014` 那种 `r.head` 写成 `r.from`（读了一个不存在的字段 ⇒ `NaN` ⇒ 静默空转）在纯 JS 里**没有任何东西会报错**，而 `SelectionRange` 的形状是 CM6 的公开类型——`checkJs` 一眼就能抓住。",
+  "//scope": "⚠️ `include` 只有两处：`src/live/**`（运行时代码）与 `tests/js/live-*.test.js`（判据本身也会读那些对象的字段）。⛔ 别把 `src/main.js`、`src/services/**` 加进来：它们没写 JSDoc，加进来只会得到一屏噪声，然后被人用 `any` 遮掉。",
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": false,
+    "noImplicitAny": false,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "types": ["node"]
+  },
+  "include": ["src/live/**/*.js", "tests/js/live-*.test.js", "tools/typecheck/*.d.ts"]
+}

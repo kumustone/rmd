@@ -1,0 +1,253 @@
+/*
+ * 主题覆盖 —— `design/0004-ui-主题.md` §2.1.2（已通过 2026-10-13）。
+ *
+ * # 这个文件只做一件事
+ *
+ * **覆盖第 2 层语义变量**（`tokens.css` 的下半，颜色那一半）。
+ *
+ * ⛔ **不覆盖尺度**（`INV-THEME-04`）：这里出现的每一行都必须是颜色。
+ *    一旦写进 `font-size` 或 `padding`，用户在两个主题间来回切就会发现"排版不一样"——
+ *    而他预期"主题只是配色"。
+ * ⛔ **不覆盖第 1 层**（`--p-*`）：原始色板是**唯一**的，
+ *    各主题直接写自己的色值，⛔ 不要去改 `--p-gray-*` 的含义
+ *    （那样"gray-500"在深色主题里变成浅色，读代码的人会被骗）。
+ *
+ * # 最低契约（§2.1.1.1）
+ *
+ * 20 个「必须」变量**每套主题都要显式给值**——缺一个就是缺陷。
+ * ⚠️ 浏览器**只会静默回落**到 `:root` 的 light 值、不会报错，
+ *    所以这条由 `make lint-theme` 检查，⛔ 不靠"打开看看"。
+ * 每个主题块里都按同一顺序列全了那 20 个，便于逐格比对。
+ *
+ * # 三套（B2）
+ *
+ * | 主题 | 定位 |
+ * |---|---|
+ * | `light` | 默认。白底深字，强光环境。**定义在 `tokens.css` 的 `:root`**，此处⛔ 不重复 |
+ * | `dark` | 深底浅字。⚠️ **不是简单地反色**——见下 |
+ * | `warm` | 纸感：米黄底、深棕字，低蓝光 |
+ */
+
+/* ════════════════════════════════════════════════════════════════════
+ * dark
+ *
+ * ⚠️ **不是简单地反色**（§2.1.2）：纯黑底 + 纯白字会**炫光**
+ * （高对比度在暗环境里反而更难读、且会让暗适应的人眼不适）。
+ * 所以正文用**略灰**的浅色（`#cfcfcf` 而不是 `#fff`），底色也不是纯黑。
+ * ════════════════════════════════════════════════════════════════════ */
+[data-theme="dark"] {
+  /* ── 外壳 ── */
+  --ui-bg:          #1e1e1e;
+  --ui-bg-elevated: #252526;
+  --ui-text:        #d4d4d4;
+  --ui-text-muted:  #9a9a9a;
+  --ui-border:      #3c3c3c;
+  --ui-hover-bg:    #2a2d2e;
+  --ui-selected-bg: #37373d;
+  --ui-accent:      #4a9eff;
+
+  /* ── 正文 ── */
+  --reader-text:        #cfcfcf;   /* ⚠️ 不是 #fff：纯白在暗环境炫光 */
+  --reader-bg:          #1e1e1e;
+  --reader-heading:     #e8e8e8;
+  --reader-border:      #3a3a3a;
+  --reader-link:        #6cb6ff;
+  --reader-selection-bg: #2b4a6f;
+
+  /* ── 代码：⚠️ 行内与块级**必须分开**（R8）。
+     ⚠️ 这一对最容易做成"深底上还写深字"——0004 §7 步骤 8 专门点名它。
+     行内 code 随正文行流：底色只比正文底**略**亮一点，粉字提亮到能在深底上读。 */
+  --reader-inline-code-bg:   #3a2b30;
+  --reader-inline-code-text: #ff9db2;
+
+  /* 块级 code：**深底浅字**。与页面底 `#1e1e1e` 的对比度 **1.067 : 1**——
+     这是"一整块分区"的那种弱分区，刻意与 light 现在那套（1.062 : 1）对齐。
+     ⭐ **2026-10-14 用户裁定（留痕）**：「亮色主题，代码块用亮色，暗色主题，
+     代码块要用暗色。」⇒ 旧文案写的「与浅色主题**同一个值**」**已被取代**：
+     light 现在是它自己的浅底 `#f8f8f8`，这里保持深底不动。 */
+  --reader-block-code-bg:    #23241f;
+  --reader-block-code-text:  #f8f8f2;
+
+  /* ── 引用块（`design/0046`：实色条 ＋ 不填底色）──
+     ⚠️ 深底上必须**提亮**：Mardo 实测的 `#007569` 落在 `#1e1e1e` 上只有 **2.98 : 1**
+     （低于非文字图形线的 3 : 1），而它只有几个像素宽，读起来会退化成"一道暗影"。
+     取 `#4fb8a8` = **6.95 : 1**（非文字线只要 3 : 1，这里留余量）。⛔ 不要照抄 light 的青色。 */
+  --reader-quote-bar-color: #4fb8a8;
+  --reader-quote-bg:        transparent;
+
+  /* ── 表格框线 ＋ 表头底色（后者是 `design/0046` 新增）──
+     ⚠️ 深底上的表头只能"比页面亮一档"，⛔ 不能照抄 light 的淡蓝 `#e1ebf0`
+     ——那会是一块刺眼的白。取 `#26292b`：字/底 **9.40 : 1**、底/页面底 1.14 : 1。 */
+  --reader-table-border:    #454545;
+  --reader-table-head-bg:   #26292b;
+
+  /* 正文内查找的两档高亮（`design/0011`）——⭐ **深底浅字**那一套，
+     ⛔ 与 light / warm 的浅底深字**不是同一套值**（互抄 = 深色下看不见）。
+     ⚠️ 当前那一档**故意反过来**（亮底深字）：在深色页面上"最亮的那一处"才读得出是当前项。
+     逐值：字/底 8.16 : 1（其余）、6.43 : 1（当前），底/页面底 1.64 / 6.16 : 1。 */
+  --reader-find-hit-bg:      #4c4023;
+  --reader-find-hit-text:    #f0e6c8;
+  --reader-find-current-bg:  #c9942f;
+  --reader-find-current-text: #1a1a1a;
+
+  /* ── 可选（§2.1.1.1：允许不定义、回落 light；这里定义是为了深色下不刺眼）── */
+  --ui-indent-guide:  #3a3a3a;
+  --ui-danger-bg:     #3a2222;
+  --ui-danger-text:   #f0a8a8;
+  --ui-danger-border: #5c2f2f;
+  --ui-muted-bg:      #2a2a2a;
+
+  /* ── 正文渲染增强（`design/0007`）⚠️ 这一族**必须写全**，见 tokens.css ── */
+  /* 代码高亮：⭐ 这一族是**浅字深底那一套**（借自 One Dark）。
+     ⚠️ **2026-10-14 起 light / warm 各有一套属于自己的"深字浅底" token**
+     （`tokens.css`，采自 VS Code Light+）——⛔ **两套不能互抄**：
+     这一套落在浅底上整族最高才 3.24 : 1、最低 **1.63 : 1**（`--reader-hl-type`）。 */
+  --reader-hl-comment:     #7f8c98;
+  --reader-hl-keyword:     #c678dd;
+  --reader-hl-string:      #98c379;
+  --reader-hl-number:      #d19a66;
+  --reader-hl-function:    #61afef;
+  --reader-hl-type:        #e5c07b;
+  --reader-hl-variable:    #e06c75;
+  --reader-hl-macro:       #56b6c2;
+  --reader-hl-tag:         #e06c75;
+  --reader-hl-attr:        #d19a66;
+  --reader-hl-operator:    #56b6c2;
+  --reader-hl-punctuation: #abb2bf;
+  --reader-hl-invalid:     #ff6b6b;
+
+  /* 公式回退态：light 那套是"淡底浅字"，在深色下正好**反过来**。 */
+  --reader-math-source-text:   #9a9a9a;
+  --reader-math-source-bg:     #26282a;
+  --reader-math-source-border: #3c3c3c;
+  --reader-math-error-accent:  #f0a8a8;
+
+  /* 图表：⭐ 这一栏是**重新配色**（⛔ 不是照抄 light 那 16 个值）——
+     `flowmaid` 的色板是给白底设计的，深色下那批浅底（如 `#e5f5ea`）
+     会变成刺眼的亮块。做法：底色压暗、线条提亮，**保持色相不变**，
+     这样"哪个形状是绿的"这件事在两套主题下读起来是同一个意思。 */
+  --reader-diag-surface:     #1a1b21;
+  --reader-diag-text:        #d4d4d4;
+  --reader-diag-line:        #8b93b8;
+  --reader-diag-line-soft:   #3a3f52;
+  --reader-diag-green-bg:    #1e3327;
+  --reader-diag-green-line:  #4fbf78;
+  --reader-diag-indigo-bg:   #1e2438;
+  --reader-diag-indigo-line: #7c8ede;
+  --reader-diag-amber-bg:    #33291a;
+  --reader-diag-amber-line:  #e0a83c;
+  --reader-diag-guide:       #454a63;
+  --reader-diag-rose-line:   #d878a5;
+  --reader-diag-teal-line:   #35b8a8;
+  --reader-diag-violet-line: #a37fe6;
+  --reader-diag-coral-line:  #e58379;
+  --reader-diag-steel-line:  #6aa8d4;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+ * warm —— 「纸感」：米黄底、深棕字，低蓝光
+ * ════════════════════════════════════════════════════════════════════ */
+[data-theme="warm"] {
+  /* ── 外壳 ── */
+  --ui-bg:          #f5eee0;
+  --ui-bg-elevated: #faf5ea;
+  --ui-text:        #43382c;
+  --ui-text-muted:  #8a7a63;
+  --ui-border:      #e1d6c1;
+  --ui-hover-bg:    #efe6d6;
+  --ui-selected-bg: #e6dcc6;
+  --ui-accent:      #9a6b1f;
+
+  /* ── 正文 ── */
+  --reader-text:        #43382c;
+  --reader-bg:          #fdfaf3;
+  --reader-heading:     #2e261c;
+  --reader-border:      #e1d6c1;
+  --reader-link:        #1a6ba8;
+  --reader-selection-bg: #eadfc6;
+
+  /* ── 代码 ── */
+  --reader-inline-code-bg:   #f2e7d8;
+  --reader-inline-code-text: #9b2c3f;
+  /* ⭐ warm 是**亮色主题**（页面底 `#fdfaf3`）⇒ 块底也是浅的（2026-10-14 用户裁定，
+     见 `tokens.css` 的那段留痕）。取米黄而不是中性灰：这是"纸感"那一套。
+     ⚠️ 与页面底的对比度 **1.214 : 1**，比 light / dark 那两套（1.06）**重一点**——
+     有意为之：warm 的引用块底是 `#f5ecdb`，块底若也那么淡，两者会**撞脸**
+     （实测只差 1.079 : 1 就分不开了）。 */
+  --reader-block-code-bg:    #ece4d2;
+  --reader-block-code-text:  #43382c;
+
+  /* ── 引用块（`design/0046`：实色条 ＋ 不填底色）──
+     ⚠️ 暖纸上**不能直接用 Mardo 那个青**：它的色相偏冷，落在米黄底上会跳出来。
+     压深一档到 `#116e63`（= **5.87 : 1**），保持"引用 = 青"这一层语义，
+     但让它退到与纸同一层级。⛔ 也别留着旧的赭褐——那是"填底卡片"时代的配套色。 */
+  --reader-quote-bar-color: #116e63;
+  --reader-quote-bg:        transparent;
+
+  /* ── 表格框线 ＋ 表头底色（后者是 `design/0046` 新增）──
+     ⚠️ 暖纸上的表头要**暖侧**的中性色，⛔ 不能抄 light 的冷蓝（`#e1ebf0`
+     在米黄底上会读成"贴错的白纸"）。取 `#efe6d5`：字/底 **9.21 : 1**、
+     底/页面底 1.19 : 1；它同时就是本套主题的 `--ui-hover-bg`，同一族。 */
+  --reader-table-border:    #ded1b8;
+  --reader-table-head-bg:   #efe6d5;
+
+  /* 正文内查找的两档高亮（`design/0011`）——⛔ **不是把 light 那四个值抄过来**：
+     warm 的页面底是米黄（`#fdfaf3`），同色相的淡黄会**融进纸里**
+     （底/页面底只剩 1.08 : 1）⇒ 这一套按"暖纸上的荧光笔"重取：
+     绿黄→琥珀、橙→赭橙，全部保持暖侧。
+     逐值：字/底 9.74 : 1（其余）、6.52 : 1（当前），底/页面底 1.29 / 2.22 : 1。 */
+  --reader-find-hit-bg:      #f6dd8e;
+  --reader-find-hit-text:    #3a2f1f;
+  --reader-find-current-bg:  #e89a24;
+  --reader-find-current-text: #2e2517;
+
+  /* ── 可选 ── */
+  --ui-indent-guide:  #e1d6c1;
+  --ui-danger-bg:     #faeae6;
+  --ui-danger-text:   #8f3a2a;
+  --ui-danger-border: #e6c4b8;
+  --ui-muted-bg:      #efe6d6;
+
+  /* ── 正文渲染增强（`design/0007`）⚠️ 这一族**必须写全**，见 tokens.css ── */
+  /* 代码高亮：⭐ 与 light 一样是**深字浅底那一套**，但整体往**暖侧**挪一档
+     （紫→品红、青蓝→赭青），好让它在米黄纸上不显冷。
+     ⚠️ 13 个值全部按 WCAG 相对亮度算过，对有 `#ece4d2` 的最低 **4.53 : 1**。 */
+  --reader-hl-comment:     #5d6b28;
+  --reader-hl-keyword:     #8f1f80;
+  --reader-hl-string:      #9c2410;
+  --reader-hl-number:      #0d6b45;
+  --reader-hl-function:    #7a5a20;
+  --reader-hl-type:        #1f6f84;
+  --reader-hl-variable:    #2c2159;
+  --reader-hl-macro:       #1f6f84;   /* = type：同 light，浅色主题无独立 support 色 */
+  --reader-hl-tag:         #7d1f10;
+  --reader-hl-attr:        #ad3f14;
+  --reader-hl-operator:    #43382c;   /* 与 warm 的正文同色 */
+  --reader-hl-punctuation: #43382c;
+  --reader-hl-invalid:     #a8261e;
+
+  /* 公式回退态：与引用块同一族底色（米黄），"没渲染"读起来像一条注释块。 */
+  --reader-math-source-text:   #8a7a63;
+  --reader-math-source-bg:     #f5ecdb;
+  --reader-math-source-border: #e1d6c1;
+  --reader-math-error-accent:  #8f3a2a;
+
+  /* 图表：⚠️ 与 dark 同理、但方向相反——warm 是**浅底**，
+     所以 keep 浅底、把线条的饱和度压低一点，免得在米黄纸上显得跳。 */
+  --reader-diag-surface:     #fdfaf3;
+  --reader-diag-text:        #43382c;
+  --reader-diag-line:        #8a7a63;
+  --reader-diag-line-soft:   #e1d6c1;
+  --reader-diag-green-bg:    #e8f0e2;
+  --reader-diag-green-line:  #4e7a3f;
+  --reader-diag-indigo-bg:   #e6e9f2;
+  --reader-diag-indigo-line: #5568a8;
+  --reader-diag-amber-bg:    #f7ecd4;
+  --reader-diag-amber-line:  #a9761e;
+  --reader-diag-guide:       #d8cbb2;
+  --reader-diag-rose-line:   #b05a80;
+  --reader-diag-teal-line:   #2b8a80;
+  --reader-diag-violet-line: #7a52a8;
+  --reader-diag-coral-line:  #c25a4a;
+  --reader-diag-steel-line:  #4a7fa0;
+}

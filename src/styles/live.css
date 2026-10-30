@@ -1,0 +1,468 @@
+/*
+ * 阅读—编辑覆盖层（`design/0047`）的样式 —— ⛔ **只新增声明，⛔ 不改既有文件的任何值**。
+ *
+ * # 它管三件事
+ *
+ * 1. **host 在文档流里的形态**：交换之后，host 要占据被换掉那一块**完全相同的版面**
+ *    （§2.3 的等高校验量的是 `offsetHeight`，但真正决定"看起来有没有跳动"的是
+ *    外边距与行宽）⇒ 这里不引入任何 `margin` / `padding` / `max-width`，
+ *    一切版面都跟 `.doc` 走。
+ * 2. **CM6 在块内不滚动、不固定高**：默认 `EditorView` 是"固定高度 + 内部滚动"，
+ *    放进文档流里会得到一个 100% 高的内滚动框（用户看到"块被截断了"）⇒
+ *    `.cm-editor` / `.cm-scroller` 的 `height` 与 `overflow` 必须放开。
+ * 3. **自绘光标 / 自绘选区**（`live/selection.js`）：`INV-LIVE-12` ⇒ `contentDOM` 永不聚焦
+ *    ⇒ 没有原生插入符；`drawSelection` 又不在白名单里 ⇒ 两层都得自己画。
+ *
+ * ⛔ **不许出现字面色值**（`INV-THEME-02`）：只引用第 2 层语义变量。
+ * ⛔ **不许改尺度语义**（`INV-THEME-04`）：这里出现的 px 都是"画一层 2px 的光标"这种
+ *    物理线宽，⛔ 不是排版尺度 ⇒ 它们**不随** `--reader-font-size` 变。
+ * ⚠️ 三套主题（light / dark / warm）都要好看：本文件只用变量，⛔ 不针对某一套调。
+ */
+
+/* ════════════════════════════════════════════════════════════════════
+ * 1. host：占位、不滚动、撑开成内容高度
+ * ════════════════════════════════════════════════════════════════════ */
+
+.cm-rmd-liveHost {
+  /* ⚠️ `relative` 是自绘层（绝对定位）的坐标基准。⛔ 别改成 `absolute`/`fixed`：
+     那会把这一块从文档流里摘出去，后面的内容整体上移（用户看到"段落跳了一下"）。 */
+  position: relative;
+  /* ⚠️ 这里是**离屏量高时的默认值**，⛔ 不是最终版面：换进 `.doc` 的那一刻，
+     `main.js::swapLiveView` 会把**被换掉那一块**算出来的 `margin-top/-bottom` 搬到 host 上。
+     ⚠️⚠️ 为什么必须搬、而不能靠这条 `0`：`.doc p` 带 `margin-bottom: --reader-gap-block`
+     （正文 1.1 倍，14px 下 **15.4px**），标题另有上间距、`li` 又各不同；host 是 `div`，
+     **天然一个外边距都没有** ⇒ 不搬就是"点一下，下面全文往上蹦一段"。
+     而等高校验量的是 `offsetHeight`（**不含外边距**）⇒ 漏了这一步**判据照样全绿**。
+     ⇒ 版面的**唯一来源仍然是样式表**（`INV-LIVE-07` 成立）：这里只是把它的结果搬过去。 */
+  margin: 0;
+}
+
+.cm-rmd-liveHost .cm-editor {
+  /* ⭐ 默认是固定高度 ⇒ 块内出现第二个滚动条。放开它，让内容自己决定高度。 */
+  height: auto;
+  /* ⚠️ `outline` 是焦点环：host 永远不拿焦点（`INV-LIVE-12`），这一条只防"哪天有人
+     给它 `tabindex`"——那时至少不会在正文里画出一个方框。 */
+  outline: none;
+  /* ⚠️ 背景交给 `--reader-bg`：三套主题各自一致，⛔ 不透明到底色以外的颜色。 */
+  background: transparent;
+}
+
+.cm-rmd-liveHost .cm-scroller {
+  /* ⭐ 同上：不内滚。`overflow: visible` 之后 CM6 的"滚动测量"会退化，
+     但块内本来就不该滚（滚的是整篇 `.doc`）。 */
+  overflow: visible;
+  font-family: var(--reader-font-sans);
+  /* ⚠️⚠️ 字号与行高**必须继承**，⛔ 不许在这里钉成 `--reader-font-size`：
+     换上来的那一块可能是**标题 / 引用块 / 代码块**，三者字号与行高各不相同，
+     而 `.doc h1` / `.doc blockquote` 那些规则换成 `div` 之后**一条都不匹配**。
+     ⇒ `live/box.js` 把**被换掉的那个元素**算出来的 `font-size` / `line-height` /
+       `font-weight` 搬成 host 的行内样式，这里只是让它们传下去。
+     ⚠️ 实测（`tools/live-probe --diag`，2026-10-26）：钉死之前 `h1` 少 **7 px**、
+       `h3` 少 **8.672 px**、引用块多 **15.407 px**——而等高校验会把整块**拒绝进入**。
+     样式表仍是唯一来源（`INV-LIVE-07`）：这里继承的就是它算出来的结果。 */
+  font-size: inherit;
+  line-height: inherit;
+}
+
+.cm-rmd-liveHost .cm-content {
+  /* ⚠️ CM6 默认给 `padding: 4px 0` 一类内边距 ⇒ 块与相邻段落对不齐。
+     ⛔ 这里归零，让"交换前后高度一致"成为默认行为。 */
+  padding: 0;
+  /* ⭐ `contentDOM` 永不聚焦（`INV-LIVE-12`）⇒ 原生插入符不会出现，
+     这一条只是把"万一它被聚焦"的默认 caret 关掉，不是主要手段。 */
+  caret-color: transparent;
+  color: var(--reader-text);
+  /* ⚠️⚠️ **继承**，⛔ 不许写成 `--reader-font-sans`：字体族的唯一分歧点是**代码块**，
+     而那一档由 `.cm-rmd-code .cm-scroller` 的 mono 给。写成 sans 会让代码块里那行
+     `font-family: mono` **传不下来**（声明在 scroller 上、content 自己又声明了 sans
+     ⇒ content 用 sans）——2026-10-26 实测：代码块里的字是**比例字体**，只是字号对了。 */
+  font-family: inherit;
+}
+
+.cm-rmd-liveHost .cm-line {
+  /* ⚠️ 与 `.doc p` 的段间距无关：块内的行就是行，⛔ 不套段距。 */
+  padding: 0;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+ * 1a′. 行级排版：尺度跟着**这一行自己的源码**走（`bugs/0015`）
+ *
+ * ⚠️ 搬过来的文字层是**块级**的（`live/box.js` 量的是被换掉的那一个元素）⇒ 在一个 `h2`
+ *    块里敲回车长出来的第二行，仍然继承 host 的 28px/700 ⇒ 用户看到的是
+ *    「回车之后一直是标题，进不了正文」，而这**不是**他敲的东西的语义
+ *    （用户原话：「默认进入正文状态，我输入 `#` 之后，才会是标题状态，由我来控制的」）。
+ *
+ * ⇒ 两条行级品种类，由 `live/decorations.js` 的装饰层按源码逐行贴：
+ *    · `cm-rmd-h1`–`cm-rmd-h6`：这一行是 `#{1,6} ` 起头的标题；
+ *    · `cm-rmd-body`：**块基线是标题尺度**时，那些**不是**标题的行（回落成正文尺度）。
+ * ⚠️ 判据是"块基线是不是标题"（`box.js::headingLevelOf`），⛔ 不是"这个块是不是段落"：
+ *    引用块 / 代码块 / 段落块的文字层量下来本来就是正文尺度，⛔ 不需要回落。
+ * ⚠️ 值**仍然只有一个来源**（`INV-LIVE-07`）：这里引用的就是 `.doc h1`–`.doc h6`
+ *    用的那批 `--reader-*`，⛔ 没有第二份数字。
+ * ⚠️ 特异性：`(0,3,0)` 压过 `.cm-rmd-liveHost .cm-line` 的 `(0,2,0)`，⛔ 与顺序无关。
+ * ════════════════════════════════════════════════════════════════════ */
+
+.cm-rmd-liveHost .cm-line.cm-rmd-h1 {
+  font-size: var(--reader-size-h1);
+  line-height: var(--reader-heading-lh-top);
+  font-weight: bold;
+}
+
+.cm-rmd-liveHost .cm-line.cm-rmd-h2 {
+  font-size: var(--reader-size-h2);
+  line-height: var(--reader-heading-lh-top);
+  font-weight: bold;
+}
+
+.cm-rmd-liveHost .cm-line.cm-rmd-h3 {
+  font-size: var(--reader-size-h3);
+  line-height: var(--reader-heading-lh-sub);
+  font-weight: bold;
+}
+
+.cm-rmd-liveHost .cm-line.cm-rmd-h4 {
+  font-size: var(--reader-size-h4);
+  line-height: var(--reader-heading-lh-sub);
+  font-weight: bold;
+}
+
+.cm-rmd-liveHost .cm-line.cm-rmd-h5 {
+  font-size: var(--reader-size-h5);
+  line-height: var(--reader-heading-lh-sub);
+  font-weight: bold;
+}
+
+.cm-rmd-liveHost .cm-line.cm-rmd-h6 {
+  font-size: var(--reader-size-h6);
+  line-height: var(--reader-heading-lh-sub);
+  font-weight: bold;
+}
+
+/* ⚠️ `line-height` 用 `--reader-line-height`（正文基准），⛔ 不用 `normal`：
+   `normal` 是字体自己算的，与阅读态那段正文**不是同一个数** ⇒ 回车长出来的行会矮一截。 */
+.cm-rmd-liveHost .cm-line.cm-rmd-body {
+  font-size: var(--reader-font-size);
+  line-height: var(--reader-line-height);
+  font-weight: normal;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+ * 1a″. 行内呈现：内容长得跟渲染态一样（`design/0052` U4，2026-10-27 起）
+ *
+ * ⚠️ 这是 `bugs/0022`（编辑态与渲染态**折行位置不同**）的正解：行内代码在渲染态是
+ *    **等宽 ＋ 有内边距**，编辑态若是正文字体，折行本来就不同 ⇒ **加多少几何 slack 都堵不住**。
+ *    把呈现对齐之后，`layoutSlack()` 的 `softWraps` 那一项才是在比同一件事。
+ * ⛔ 不许出现字面色值与绝对尺寸（`INV-THEME-02` / `INV-THEME-04`）——
+ *    五条全部只引用 `.doc` 那边**同一批** `--reader-*` 变量，⛔ 没有第二份数字。
+ * ⚠️ 类名与 `live/decorations.js::INLINE_MARK` **逐字对应**；⛔ 别在别处再起一套。
+ * ⚠️ 这些标记**嵌在** `.cm-line` 里 ⇒ 特异性只要压过 `.cm-content` 的继承就够；
+ *    而行级品种类（`cm-rmd-h1` 那族）在**行**上，两者不打架。
+ * ════════════════════════════════════════════════════════════════════ */
+
+.cm-rmd-liveHost .cm-rmd-strong { font-weight: bold; }
+.cm-rmd-liveHost .cm-rmd-em { font-style: italic; }
+.cm-rmd-liveHost .cm-rmd-strike { text-decoration: line-through; }
+.cm-rmd-liveHost .cm-rmd-link { color: var(--reader-link); }
+
+/* ⚠️ 与 `.doc :not(pre) > code` 逐项一致（`typography.css` 的「行内代码」一节）：
+   2px ÷ 16px = `.125em`、4px ÷ 16px = `.25em` 是**光学尺度按比例写**，
+   圆角走 `calc(锚点 × 0.25)` —— 与那边同一条派生式，⛔ 不写死 px。 */
+.cm-rmd-liveHost .cm-rmd-code {
+  font-family: var(--reader-font-mono);
+  font-size: var(--reader-size-small);
+  background: var(--reader-inline-code-bg);
+  color: var(--reader-inline-code-text);
+  padding: .125em .25em;
+  border-radius: calc(var(--reader-font-size) * 0.25);
+}
+
+/* ⭐ 围栏行在**非活动**时整行塌掉（`design/0052` U5）
+ *
+ * 零宽替换只把 ``` 与语言标记藏掉，**那一行还在**（空行仍占一整行高）⇒ 用户看到的是
+ * 「代码块上下各多一条空行」，而渲染态里那两行**根本不存在**。
+ * 两次塌行：`font-size: 0` 让行盒没有内容高度，`line-height: 0` 把行盒压到 0。
+ * ⚠️ 只作用在**非活动行**（`markers()` 只把非活动围栏行放进 `fenceLines`）——
+ *    光标停在那一行时必须照常显示 ```json，否则语言标记就改不了了。
+ * ⚠️ `overflow: hidden` 是兜底：`font-size:0` 之后那几个字形不再有尺寸，但万一浏览器
+ *    仍给出行内盒，也不许它把行撑开。 */
+.cm-rmd-liveHost .cm-line.cm-rmd-fence {
+  font-size: 0;
+  line-height: 0;
+  overflow: hidden;
+}
+
+/* ⭐ `design/0047` §2.9 早已点名的那个补丁，落地时漏了 —— 2026-10-26 被等高校验抓出来：
+ * `Decoration.replace({})`（零宽替换）会让 CM6 在该处插入一个 `<img class="cm-widgetBuffer">`，
+ * 上游给它 `height: 1em`（＝**当前字号**那么高）⇒ 行高**小于字号**的那些块会被它顶高：
+ * `h1` 30.797 → **32.8**、`h2` 26.938 → **29**（实测 `make probe-live-block --diag`），
+ * 而等高校验的判据是"视图 vs 被换掉那一块"，于是**标题一律进不去**
+ * （状态条：「这一块的高度对不上（31 → 33 px）」）。
+ * ⚠️ 只影响 `line-height < font-size` 的那几档：h3 是 1.6 倍、正文是 1.7 倍 ⇒ 看不出来。
+ * ⛔ 这不是"缩放字号"：那个 `<img>` 是 `aria-hidden` 的零宽占位，⛔ 里面没有可读内容。 */
+.cm-rmd-liveHost .cm-widgetBuffer {
+  font-size: 0;
+  height: 0;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+ * 1a. 品种类：**只有搬不动的那几样**在这里（`design/0047` §2.10 / §4.4）
+ *
+ * ⚠️ 盒子（外边距 / 内边距 / 左边框 / 圆角 / 底色）不在这里——那些由
+ *    `live/box.js` 从**被换掉的那个元素**量出来搬到 host 上（⛔ 不写第二份数值）。
+ *    这里只补**量不到的那三样**：代码块的等宽字体、字号与行高住在内层
+ *    `.doc pre code` 上，`pre` 自己的 `font-family` 只是继承来的正文无衬线。
+ * ⚠️ 用的仍是同一批 `--reader-*` 变量 ⇒ 样式表还是唯一来源（`INV-LIVE-07`）。
+ * ⚠️ 内边距这里必须给：`.doc pre` 自己没有 padding，它挂在内层 `code` 上；
+ *    而视图只有一个内容层 ⇒ 不给就是"代码贴着面板边"。
+ * ════════════════════════════════════════════════════════════════════ */
+
+.cm-rmd-liveHost.cm-rmd-code .cm-scroller {
+  font-family: var(--reader-font-mono);
+  font-size: var(--reader-size-small);
+  line-height: var(--reader-code-lh);
+}
+
+.cm-rmd-liveHost.cm-rmd-code .cm-content {
+  /* ⚠️ 特异性 (0,3,0) 压过上面 `.cm-rmd-liveHost .cm-content` 的 (0,2,0) —— 顺序无关。 */
+  padding: var(--reader-code-padding);
+}
+
+.cm-rmd-liveHost.cm-rmd-code {
+  /* ⭐ §4.4：视图**不装软换行**，长行由**这一块**自己横滚
+     ⇒ 块内横滚 ＝ 整篇横滚，`notes/0037` §5 的"整篇横移"不再发生。
+     ⚠️ `overflow-x: auto` 会把计算后的 `overflow-y` 一并变成 `auto`（CSS 规定：
+        两者不能一个 `visible` 一个不是）。这不等于"块内可竖滚"——host 的高度就是
+        内容高度，竖方向**永远没有溢出**，滚动条不会出现。 */
+  overflow-x: auto;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+ * 1b. Prep 期间：视图**离屏**建、量高（`design/0047` §2.3 步骤 ③）
+ *
+ * ⚠️ 它必须**仍然参与布局**（`offsetHeight` 要有值）⇒ ⛔ 不能用 `display:none`
+ *    （量出来是 0，等高校验会 100% 失败，而失败形态是"每次点都放回原样"）。
+ * ⚠️⚠️ **而且还必须"在窗口里"**（2026-10-26 实测，`design/0047` §10）：CM6 只量
+ *    **窗口内**的可见像素区间（`visiblePixelRange` 拿 `getBoundingClientRect()` 去裁
+ *    `window.innerHeight/innerWidth`），量不到的那部分行一律按它**硬编码的 14 px** 估高。
+ *    ⇒ 早先的 `left:-99999px` 让 `rect.right<0` ⇒ `inWindow` 为假 ⇒ 整块按 14 px 估，
+ *    行高真值 **20.141** 的代码块被低估 **30%** ⇒ **凡是高过一个视口的代码块都进不来**
+ *    （报「这一块的高度对不上」，2000 行块 40274 → 28254）。
+ *    ⇒ 现在改成 `left:0` ＋ `visibility:hidden`：几何**全在窗口里**（能量准），
+ *    `visibility:hidden` 保住布局又**一个像素都不画**（⛔ 不用 `opacity:0`——那会为一个
+ *    4 万像素高的盒子建合成层）。
+ * ⚠️ Swap 时由 `main.js::swapLiveView` **摘掉**这个 class ⇒ 回到文档流里的
+ *    `position: relative`（上面那条规则），⛔ 不是重写一份新的定位。
+ * ⚠️ 宽度由 `main.js` 写成**显式 px**（离屏时父容器不再是 `.doc`，`auto` 会算成
+ *    `max-content` ⇒ 软换行点与正文不一致 ⇒ 高度必然对不上）。Swap 之后清掉。
+ * ════════════════════════════════════════════════════════════════════ */
+
+.cm-rmd-liveHost.cm-rmd-offscreen {
+  position: fixed;
+  top: 0;
+  left: 0;
+  /* ⚠️ 保住布局、不绘制：这是"在窗口里但用户看不见"的唯一写法（见上）。 */
+  visibility: hidden;
+  /* ⚠️ `z-index` 压到负数：即便哪天 `visibility` 被别处覆盖回去也⛔ 不盖在界面之上。 */
+  z-index: -1;
+  pointer-events: none;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+ * 1c. 离屏 `textarea`：**输入事件的唯一来源**（`design/0047` §2.7）
+ *
+ * ⚠️⚠️ `contentDOM` 永不聚焦（`INV-LIVE-12`）⇒ 键盘与输入法都挂在这个 textarea 上。
+ *    它必须：① **真的可聚焦**（`opacity: 0` 而不是 `display:none`——后者 focus 不上）；
+ *    ② 定位在**光标处**（IME 候选窗跟着它走，否则候选窗会跑到屏幕左上角）；
+ *    ③ 尺寸 1×1em、⛔ 不吃点击（`pointer-events: none` 由 `z-index: -1` 一并兜住）。
+ * ⛔ 不许写字面色值（`INV-THEME-02`）：`color`/`caret-color` 都给 `transparent`。
+ * ════════════════════════════════════════════════════════════════════ */
+
+.cm-rmd-input {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 1px;
+  height: 1em;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  outline: none;
+  resize: none;
+  overflow: hidden;
+  opacity: 0;
+  z-index: -1;
+  color: transparent;
+  background: transparent;
+  caret-color: transparent;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+ * 2. 自绘光标 / 自绘选区（`live/selection.js` 的几何层）
+ *
+ * ⚠️ 这一层挂在 `view.scrollDOM` 里（与 CM6 自己的 cursorLayer 同层），
+ *    坐标是**内容坐标** ⇒ 这里只负责"画"，⛔ 不参与任何测量。
+ * ════════════════════════════════════════════════════════════════════ */
+
+.cm-rmd-selectionLayer {
+  position: absolute;
+  /* ⚠️ `inset: 0` ＋ `pointer-events: none`：它盖在文字上，但 ⛔ 不许吃掉点击
+     （鼠标归 `selection.js::installMouse` 管，走的是 capture）。 */
+  inset: 0;
+  pointer-events: none;
+  /* ⚠️ 不设 `z-index` 的去向由父层决定；这里只保证它是**在文字之上**的一层。 */
+  z-index: 1;
+}
+
+.cm-rmd-caret {
+  position: absolute;
+  /* ⭐ 2px 是**物理线宽**（B 类，⛔ 不随字号变）：1px 在高分屏上细得看不见。 */
+  width: 2px;
+  background: var(--ui-caret);
+  /* ⚠️ 光标闪不闪由 `design/0047` §2.7 的"自绘覆盖层"决定，⛔ 不在这里做动画：
+     动画一开，每次 `paint()` 都会重置相位，看起来像"光标一直在跳"。 */
+}
+
+/* ⚠️ 这里曾有一条 `.cm-rmd-caret.rmd-caret-hint`（2026-10-27 的"阅读态续写光标"）。
+   2026-10-28 用户更正了 `⌘↵` 的语义 —— 它是"跳出引用块、在后头新起一段、**光标落在新段落里、
+   仍留在编辑态**"，⛔ 不是"退出到阅读态再画一根假光标"。
+   ⇒ 那一套连同这条样式一起**整体撤回**（原委见 `bugs/0024` §4）；光标本身就是编辑态的
+   `.cm-rmd-caret`，不需要第二套。 */
+
+/* ⭐ 「`⌘↵` 新起的那一段」的宿主占位：它只在**视图开着**的这段时间里存在，
+   换上去之后马上被 `.cm-rmd-liveHost` 顶掉（`main.js::pendingHost`）。
+   ⚠️ 它必须是 `<p>` 而不是 `div`：`.doc` 的版面按标签写，`div` 会丢掉段距与缩进
+   （`bugs/0015` 那一族踩过"点进去下面整体上跳 15.4px"）。这里只声明"看不见"，
+   ⛔ 别在这里写间距——间距由 `live/box.js::applyBox` 从渲染态那一条搬过来。 */
+.doc > p.rmd-pending-block {
+  min-height: 1px;
+}
+
+.cm-rmd-selectionRange {
+  position: absolute;
+  /* ⭐ 底色是正文选区色（同一套主题、同一档对比度）；⚠️ 三套主题各有一份。 */
+  background: var(--reader-selection-bg);
+  /* ⚠️ 选区盖住文字时字要还看得见 ⇒ 用 `mix-blend-mode` 会在深色主题上出彩边，
+     ⛔ 不用它；半透明交给变量本身（`reader-selection-bg` 就是一层浅底）。 */
+  opacity: 0.7;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+ * 3. IME preedit 覆盖层（`live/input.js` 的落点）
+ *
+ * ⚠️ 组合期间**文档一个字节都不动**（`F6` 的强需求）⇒ 组合串画在这一层上。
+ * ⛔ 它不许接收事件（否则组合串会进 contenteditable）。
+ * ════════════════════════════════════════════════════════════════════ */
+
+.cm-rmd-preedit {
+  position: absolute;
+  pointer-events: none;
+  color: var(--reader-text);
+  /* ⚠️ 下划线是"这段还没进文档"的唯一提示；⛔ 不要用背景色（会盖住正文）。 */
+  text-decoration: underline;
+  text-decoration-color: var(--ui-text-muted);
+  z-index: 2;
+  /* ⚠️⚠️ **字号 / 行高 / 字体族 / 字重不在这里给**（2026-10-29，用户实测
+     「在标题下面一行输入的时候，拼音落地的字体虽然是正文，正常，但是拼音的字很大」）：
+     覆盖层挂在 host 上，而 host 身上是 `live/box.js` 搬来的**块级**文字层
+     ⇒ 标题块的第二行是正文尺度（`.cm-line.cm-rmd-body`），拼音却按
+     标题尺度画。那四样由 `main.js::syncPreeditMetrics` 从**光标所在那一行**量出来写行内
+     ⇒ 样式表仍是唯一来源（`INV-LIVE-07`），⛔ 别在这里钉一个固定字号。 */
+}
+
+/* ════════════════════════════════════════════════════════════════════
+ * 4. 辅助技术的通告区（`live/a11y.js`）
+ *
+ * ⚠️ 视觉隐藏但**不 `display:none`**：`display:none` 的元素辅助技术读不到
+ *    （那正是 §2.7 方案①要绕开的坑，⛔ 别在这里再踩一次）。
+ * ════════════════════════════════════════════════════════════════════ */
+
+.cm-rmd-liveAnnouncer {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+ * 5. 表格单元格（`design/0049`）
+ *
+ * ⚠️ 与块级那套的**结构性差异**：块是"整块换掉"，单元格只换 `<td>` 的**孩子**
+ *    ⇒ host 必须**顺着格子的行内流**排，⛔ 不许自带外边距/宽度，也⛔ 不许撑出滚动条。
+ * ⚠️ **不换行**（`white-space: pre` 由 CM6 的"不装 `lineWrapping`"给出）：GFM 的格子
+ *    天然单行，一换行整张表就会长高（`INV-CELL-04`）。
+ * ⚠️ 列宽在**进入前**由 `main.js::freezeTableLayout` 写死（`table-layout: fixed`），
+ *    这里⛔ 不碰 `table` / `td` 的任何尺寸——那是"冻结/还原"那一段的职责。
+ * ⛔ 不许出现字面色值（`INV-THEME-02`）：这一节一条颜色都不声明，全部继承 `<td>`。
+ * ════════════════════════════════════════════════════════════════════ */
+
+.cm-rmd-cell {
+  /* ⭐ 行内块：跟着格子的文字流走，高度/宽度都由内容与 `<td>` 决定。 */
+  display: inline-block;
+  vertical-align: baseline;
+  margin: 0;
+  padding: 0;
+  /* ⚠️ 不许超出格子（列宽已冻结）：超了会被 `overflow` 裁掉而不是把表撑宽。 */
+  max-width: 100%;
+  /* ⚠️ 与块级同一个理由：host 永远不拿焦点（`INV-LIVE-12`）。 */
+  outline: none;
+  /* ══════════════════════════════════════════════════════════════════
+   * ⭐⭐ **这一格的水平溢出就地截断，⛔ 不许漏给表格**（2026-10-28 实测）。
+   *
+   * 症状：点一格进去，**整张表长高 12 px**、它下面所有内容一起被推下去
+   * （`bugs/0027`；探针 `Q2b` ΔH 12 px、`Q2c` 下游位移 12 px）。
+   *
+   * 根因**不在产品自己的代码里**：CM6 量行高时会往 `.cm-content` 里塞一个
+   * `position: absolute; width: 99999px` 的 `.cm-line` 替身
+   * （`src/vendor/cm6.bundle.js` 的 `computeLineHeight` 兜底分支），
+   * 量完**同步删掉**。但这一格的祖先里有一层**滚动容器**——
+   * `.doc table` 是 `display: block; overflow-x: auto`（宽表要能横滚）——
+   * 那一下瞬时溢出就足以让 WebKit 给表格分配一条**经典滚动条**，
+   * 而 `style.css` 的全局 `::-webkit-scrollbar { height: 12px }` 让这条滚动条
+   * **实打实吃掉 12 px 高度**。替身随后被删掉，**滚动条却留在原地**
+   * （实测：同一次读数里 `scrollWidth` 还是 100056，强制重排一次才回到 698）。
+   *
+   * ⇒ 结构性做法：让「这一格的内部溢出」**根本到不了表格**。
+   * `overflow-x: clip` 不起滚动容器、也不产生滚动条，只把水平溢出裁掉。
+   * ⚠️⚠️ 必须写 `overflow-y: visible`：光标、预编辑覆盖层、`aria-live` 那些
+   *    元素靠的就是竖直方向不被裁（`overflow` 两轴只写一条会连带把另一轴变成 `auto`）。
+   *    `visible` ＋ `clip` 是 CSS Overflow 3 明文允许的**唯一**一组"混合两轴"值
+   *    （其它组合里 `visible` 一律算成 `auto`）。
+   * ⚠️ 不支持 `clip` 的老 WebKit 会**整条丢弃**这个声明 ⇒ 退回今天的行为（可见但不正确），
+   *    ⛔ 不会变成"格子被裁没"。
+   * ⚠️ 代价（原记）：编辑态里**比列还宽的格子内容**会在这格的右边缘被切断。
+   *    ⭐ **2026-10-28 起这个代价没有了**：单元格装上了软换行（见下面 `.cm-line` 那条），
+   *    内容不再横向溢出 ⇒ 没有东西可切。`clip` 仍然要留——它防的是**那一下瞬时溢出**
+   *    （CM6 的 `99999px` 量高替身），那与"内容有多长"无关。
+   * ══════════════════════════════════════════════════════════════════ */
+  overflow-x: clip;
+  overflow-y: visible;
+}
+
+.cm-rmd-cell .cm-editor,
+.cm-rmd-cell .cm-scroller {
+  height: auto;
+  width: auto;
+  overflow: visible;
+}
+
+.cm-rmd-cell .cm-content,
+.cm-rmd-cell .cm-line {
+  /* ⚠️⚠️ **要软换行**（2026-10-28 更正，此前是 `pre` 即不换行）：不换行的形态是
+   * 比列宽长的字被 `overflow-x: clip` 整段切断、光标跑到格右界之外 ——
+   * 用户看到的是"打字打不进去、方向键也没用"（`Q20` 首次实跑：视觉行盒 **1**、
+   * 内容宽 **544 px** 而格宽 **445 px**）。
+   * ⭐ 阅读态的 `<td>` 本来就软换行 ⇒ 编辑态跟着换行，两边高度一致，表格不会跳。
+   * ⚠️ 这两条**必须与 CM6 的 `lineWrapping` 一致**：它把 `pre-wrap` /
+   *    `word-break: break-word` 写在 `.cm-content` 的 contentAttributes 上，
+   *    这里再写死 `pre` 会把那个扩展**整体作废**（扩展装了等于没装）。 */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  /* ⚠️ 不留任何额外行距：多一行就多一行表格高度。 */
+  padding: 0;
+}
+

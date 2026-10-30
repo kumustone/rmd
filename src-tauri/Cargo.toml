@@ -1,0 +1,117 @@
+[package]
+name = "rmd"
+version = "0.5.0"
+edition = "2024"
+rust-version = "1.89"
+description = "一个为 macOS 打造的 Markdown 阅读器：启动轻快，排版用心，文件好找"
+license = "GPL-3.0-or-later"
+publish = false
+
+[[bin]]
+name = "rmd"
+path = "src/main.rs"
+
+[features]
+default = ["backend-fancy"]
+# GUI 入口（Tauri）。见 docs/design/0002 §3 / §10.4 批 1。
+# ⚠️ 之所以做成 feature：`rmd probe` / `rmd bench` 不该被迫编译整个 Tauri 依赖树
+# （几百个 crate、release 下要几分钟）。CLI 与 GUI **共用** document:: 那一份实现
+# （INV-SINGLE-01），所以 feature 只影响"链进什么窗口库"，不影响解析行为。
+gui = [
+    "dep:tauri",
+    "dep:tauri-plugin-dialog",
+    "dep:muda",
+    # ⭐ 文件监视（`design/0006`：外部编辑器改盘 ⇒ 自动重载）。
+    # ⚠️ 只在 GUI 里有意义：CLI（`probe`/`bench`）没有"当前文档"也没有窗口可通知。
+    "dep:notify",
+]
+
+# —— 高亮的正则后端（design/0007 §3 / §2.2 备选 C）——
+# ⚠️ **这是一处显式取舍，不是默认值的偶然**：
+#     `onig` 实测快 **2.6×–3.4×**（docs/research/notes/0009 §1.2，三份独立输入），
+#     代价是 vendored C（Oniguruma）。本仓库既有的取向是"不引 C 依赖"
+#     （Cargo.toml 上方 comrak 那段），所以**默认 fancy**。
+# ⇒ 想换后端：`cargo build --features backend-onig --no-default-features`。
+# ⛔ 两个同时开会编译失败（`syntect` 自己会报）——那正是我们要的，好过静默挑一个。
+backend-fancy = ["syntect/regex-fancy"]
+backend-onig = ["syntect/regex-onig"]
+
+[dependencies]
+# ⛔ 版本必须钉死：性能数字只有在版本固定时才可比（design/0002 INV-CORPUS-01 / §7.0 步骤 1）。
+# ⛔ 不开 default features——comrak 的默认features 会拉 syntect-onig（需要 C 依赖），
+#    我们只要 CommonMark + GFM 的核心能力，扩展用运行期 Options 打开。
+comrak = { version = "=0.56.0", default-features = false }
+clap = { version = "=4.6.7", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# —— design/0007：正文渲染增强（高亮 / 公式 / 图表）——
+# ⛔ 三条都是**直接依赖**，⛔ 不经过 comrak 的 feature：
+#    一旦打开 comrak 的 `syntect` feature，它自带的 `SyntectAdapter` 会被编译进来，
+#    而那个适配器有三处我们不能接受的行为（内联 `#rrggbb`、主题名拼错 panic、
+#    `Err` 回退不转义）。见 docs/kb/0012 与 design/0007 §2.1.1 / §2.2。
+#
+# 代码高亮。⚠️ `default-features = false` 是为了⛔ **不拉 `regex-onig`**
+#   （Oniguruma 是 vendored C，本项目 Cargo.toml 上方的既有取向是不引 C 依赖）。
+#   ⚠️ 代价是**实测慢 2.6×–3.4×**（docs/research/notes/0009 §1.2，三份独立输入），
+#   这是一处**显式取舍**，不是疏忽：design/0007 §2.2 备选 C。
+#   ⛔ 不开 `default-themes`：class-only 路径**不需要 `ThemeSet`**（docs/kb/0012）。
+#   ⚠️ 正则后端**不在这里**指定——它由本文件 `[features]` 的 `backend-fancy` 给。
+syntect = { version = "=5.3.0", default-features = false, features = [
+    "default-syntaxes",
+    "html",
+] }
+
+# 数学公式。⛔ 只走 `OutputFormat::Mathml`：HTML 那一半需要 KaTeX 的 CSS 与
+#   `KaTeX_Size` 字体，而 **crate 两样都不带**，离线又不许下载 —— 实测"大括号不拉伸"
+#   （docs/kb/0013 §1.1、design/0007 §2.1.2 / §2.2 备选 B）。
+katex-rs = { version = "=0.3.0", default-features = false }
+
+# 图表。零依赖、纯 std；⭐ 它画真 Mermaid 是**对的**，且在不懂的输入上**响亮报错**
+#   （对照 `mermaid-rs-renderer` 的"静默画错"，见 docs/research/notes/0009 §3.2）。
+flowmaid = { version = "=0.27.0", default-features = false }
+
+# 峰值 RSS 用 mach 的 task_info 直接量（design/0002 §7.3.4 要求"原型自报"）。
+# ⚠️ 只挂 macOS：CLI 的其余部分在别的平台上照样能编译。
+[target.'cfg(target_os = "macos")'.dependencies]
+libc = "0.2"
+
+# —— GUI（批 1）。只在 --features gui 时链进来 ——
+# ⚠️ 版本钉死同 comrak 的理由：窗口库换了，T4/T5/T6 的数字就不可比了。
+tauri = { version = "=2.12.3", optional = true }
+# 系统目录/文件选择器（`design/0003` §2.1.2 (2)）。
+# ⚠️ 版本钉死的理由同上；且 **`=2.7.3` 不是随手挑的**：
+#    2.8.2 起要 rustc 1.90，而本仓库 `rust-version = "1.89"`——升它就得同时升
+#    rust-version，那会把"能编译的机器"缩小一圈，与本次功能无关，⛔ 不做。
+# ⚠️ 它**只由 Rust 侧调用**（`commands/fs.rs`）。⛔ 前端**没有** `dialog:*` 权限：
+#    前端的对话框结果只是一个可伪造的路径字符串（`INV-FS-04`）。
+tauri-plugin-dialog = { version = "=2.7.3", optional = true }
+# ⭐ **快捷键解析器**（`design/0010` §7 的单测：把"拼错的加速键"挡在运行时）。
+# ⚠️ 为什么要**直接**依赖它，而不是从 `tauri` 里再导出：`tauri` 只 `pub use muda::MenuId;`
+#    （`src/lib.rs`），**没有**再导出 `Accelerator`，而
+#    `MenuItemBuilder::accelerator(&str)` 内部会把解析失败**静默丢掉**
+#    （`tauri/src/menu/normal.rs:34` 的 `parse().ok()`）⇒ **表里一个拼错的键
+#    会变成一个没有快捷键的菜单项，且不报任何错**。要让那件事可测，就得能自己调
+#    `Accelerator::from_str`。
+# ⚠️ **版本与 feature 必须与 `tauri` 声明的完全一致**（`=0.20` / `default-features = false`）——
+#    同一份解析后的依赖，**零额外编译成本**；写成别的版本会同时把两份 muda 编进来。
+muda = { version = "=0.20.0", default-features = false, optional = true }
+
+# —— 文件监视（`design/0006`）——
+# ⚠️ **必须保留 default features**：`default = ["macos_fsevent"]`
+#    （`notify-8.2.0/Cargo.toml`），macOS 上由此走 **FSEvents**。
+#    ⛔ **不许打开 `macos_kqueue`** —— 那是按 inode 的监视，
+#    "写临时文件 + rename 覆盖"会让句柄失效（`docs/kb/0020` 的失效边界）。
+# ⚠️ 版本钉死同 comrak 的理由：监视后端换了，`design/0006` §7 的端到端结论就不可比了。
+notify = { version = "=8.2.0", optional = true }
+
+[build-dependencies]
+# ⚠️ Tauri 2 要求一个 build script 来生成 Context（`tauri::generate_context!` 读它的产物）。
+# 它不是可选的 build-dependency（Cargo 不支持），但 `build.rs` 里用
+# `#[cfg(feature = "gui")]` 包住，**CLI 构建时它只编译、不运行**——
+# 这样 CLI 侧不会被 `tauri.conf.json` 的内容牵住。代价：这一次编译无法省掉。
+tauri-build = { version = "=2.7.2" }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1

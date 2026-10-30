@@ -1,0 +1,81 @@
+# Continuous integration: build and headless tests only.
+#
+# ⚠️ Scope is deliberately small:
+#   - no GUI probes: they open a window (even offscreen) and need a real
+#     graphics session; they are run locally, not here;
+#   - no packaging / signing: the .app is assembled locally with ad-hoc signing;
+#   - no release publishing.
+#
+# ⚠️ This workflow has not been exercised on GitHub Actions yet (the repository
+#    has no remote at the time it was written). The first push should be watched
+#    and the result recorded in the release-preparation notes.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Least privilege: this workflow only reads the repository.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    # Apple Silicon runner; the project only ships arm64 binaries.
+    # ⚠️ 2026-10-23: moved off `macos-14` — the official runner image is being
+    # retired on 2026-11-02 (macos-14-arm64-Readme.md). `macos-15` is a
+    # supported arm64 image.
+    runs-on: macos-15
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      # The frontend bundle is a build artifact (not committed): without it the
+      # editor self-test fails at runtime, so it is built even for tests.
+      - name: Install frontend toolchain
+        run: npm ci
+
+      - name: Bundle CodeMirror 6
+        run: make cm6
+
+      - name: Rust tests + frontend tests
+        run: make test
+
+      - name: Theme invariants
+        run: make lint-theme
+
+      # The docs checker is only worth what its own negative controls prove:
+      # this runs the injected-violation harness. It is pure python3, touches
+      # only a temp tree, and does NOT judge the real docs/ (that gate has
+      # human-owned cells still unfilled, so it is run by hand for now).
+      - name: Docs checker self-test
+        run: make docs-check-selftest
+
+      # Fails if a dependency changed without regenerating the notices file.
+      - name: Third-party notices are up to date
+        run: make check-third-party
+
+      # `make test` builds the default feature set. The GUI feature is where
+      # `commands/*` and `gui/*` actually compile — so the tests are *run*
+      # here, not just compiled: `cargo check` would pass while a GUI-only
+      # unit test fails. This still opens no window: these are unit and
+      # integration tests, no probes, no `.app`.
+      - name: Rust tests (GUI feature)
+        run: cargo test --release --features gui
+        working-directory: src-tauri

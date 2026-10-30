@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>rmd · 编辑选区与输入能力复用 · 隔离对照臂</title>
+</head>
+<body>
+  <!-- 四条臂上下排列、等宽。⭐ 除「选区 / 鼠标 / 输入层」外一切相同。 -->
+  <div class="armWrap">
+    <div class="armTitle">N · 原生臂：drawSelection() ＋ 原生鼠标 ＋ 可聚焦 contentDOM（⭐ 生产路径禁用项，仅实验）</div>
+    <div class="armHost" id="armN"></div>
+  </div>
+  <div class="armWrap">
+    <div class="armTitle">S · 自建臂：复用产品 createLayer/installMouse ＋ 不可聚焦 contentDOM（现行形态）</div>
+    <div class="armHost" id="armS"></div>
+  </div>
+  <div class="armWrap">
+    <div class="armTitle">H · 混合臂：drawSelection() ＋ 产品 R1 输入层（离屏 textarea ＋ live/input.js）＋ 自研鼠标</div>
+    <div class="armHost" id="armH"></div>
+  </div>
+  <div class="armWrap">
+    <div class="armTitle">HM · 交还鼠标臂：H 臂摘掉自研鼠标，改用 CM6 的 MouseSelection（只读视图 / 拖选 / 焦点交还）</div>
+    <div class="armHost" id="armHM"></div>
+  </div>
+
+  <!-- ⚠️ 顺序是硬要求：CM6 → 产品 selection.js / input.js → 夹具驱动 -->
+  <script src="arm-cm6.js"></script>
+  <script src="selection.js"></script>
+  <script src="input.js"></script>
+  <!-- ⭐ 由 probe.sh 从 `e4-doc.md` 的**磁盘字节**生成（⇒ "保存字节"那一行比的是真文件，⛔ 不是自己跟自己比） -->
+  <script src="e4-bytes.js"></script>
+  <script src="arm.js"></script>
+</body>
+</html>
