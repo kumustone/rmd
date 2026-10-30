@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  rmd 的 `.app` 模板（`design/0015` §2.1 ②）。
+
+  ⚠️ 本仓**不用** `tauri-cli`，所以这份 plist 是**手工维护**的；
+  字段映射的出处是 `tauri-utils-2.10.1/src/config.rs:1319`
+  （`file_associations_plist()`），一手事实见 `docs/kb/0023` §3。
+
+  ⭐ `__VERSION__` 由 `scripts/make-app.sh` 用 `plutil -extract version raw`
+  从 `src-tauri/tauri.conf.json` 读出后替换——⛔ 版本号只在配置里写一次。
+
+  ⚠️ `LSItemContentTypes` 只声明 `net.daringfireball.markdown`（本机 `mdls` 实测的 UTI），
+  ⛔ **不写 `public.plain-text`**：那等于声明「所有纯文本都归我」（`kb/0023` §3）。
+  ⚠️ `LSHandlerRank = Alternate`：不自称默认，是否成为默认由 `make default-app` 显式决定
+  （`INV-APP-04`）。
+-->
+<plist version="1.0">
+<dict>
+    <key>CFBundleDevelopmentRegion</key>
+    <string>zh_CN</string>
+    <key>CFBundleDisplayName</key>
+    <string>rmd</string>
+    <key>CFBundleExecutable</key>
+    <string>rmd</string>
+    <key>CFBundleIconFile</key>
+    <string>rmd.icns</string>
+    <key>CFBundleIdentifier</key>
+    <string>io.github.kumustone.rmd</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundleName</key>
+    <string>rmd</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>__VERSION__</string>
+    <key>CFBundleSignature</key>
+    <string>????</string>
+    <key>CFBundleVersion</key>
+    <string>__VERSION__</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>13.0</string>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+    <key>LSApplicationCategoryType</key>
+    <string>public.app-category.productivity</string>
+    <key>CFBundleDocumentTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleTypeName</key>
+            <string>Markdown Document</string>
+            <key>CFBundleTypeExtensions</key>
+            <array>
+                <string>md</string>
+                <string>markdown</string>
+                <string>mdown</string>
+                <string>mkd</string>
+            </array>
+            <key>LSItemContentTypes</key>
+            <array>
+                <string>net.daringfireball.markdown</string>
+            </array>
+            <key>CFBundleTypeRole</key>
+            <string>Viewer</string>
+            <key>LSHandlerRank</key>
+            <string>Alternate</string>
+        </dict>
+    </array>
+</dict>
+</plist>

@@ -1,0 +1,173 @@
+/*
+ * 文件名搜索浮层 —— `design/0009-文件名模糊搜索.md` §2.1 ④（2026-10-14 已通过）。
+ *
+ * # ⛔ 只引用语义变量（`INV-THEME-02`）
+ *
+ * 这里**没有一处字面色值**。`make lint-theme` 的闸门 ① 会在几毫秒里证明这一点——
+ * 写死一个 `#333`，深色主题下那一处就永远是那个颜色，而**浏览器不会报错**。
+ *
+ * ⭐ **一根新语义变量都没有加**：遮罩沿用设置覆盖层那招
+ * （"`--ui-bg` + 不透明度"），所以 `themes.css` 的「最低契约」仍是 **53** 个
+ * （⛔ 别顺手去改那个数）。
+ * ⚠️ 尺度全部引用 `--ui-*`（`design/0005` 的 B 类：**外壳不跟正文字号走**）——
+ * 用户把正文字号调大，搜索框不该跟着变大。
+ *
+ * ⚠️ 这一张表在 `index.html` 里排在 `typography.css` **之后**、`settings.css` **之前**
+ * （⛔ 顺序就是分层，别调换）。两层覆盖层**互斥**（`INV-SET-07`），
+ * 所以它们的 `z-index` 谁高谁低都不会同时出现在屏幕上。
+ */
+
+/* ────────────────────────────────────────────────────────────────
+ * 层：铺满窗口，⛔ 不占布局（`position:fixed`）
+ * ──────────────────────────────────────────────────────────────── */
+.quickopen-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+}
+
+/* ⚠️ 与设置覆盖层的遮罩同形：**不用**半透明黑（那要一个新色值 ⇒
+   破 `INV-THEME-02`，或给契约加第 54 个变量）。 */
+.quickopen-scrim {
+  position: absolute;
+  inset: 0;
+  background: var(--ui-bg);
+  opacity: 0.72;
+}
+
+/* ────────────────────────────────────────────────────────────────
+ * 面板：**贴着上方**（与设置面板的 `8vh` 居中形态刻意不同）——
+ * ⭐ 快速打开的视觉重心在上方，结果列表向下长；学 VS Code 的 quick input。
+ * ──────────────────────────────────────────────────────────────── */
+.quickopen-panel {
+  position: absolute;
+  top: 10vh;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(600px, 90vw);       /* ⚠️ 600 px 取自 VS Code 的 quick input 宽度 */
+  max-height: 70vh;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  padding: 10px 12px 8px;
+  background: var(--ui-bg-elevated);
+  color: var(--ui-text);
+  border: 1px solid var(--ui-border);
+  border-radius: calc(var(--ui-radius) * 2);
+  box-shadow: 0 12px 36px var(--ui-border);
+  font-size: var(--ui-font-size);
+  outline: none;
+}
+.quickopen-panel:focus-visible {
+  border-color: var(--ui-accent);
+}
+
+/* ⚠️ 标题只在读屏里可见：浮层的用途由输入框的 placeholder 与结果区说明表达，
+   在 600 px 宽的面板顶上加一行"按文件名搜索"是白占一行高度。 */
+.quickopen-title {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.quickopen-input {
+  font: inherit;
+  font-size: calc(var(--ui-font-size) * 1.1);
+  color: var(--ui-text);
+  background: var(--ui-bg);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius);
+  padding: 6px 8px;
+  width: 100%;
+  box-sizing: border-box;
+  outline: none;
+}
+.quickopen-input:focus {
+  border-color: var(--ui-accent);
+}
+
+/* 结果区上方那一行说明：条数 / 索引年龄 / 刷新键（⛔ 键位由后端那张表给）。 */
+.quickopen-note {
+  padding: 6px 2px 4px;
+  color: var(--ui-text-muted);
+  min-height: calc(var(--ui-font-size) * 1.4);
+}
+
+/* ────────────────────────────────────────────────────────────────
+ * 结果列表
+ * ⚠️ 虚拟列表**不做**：上限是 200 条（后端 `MATCH_LIMIT`），
+ *    一屏之外的条目本来就很少被滚到（`design/0009` §2.1 ③）。
+ * ──────────────────────────────────────────────────────────────── */
+.quickopen-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;              /* ⚠️ 滚动在**列表**上，⛔ 不是整个面板 */
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.quickopen-item {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-height: var(--ui-row-height);
+  padding: var(--ui-row-pad-top) 8px;
+  border-radius: var(--ui-radius);
+  cursor: default;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.quickopen-item.selected {
+  background: var(--ui-selected-bg);
+}
+
+/* ⚠️ 文件名不缩：它是这一行的主角，缩了就看不全（相对路径那一列先让位）。 */
+.quickopen-name {
+  flex: 0 0 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ⭐ 命中片段。⚠️ 只改**底**不改**字色**：字色已经在 `--ui-*` 里定死，
+   再叠一层字色就会在某个主题下变成"深底深字"（`0004` R8 那个失败形态的镜像）。 */
+.quickopen-hit {
+  background: var(--ui-selected-bg);
+  color: inherit;
+  border-radius: calc(var(--ui-radius) / 2);
+}
+/* 选中那一行本来就是 `--ui-selected-bg` 的底 ⇒ 命中片段要换个**底**
+   （同色叠同色 = 看不见）。用边框把它框出来，⛔ 不引入新变量。 */
+.quickopen-item.selected .quickopen-hit {
+  background: var(--ui-bg-elevated);
+}
+
+/* 相对路径：灰、可缩、右对齐靠后。⚠️ 用 `margin-left:auto` 而不是 `text-align`，
+   这样短路径紧跟在文件名后、长路径自己缩掉。 */
+.quickopen-rel {
+  flex: 0 1 auto;
+  margin-left: auto;
+  color: var(--ui-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  direction: rtl;                /* ⚠️ 长路径**从左侧**截断，好让人看到文件名那一段 */
+  text-align: right;
+}
+
+.quickopen-empty {
+  padding: 10px 8px;
+  color: var(--ui-text-muted);
+}
+
+/* ⚠️ 浮层开着时**正文不再滚动**——否则滚轮会滚到后面那层文档，
+   而用户以为滚的是结果列表。`index.html` 的滚动容器是 `#doc`，不是 `body`。
+   （与 `settings.css` 同一条理由、同一处落点。） */
+body.quickopen-open #doc {
+  overflow: hidden;
+}
