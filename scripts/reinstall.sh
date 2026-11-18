@@ -60,20 +60,29 @@ running() {
   done
   return 1
 }
-if running; then
-  say "▶ 关闭旧实例"
-  for p in "${PATTERNS[@]}"; do pkill -TERM -f -- "$p" 2>/dev/null || true; done
-  for _ in $(seq 1 10); do running || break; sleep 0.5; done
+# ⚠️ 要调用**两次**：① 开始时释放落点；② 构建结束、真正覆盖之前。
+#    2026-11-18 实测：构建那两分钟里用户从 Alfred 又打开了 `build/macos` 那份，
+#    它躲过了第 ① 次强关，之后一直以**旧代码**运行（`lsappinfo` 显示 Version=0.5.0，
+#    而磁盘上的同一路径已被覆盖成新版本），用户复测时落在旧二进制上 ⇒
+#    「从 iTerm 打开文档仍不唤醒窗口」（`bugs/0331`）。覆盖前再查一次堵住这个窗口。
+kill_instances() {
+  local label="$1"
   if running; then
-    say "⚠️ 5 s 未退出 ⇒ SIGKILL"
-    for p in "${PATTERNS[@]}"; do pkill -KILL -f -- "$p" 2>/dev/null || true; done
-    sleep 1
+    say "▶ 关闭旧实例（${label}）"
+    for p in "${PATTERNS[@]}"; do pkill -TERM -f -- "$p" 2>/dev/null || true; done
+    for _ in $(seq 1 10); do running || break; sleep 0.5; done
+    if running; then
+      say "⚠️ 5 s 未退出 ⇒ SIGKILL"
+      for p in "${PATTERNS[@]}"; do pkill -KILL -f -- "$p" 2>/dev/null || true; done
+      sleep 1
+    fi
+    running && die "旧实例仍在运行，放弃安装（不会覆盖正在运行的程序）"
+    say "✓ 旧实例已退出（${label}）"
+  else
+    say "ℹ️ 没有在运行的实例（${label}）"
   fi
-  running && die "旧实例仍在运行，放弃安装（不会覆盖正在运行的程序）"
-  say "✓ 旧实例已退出"
-else
-  say "ℹ️ 没有在运行的实例"
-fi
+}
+kill_instances 开始
 
 # ── 2. 重编 ＋ 只组装一次 ────────────────────────────────────────────────────
 if [ "$DO_BUILD" -eq 1 ]; then
@@ -117,6 +126,8 @@ STALE="$(find "$ROOT/src" "$ROOT/src-tauri/src" -type f \
 [ -z "$STALE" ] || die "产物比源码旧：$STALE —— 去掉 --no-build 重跑"
 
 # ── 3. 分发到所有落点（同一份 ditto，⛔ 不再重新组装/签名）──────────────────────
+# 构建期间可能冒出新实例（见上面 kill_instances 的注释），覆盖前再强关一次。
+kill_instances 覆盖前
 if [ -z "$DIRS" ]; then
   DIRS="/Applications"
   [ -d "$HOME/Applications" ] && DIRS="$DIRS:$HOME/Applications"
