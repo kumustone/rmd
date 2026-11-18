@@ -34,7 +34,7 @@ make check-third-party  # 只校验：磁盘上的这份与「现在重新生成
 | `cssparser-macros 0.7.1` | MPL-2.0 | 文件级弱著佐权：分发时须提供被修改文件的源码（本项目未修改它们） |
 | `dtoa-short 0.3.5` | MPL-2.0 | 文件级弱著佐权：分发时须提供被修改文件的源码（本项目未修改它们） |
 | `finl_unicode 1.5.0` | (MIT OR Apache-2.0) AND Unicode-DFS-2016 | 须随分发附带 Unicode 许可证与版权声明 |
-| `flowmaid 0.27.0` | GPL-3.0-or-later | GPL-3.0-or-later：项目自身即 GPL-3.0-or-later ⇒ **相容**，分发时须随附源码与许可证 |
+| `flowmaid 0.33.0` | GPL-3.0-or-later | GPL-3.0-or-later：项目自身即 GPL-3.0-or-later ⇒ **相容**，分发时须随附源码与许可证 |
 | `icu_collections 2.3.0` | Unicode-3.0 | 须随分发附带 Unicode 许可证与版权声明 |
 | `icu_locale_core 2.3.0` | Unicode-3.0 | 须随分发附带 Unicode 许可证与版权声明 |
 | `icu_normalizer 2.3.0` | Unicode-3.0 | 须随分发附带 Unicode 许可证与版权声明 |
@@ -156,7 +156,7 @@ make check-third-party  # 只校验：磁盘上的这份与「现在重新生成
 | `find-msvc-tools` | 0.1.14 | MIT OR Apache-2.0 | https://github.com/rust-lang/cc-rs |
 | `finl_unicode` | 1.5.0 | (MIT OR Apache-2.0) AND Unicode-DFS-2016 | https://github.com/dahosek/finl_unicode |
 | `flate2` | 1.1.10 | MIT OR Apache-2.0 | https://github.com/rust-lang/flate2-rs |
-| `flowmaid` | 0.27.0 | GPL-3.0-or-later | https://github.com/go-routine-id/flowmaid |
+| `flowmaid` | 0.33.0 | GPL-3.0-or-later | https://github.com/go-routine-id/flowmaid |
 | `fnv` | 1.0.7 | Apache-2.0 / MIT | https://github.com/servo/rust-fnv |
 | `foldhash` | 0.2.0 | Zlib | https://github.com/orlp/foldhash |
 | `foreign-types` | 0.5.0 | MIT/Apache-2.0 | https://github.com/sfackler/foreign-types |
