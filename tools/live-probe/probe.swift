@@ -171,11 +171,14 @@ DispatchQueue.main.async {
 }
 
 // ⚠️ 兜底超时：逐块 14 轮 ×（进入 + 退出 + 若干帧）＋ F6 的 60 步折行，正常十几秒。
-//    给 180 秒 —— ⛔ 又不足以让"某处真的挂死"蒙混过去。macOS **没有** `timeout(1)`。
+//    ⚠️ 2026-11-05：180 → **300 秒**。`M15`（单元格写回整行重拼）那一页把格子提交弄坏之后，
+//    下游每条判据都要**等满**自己的 `waitFor` 才收工 ⇒ 实测一页 **187 秒**（其余页 20–90 秒），
+//    180 秒的兜底把"慢"误报成"挂死"，整轮退 3。⛔ 这仍是"某处真的挂死"的兜底，
+//    不是性能判据 —— 真要挂死，300 秒一样等不到 JSON。macOS **没有** `timeout(1)`。
 let wall = Date()
-DispatchQueue.global().asyncAfter(deadline: .now() + 180) {
-    if Date().timeIntervalSince(wall) >= 179.5 {
-        FileHandle.standardError.write("⛔ 180 秒没拿到结果\n".data(using: .utf8)!)
+DispatchQueue.global().asyncAfter(deadline: .now() + 300) {
+    if Date().timeIntervalSince(wall) >= 299.5 {
+        FileHandle.standardError.write("⛔ 300 秒没拿到结果\n".data(using: .utf8)!)
         exit(1)
     }
 }

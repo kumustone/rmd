@@ -94,9 +94,14 @@ mark.rmd-find-current {
 
 .find-panel {
   pointer-events: auto;
+  /* ⭐ `design/0075`：面板从**一行**变成**两行**（查找 / 替换）⇒ 主轴改成纵向，
+     两行各自是一个 `.find-row`。⚠️ 纵向排列后 `align-items: stretch` 才让两行同宽。
+     ⚠️ 尺度用 6px 常量（与下面 `.find-row` 的间距一致）：`--ui-space-2` 本仓
+     **从未定义**（既有的一处引用一直在静默失效），⛔ 不新增一个没人在别处定义过的变量。 */
   display: flex;
-  align-items: center;
-  gap: var(--ui-space-2);
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
   box-sizing: border-box;
   max-width: min(560px, 92vw);
   padding: 6px 8px;
@@ -108,9 +113,22 @@ mark.rmd-find-current {
   font-size: var(--ui-font-size);
 }
 
+/* ⭐ 面板里的**一行**（第一行＝查找，第二行＝替换）。
+   ⚠️ `min-width: 0` 是给行内的输入框留出"可以被压窄"的前提：默认 `min-width: auto`
+   会让 220px 的输入框在窄窗口里把整行撑出面板边界，而**没有任何报错**。 */
+.find-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
 .find-input {
   box-sizing: border-box;
   width: 220px;
+  /* ⚠️ `flex: 0 1 220px`：宽度仍是 220，但**允许被压窄**（面板上限 92vw）——
+     否则窄窗口里它会顶出行边界，而界面上只会表现为"面板变宽了"。 */
+  flex: 0 1 220px;
   min-width: 0;
   padding: 4px 6px;
   font-family: inherit;
@@ -164,7 +182,50 @@ mark.rmd-find-current {
   border-color: var(--ui-accent);
 }
 
-/* 说明行（**搜索范围** / 键位提示 / 上限说明 / 排障数）。⚠️ 它是**第二行**，压在面板下方。
+/* ⭐ `design/0075`：替换行里的两个**带字**按钮（「替换」/「全部替换」）。
+   ⚠️ 它们继承 `.find-btn` 的方形按钮底（22×22 是给图标按钮的），这里改成"按文案撑开"：
+   `width: auto` ＋ 左右内边距，`white-space: nowrap` 防英文长译名折成两行。
+   ⚠️ 边框走 `--ui-border` 而不是默认的 `transparent`——这两个是**动词**，
+   与上面那一排"上一个/下一个"图标按钮在视觉上要分得开。 */
+.find-replace-btn {
+  width: auto;
+  min-width: 0;
+  padding: 0 8px;
+  border-color: var(--ui-border);
+  white-space: nowrap;
+}
+
+/* 替换行右侧那句提示（"作用于左栏源码" / "先按 `⌘E` 进入分栏编辑"）。
+   ⚠️ `flex: 1 1 auto` ＋ `min-width: 0`：它会吃掉剩余宽度；**不设 nowrap**——
+   键位提示那句话在窄窗口里宁可换行，⛔ 不用省略号（截断是静默的，见 `.find-note` 那段）。 */
+.find-replace-hint {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--ui-text-muted);
+  font-size: var(--ui-font-size);
+  line-height: 1.25;
+  white-space: normal;
+}
+.find-replace-hint[hidden] {
+  display: none;
+}
+
+/* ⚠️ 禁用态必须**看得出来**：替换在阅读态/就地编辑里是有意不可用的，
+   而"按钮能点、按下去没反应"会被读成缺陷。 */
+.find-input:disabled,
+.find-replace-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.find-input:disabled {
+  background: var(--ui-bg-elevated);
+}
+.find-replace-btn:disabled:hover {
+  background: transparent;
+}
+
+/* 说明行（**搜索范围** / 键位提示 / 上限说明 / 排障数）。⚠️ 它压在面板**下方**
+   （`design/0075` 起面板自身已有两行：查找 / 替换 ⇒ 这一行是第三行，但不占面板的布局高度）。
    ⚠️⚠️ **它是会换行的**（`white-space: normal`，2026-10-16 改）：那一行现在**常驻**一句
    搜索范围（`F.SCOPE_HINT`），配上键位提示后**在 560 px 上限里放不下**——
    若沿用 `nowrap` + `ellipsis`，被截掉的恰好是**范围那句话的尾巴**，

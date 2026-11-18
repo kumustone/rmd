@@ -30,6 +30,9 @@
    */
   const DEFAULT_TPL = ' · 代码未高亮 {un} / {all} 块（规模限制，内容完整）';
 
+  /** ⭐ `design/0060` 的对应一句（与 `services/i18n.js` 的 `doc.diagrams-unrendered` 逐字相同）。 */
+  const MERMAID_TPL = ' · 图表未渲染 {un} / {all} 张（原因见文内，原文完整）';
+
   /**
    * 状态条上要追加的那一句；**不该显示时返回空串**（⛔ 不是 `undefined`）。
    *
@@ -52,5 +55,34 @@
     });
   }
 
-  (window.rmd || (window.rmd = {})).renderstat = { codeNotice: codeNotice, DEFAULT_TPL: DEFAULT_TPL };
+  /**
+   * ⭐ `design/0060`：Mermaid 围栏**没画出来**的那一句；不该显示时返回空串。
+   *
+   * ⚠️ 措辞刻意**不说「规模限制」**：回退的成因有五种（不支持 / 语法错 / 超限 /
+   *    安全拒绝 / 空图），统一的"规模限制"在另外四种上就是**假话**。
+   *    ⭐ 准确的信息在**每一块自己的说明行**里（`p.rmd-diagram-note`），
+   *    这句只负责"告诉用户去哪儿看"。
+   * ⛔ 更不许说成"内容丢了"：回退块是**逐字原文 ＋ 一个代码块外壳**，
+   *    与 `codeNotice` 那条「内容完整」是同一条纪律。
+   *
+   * @param {{mermaid_unrendered?: number, mermaid_rendered?: number}} s 后端载荷
+   * @param {(key: string, vars: object) => string} [tr]
+   */
+  function mermaidNotice(s, tr) {
+    const un = num(s && s.mermaid_unrendered);
+    if (un <= 0) return '';
+    const got = num(s && s.mermaid_rendered);
+    const vars = { un: un, all: got + un };
+    if (typeof tr === 'function') return tr('doc.diagrams-unrendered', vars);
+    return MERMAID_TPL.replace(/\{(\w+)\}/g, function (m, name) {
+      return Object.prototype.hasOwnProperty.call(vars, name) ? String(vars[name]) : '';
+    });
+  }
+
+  (window.rmd || (window.rmd = {})).renderstat = {
+    codeNotice: codeNotice,
+    mermaidNotice: mermaidNotice,
+    DEFAULT_TPL: DEFAULT_TPL,
+    MERMAID_TPL: MERMAID_TPL,
+  };
 })();

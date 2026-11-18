@@ -22,13 +22,20 @@
 //! ⭐ `design/0047` 起多了 `blocks`：**顶层块的行区间表**（「唯一全文模型 ＋ 单块编辑视图」的骨架）。
 //! ⚠️ 它在**既有 AST** 上走一层（⛔ 不重新 parse、⛔ 不开 `render.sourcepos`），
 //! 只被 `commands/document.rs::render_source` 调用。
+//!
+//! ⭐ `design/0076` 起多了 `export`：导出的**纯逻辑**（CSS 打包 / 图片内联 / 页面拼装）。
+//! ⚠️ 它**不在渲染链上**：输入是已经渲染好的 HTML，输出是一份自足的单文件；
+//! 落点授权与写盘分别在 `fs/grants.rs` 与 `fs/atomic.rs`（⛔ 别从本模块伸手去写盘）。
+//! ⚠️ **不 gate `gui`**：`make test`（默认构建）直接跑它的判据。
 
 pub mod blocks;
 pub mod diagram;
 pub mod envelope;
+pub mod export;
 pub mod highlight;
 pub mod loader;
 pub mod math;
+pub mod mermaid;
 pub mod offset;
 pub mod parser;
 pub mod render;

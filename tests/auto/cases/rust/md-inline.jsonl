@@ -1,0 +1,220 @@
+# md-inline 家族：行内语法与渲染安全 / 高亮的用例矩阵。
+# 期望值 = 2026-11-08 产品当前行为（comrak 0.56）；每条都用 equals 或定向 contains/not_contains 钉住可观察差异。
+# —— 强调与加粗：嵌套、边界、词内与中文旁的正反例 ——
+{"id":"mdinline-em-star-basic","name":"星号斜体基本形态","family":"md-inline","check":"html","input":{"md":"这是*斜体*。\n"},"expect":{"equals":"<p>这是<em>斜体</em>。</p>\n"}}
+{"id":"mdinline-em-underscore-basic","name":"下划线斜体基本形态","family":"md-inline","check":"html","input":{"md":"_斜体_\n"},"expect":{"equals":"<p><em>斜体</em></p>\n"}}
+{"id":"mdinline-em-underscore-intraword-cjk","name":"中文紧邻的下划线不成立（词内）","family":"md-inline","check":"html","input":{"md":"这是_斜体_。\n"},"expect":{"equals":"<p>这是_斜体_。</p>\n"}}
+{"id":"mdinline-em-underscore-intraword-ascii","name":"英文词内下划线不成立","family":"md-inline","check":"html","input":{"md":"foo_bar_baz\n"},"expect":{"equals":"<p>foo_bar_baz</p>\n"}}
+{"id":"mdinline-em-star-intraword-ascii","name":"英文词内星号成立","family":"md-inline","check":"html","input":{"md":"foo*bar*baz\n"},"expect":{"equals":"<p>foo<em>bar</em>baz</p>\n"}}
+{"id":"mdinline-em-star-cjk-adjacent","name":"中文紧邻星号成立","family":"md-inline","check":"html","input":{"md":"中文*斜体*中文\n"},"expect":{"equals":"<p>中文<em>斜体</em>中文</p>\n"}}
+{"id":"mdinline-em-underscore-spaced-cjk","name":"空格隔开的中文下划线成立","family":"md-inline","check":"html","input":{"md":"中文 _斜体_ 中文\n"},"expect":{"equals":"<p>中文 <em>斜体</em> 中文</p>\n"}}
+{"id":"mdinline-strong-star-basic","name":"双星号加粗基本形态","family":"md-inline","check":"html","input":{"md":"**加粗**\n"},"expect":{"equals":"<p><strong>加粗</strong></p>\n"}}
+{"id":"mdinline-strong-underscore-basic","name":"双下划线加粗基本形态","family":"md-inline","check":"html","input":{"md":"__加粗__\n"},"expect":{"equals":"<p><strong>加粗</strong></p>\n"}}
+{"id":"mdinline-strong-cjk-adjacent","name":"中文紧邻双星号加粗","family":"md-inline","check":"html","input":{"md":"中文**加粗**中文\n"},"expect":{"equals":"<p>中文<strong>加粗</strong>中文</p>\n"}}
+{"id":"mdinline-strong-intraword-ascii","name":"英文词内双星号加粗","family":"md-inline","check":"html","input":{"md":"a**b**c\n"},"expect":{"equals":"<p>a<strong>b</strong>c</p>\n"}}
+{"id":"mdinline-em-triple-star","name":"三星号同时斜体加粗","family":"md-inline","check":"html","input":{"md":"***x***\n"},"expect":{"equals":"<p><em><strong>x</strong></em></p>\n"}}
+{"id":"mdinline-em-triple-underscore","name":"三下划线同时斜体加粗","family":"md-inline","check":"html","input":{"md":"___x___\n"},"expect":{"equals":"<p><em><strong>x</strong></em></p>\n"}}
+{"id":"mdinline-strong-four-star","name":"四星号嵌套加粗","family":"md-inline","check":"html","input":{"md":"****x****\n"},"expect":{"equals":"<p><strong><strong>x</strong></strong></p>\n"}}
+{"id":"mdinline-em-strong-nested","name":"斜体包加粗","family":"md-inline","check":"html","input":{"md":"*a**b**c*\n"},"expect":{"equals":"<p><em>a<strong>b</strong>c</em></p>\n"}}
+{"id":"mdinline-strong-em-nested","name":"加粗包斜体","family":"md-inline","check":"html","input":{"md":"**a*b*c**\n"},"expect":{"equals":"<p><strong>a<em>b</em>c</strong></p>\n"}}
+{"id":"mdinline-em-unmatched-single","name":"落单星号保持字面","family":"md-inline","check":"html","input":{"md":"a*b\n"},"expect":{"equals":"<p>a*b</p>\n"}}
+{"id":"mdinline-em-unmatched-double","name":"落单双星号保持字面","family":"md-inline","check":"html","input":{"md":"a**b\n"},"expect":{"equals":"<p>a**b</p>\n"}}
+{"id":"mdinline-em-unbalanced-mixed","name":"星号不配对时的嵌套结果","family":"md-inline","check":"html","input":{"md":"**a* b*\n"},"expect":{"equals":"<p><em><em>a</em> b</em></p>\n"}}
+{"id":"mdinline-em-escaped-star","name":"反斜杠转义的星号不成强调","family":"md-inline","check":"html","input":{"md":"\\*x\\*\n"},"expect":{"equals":"<p>*x*</p>\n"}}
+{"id":"mdinline-em-star-end-edge","name":"星号强调在词首边界","family":"md-inline","check":"html","input":{"md":"*x*后面\n"},"expect":{"equals":"<p><em>x</em>后面</p>\n"}}
+{"id":"mdinline-em-underscore-close-intraword","name":"下划线在词内收尾不成立","family":"md-inline","check":"html","input":{"md":"a_b_\n"},"expect":{"equals":"<p>a_b_</p>\n"}}
+{"id":"mdinline-em-underscore-open-intraword","name":"下划线在词内开头不成立","family":"md-inline","check":"html","input":{"md":"_a_b\n"},"expect":{"equals":"<p>_a_b</p>\n"}}
+{"id":"mdinline-em-punct-flank","name":"连字符旁星号强调","family":"md-inline","check":"html","input":{"md":"foo-*bar*-baz\n"},"expect":{"equals":"<p>foo-<em>bar</em>-baz</p>\n"}}
+{"id":"mdinline-strong-two-segments","name":"两个独立加粗段","family":"md-inline","check":"html","input":{"md":"**a** **b**\n"},"expect":{"equals":"<p><strong>a</strong> <strong>b</strong></p>\n"}}
+{"id":"mdinline-em-two-segments","name":"两个独立斜体段","family":"md-inline","check":"html","input":{"md":"*a* *b*\n"},"expect":{"equals":"<p><em>a</em> <em>b</em></p>\n"}}
+{"id":"mdinline-em-strong-mixed","name":"斜体与加粗混合收尾","family":"md-inline","check":"html","input":{"md":"*a**b**c*d\n"},"expect":{"equals":"<p><em>a<strong>b</strong>c</em>d</p>\n"}}
+{"id":"mdinline-em-nested-em","name":"星号内嵌下划线斜体","family":"md-inline","check":"html","input":{"md":"*a _b_ c*\n"},"expect":{"equals":"<p><em>a <em>b</em> c</em></p>\n"}}
+{"id":"mdinline-strong-nested-strong","name":"双星号内嵌双下划线加粗","family":"md-inline","check":"html","input":{"md":"**a __b__ c**\n"},"expect":{"equals":"<p><strong>a <strong>b</strong> c</strong></p>\n"}}
+{"id":"mdinline-strong-underscore-inner","name":"加粗内部单下划线不成立","family":"md-inline","check":"html","input":{"md":"__a_b__\n"},"expect":{"equals":"<p><strong>a_b</strong></p>\n"}}
+# —— 行内代码：反引号数量、内容不被二次解析、空代码 ——
+{"id":"mdinline-code-basic","name":"行内代码基本形态","family":"md-inline","check":"html","input":{"md":"这是 `code` 结束\n"},"expect":{"equals":"<p>这是 <code>code</code> 结束</p>\n"}}
+{"id":"mdinline-code-double-backtick-contains-tick","name":"双反引号包裹含反引号内容","family":"md-inline","check":"html","input":{"md":"``a`b``\n"},"expect":{"equals":"<p><code>a`b</code></p>\n"}}
+{"id":"mdinline-code-hash-literal","name":"行内代码里的井号不被当标题","family":"md-inline","check":"html","input":{"md":"`# not heading`\n"},"expect":{"equals":"<p><code># not heading</code></p>\n"}}
+{"id":"mdinline-code-dollar-not-math","name":"行内代码里的美元号不解析成公式","family":"md-inline","check":"html","input":{"md":"`$x$`\n"},"expect":{"equals":"<p><code>$x$</code></p>\n","not_contains":["<math"]}}
+{"id":"mdinline-code-star-not-emphasis","name":"行内代码里的星号不二次解析","family":"md-inline","check":"html","input":{"md":"`*x*`\n"},"expect":{"equals":"<p><code>*x*</code></p>\n"}}
+{"id":"mdinline-code-html-escaped","name":"行内代码里的尖括号被转义","family":"md-inline","check":"html","input":{"md":"`<script>`\n"},"expect":{"equals":"<p><code>&lt;script&gt;</code></p>\n","not_contains":["<script"]}}
+{"id":"mdinline-code-amp-escaped","name":"行内代码里的与号被转义","family":"md-inline","check":"html","input":{"md":"`a & b`\n"},"expect":{"equals":"<p><code>a &amp; b</code></p>\n"}}
+{"id":"mdinline-code-empty-double-tick","name":"两个反引号之间没有内容不是代码","family":"md-inline","check":"html","input":{"md":"``\n"},"expect":{"equals":"<p>``</p>\n"}}
+{"id":"mdinline-code-single-space","name":"只含一个空格的代码 span 保留空格","family":"md-inline","check":"html","input":{"md":"` `\n"},"expect":{"equals":"<p><code> </code></p>\n"}}
+{"id":"mdinline-code-space-padded-strip","name":"代码 span 首尾各一空格被剥掉","family":"md-inline","check":"html","input":{"md":"` a `\n"},"expect":{"equals":"<p><code>a</code></p>\n"}}
+{"id":"mdinline-code-triple-run","name":"三反引号行内代码","family":"md-inline","check":"html","input":{"md":"```a```\n"},"expect":{"equals":"<p><code>a</code></p>\n"}}
+{"id":"mdinline-code-multiline","name":"跨行代码 span 的换行变空格","family":"md-inline","check":"html","input":{"md":"`a\nb`\n"},"expect":{"equals":"<p><code>a b</code></p>\n"}}
+{"id":"mdinline-code-double-both-sides","name":"等长双反引号代码","family":"md-inline","check":"html","input":{"md":"``a``\n"},"expect":{"equals":"<p><code>a</code></p>\n"}}
+{"id":"mdinline-code-asymmetric-runs","name":"不等长反引号串的切分","family":"md-inline","check":"html","input":{"md":"`a``b`\n"},"expect":{"equals":"<p><code>a``b</code></p>\n"}}
+{"id":"mdinline-code-escaped-backtick","name":"反斜杠转义的反引号不成代码","family":"md-inline","check":"html","input":{"md":"\\`x\\`\n"},"expect":{"equals":"<p>`x`</p>\n"}}
+{"id":"mdinline-code-entity-literal","name":"代码 span 里的实体按字面转义","family":"md-inline","check":"html","input":{"md":"`&amp;`\n"},"expect":{"equals":"<p><code>&amp;amp;</code></p>\n"}}
+# —— 链接：内联/参考式/角括号/相对路径/锚点/受控标记与危险协议 ——
+{"id":"mdinline-link-inline-basic","name":"内联链接基本形态","family":"md-inline","check":"html","input":{"md":"[t](https://example.com/a?b=1)\n"},"expect":{"equals":"<p><a href=\"https://example.com/a?b=1\">t</a></p>\n"}}
+{"id":"mdinline-link-title","name":"链接标题进入 title 属性","family":"md-inline","check":"html","input":{"md":"[t](https://example.com \"标题\")\n"},"expect":{"equals":"<p><a href=\"https://example.com\" title=\"标题\">t</a></p>\n"}}
+{"id":"mdinline-link-reference-full","name":"参考式链接（完整形式）","family":"md-inline","check":"html","input":{"md":"[t][r]\n\n[r]: https://example.com\n"},"expect":{"equals":"<p><a href=\"https://example.com\">t</a></p>\n"}}
+{"id":"mdinline-link-reference-collapsed","name":"参考式链接（折叠形式）","family":"md-inline","check":"html","input":{"md":"[r][]\n\n[r]: https://example.com\n"},"expect":{"equals":"<p><a href=\"https://example.com\">r</a></p>\n"}}
+{"id":"mdinline-link-reference-shortcut","name":"参考式链接（简写形式）","family":"md-inline","check":"html","input":{"md":"[r]\n\n[r]: https://example.com\n"},"expect":{"equals":"<p><a href=\"https://example.com\">r</a></p>\n"}}
+{"id":"mdinline-link-angle-dest-space","name":"尖括号目标里的空格被百分号编码","family":"md-inline","check":"html","input":{"md":"[t](<https://example.com/a b>)\n"},"expect":{"equals":"<p><a href=\"https://example.com/a%20b\">t</a></p>\n"}}
+{"id":"mdinline-link-empty-target","name":"空目标链接仍写出空 href","family":"md-inline","check":"html","input":{"md":"[t]()\n"},"expect":{"equals":"<p><a href=\"\">t</a></p>\n"}}
+{"id":"mdinline-link-relative-path","name":"相对路径原样进入 href","family":"md-inline","check":"html","input":{"md":"[t](docs/a.md)\n"},"expect":{"equals":"<p><a href=\"docs/a.md\">t</a></p>\n"}}
+{"id":"mdinline-link-relative-fragment","name":"相对路径带锚点","family":"md-inline","check":"html","input":{"md":"[t](../a.md#sec)\n"},"expect":{"equals":"<p><a href=\"../a.md#sec\">t</a></p>\n"}}
+{"id":"mdinline-link-anchor-cjk","name":"中文锚点被百分号编码","family":"md-inline","check":"html","input":{"md":"[t](#标题)\n"},"expect":{"equals":"<p><a href=\"#%E6%A0%87%E9%A2%98\">t</a></p>\n"}}
+{"id":"mdinline-link-anchor-ascii","name":"ASCII 锚点原样保留","family":"md-inline","check":"html","input":{"md":"[t](#install)\n"},"expect":{"equals":"<p><a href=\"#install\">t</a></p>\n"}}
+{"id":"mdinline-link-anchor-second-hash","name":"锚点里的第二个井号保留","family":"md-inline","check":"html","input":{"md":"[t](#a#b)\n"},"expect":{"equals":"<p><a href=\"#a#b\">t</a></p>\n"}}
+{"id":"mdinline-link-rmd-file","name":"file: 改写成 rmd-file 标记","family":"md-inline","check":"html","input":{"md":"[t](file:///tmp/a%20b.md)\n"},"expect":{"equals":"<p><a href=\"rmd-file:/tmp/a%20b.md\">t</a></p>\n"}}
+{"id":"mdinline-link-rmd-file-anchor","name":"file: 改写成 rmd-file 并保留锚点","family":"md-inline","check":"html","input":{"md":"[t](file:///tmp/a.md#sec)\n"},"expect":{"equals":"<p><a href=\"rmd-file:/tmp/a.md#sec\">t</a></p>\n"}}
+{"id":"mdinline-link-file-query-unsupported","name":"带 query 的 file: 判成不支持","family":"md-inline","check":"html","input":{"md":"[t](file:///tmp/a.md?raw=1)\n"},"expect":{"equals":"<p><a href=\"rmd-unsupported:file\">t</a></p>\n"}}
+{"id":"mdinline-link-javascript-unsupported","name":"javascript: 改写成不支持标记","family":"md-inline","check":"html","input":{"md":"[t](javascript:alert(1))\n"},"expect":{"equals":"<p><a href=\"rmd-unsupported:javascript\">t</a></p>\n","not_contains":["href=\"javascript:"]}}
+{"id":"mdinline-link-data-unsupported","name":"data: 改写成不支持标记","family":"md-inline","check":"html","input":{"md":"[t](data:text/html;base64,AAAA)\n"},"expect":{"equals":"<p><a href=\"rmd-unsupported:data\">t</a></p>\n"}}
+{"id":"mdinline-link-vbscript-unsupported","name":"vbscript: 改写成不支持标记","family":"md-inline","check":"html","input":{"md":"[t](vbscript:msgbox(1))\n"},"expect":{"equals":"<p><a href=\"rmd-unsupported:vbscript\">t</a></p>\n"}}
+{"id":"mdinline-link-javascript-case-insensitive","name":"大写协议名同样判成不支持","family":"md-inline","check":"html","input":{"md":"[t](JavaScript:alert(1))\n"},"expect":{"equals":"<p><a href=\"rmd-unsupported:javascript\">t</a></p>\n"}}
+{"id":"mdinline-link-mailto-passthrough","name":"mailto 链接原样输出","family":"md-inline","check":"html","input":{"md":"[t](mailto:a@b.com)\n"},"expect":{"equals":"<p><a href=\"mailto:a@b.com\">t</a></p>\n"}}
+{"id":"mdinline-link-ftp-passthrough","name":"ftp 链接原样输出（非 http 但不危险）","family":"md-inline","check":"html","input":{"md":"[t](ftp://example.com/x)\n"},"expect":{"equals":"<p><a href=\"ftp://example.com/x\">t</a></p>\n"}}
+{"id":"mdinline-link-empty-text","name":"空链接文字仍渲染 a 元素","family":"md-inline","check":"html","input":{"md":"[](https://example.com)\n"},"expect":{"equals":"<p><a href=\"https://example.com\"></a></p>\n"}}
+{"id":"mdinline-link-text-entity","name":"链接文字里的实体被转义","family":"md-inline","check":"html","input":{"md":"[a&amp;b](https://example.com)\n"},"expect":{"equals":"<p><a href=\"https://example.com\">a&amp;b</a></p>\n"}}
+{"id":"mdinline-link-text-emphasis","name":"链接文字允许行内强调","family":"md-inline","check":"html","input":{"md":"[*x*](https://example.com)\n"},"expect":{"equals":"<p><a href=\"https://example.com\"><em>x</em></a></p>\n"}}
+{"id":"mdinline-link-dest-nested-paren","name":"目标里的成对圆括号不截断链接","family":"md-inline","check":"html","input":{"md":"[t](https://example.com/a(b))\n"},"expect":{"equals":"<p><a href=\"https://example.com/a(b)\">t</a></p>\n"}}
+{"id":"mdinline-link-dest-bare-space-invalid","name":"裸空格目标不成立，URL 退化成自动链接","family":"md-inline","check":"html","input":{"md":"[t](https://example.com/a b)\n"},"expect":{"equals":"<p>[t](<a href=\"https://example.com/a\">https://example.com/a</a> b)</p>\n"}}
+{"id":"mdinline-link-dest-escaped-space-invalid","name":"转义空格目标也不成立","family":"md-inline","check":"html","input":{"md":"[t](a\\ b)\n"},"expect":{"equals":"<p>[t](a\\ b)</p>\n"}}
+{"id":"mdinline-link-relative-query-kept","name":"相对路径带 query 仍原样进 href","family":"md-inline","check":"html","input":{"md":"[t](a.md?raw=1)\n"},"expect":{"equals":"<p><a href=\"a.md?raw=1\">t</a></p>\n"}}
+{"id":"mdinline-link-dest-entity","name":"目标里的实体解码后再转义","family":"md-inline","check":"html","input":{"md":"[t](a&amp;b)\n"},"expect":{"equals":"<p><a href=\"a&amp;b\">t</a></p>\n"}}
+# —— 图片：alt、标题、危险协议与数据 URI ——
+{"id":"mdinline-img-basic","name":"图片基本形态","family":"md-inline","check":"html","input":{"md":"![alt](a.png)\n"},"expect":{"equals":"<p><img src=\"a.png\" alt=\"alt\" /></p>\n"}}
+{"id":"mdinline-img-title","name":"图片标题进入 title 属性","family":"md-inline","check":"html","input":{"md":"![alt](a.png \"标题\")\n"},"expect":{"equals":"<p><img src=\"a.png\" alt=\"alt\" title=\"标题\" /></p>\n"}}
+{"id":"mdinline-img-empty-alt","name":"空 alt 图片","family":"md-inline","check":"html","input":{"md":"![](a.png)\n"},"expect":{"equals":"<p><img src=\"a.png\" alt=\"\" /></p>\n"}}
+{"id":"mdinline-img-data-unsupported","name":"data: 图片改写成不支持标记","family":"md-inline","check":"html","input":{"md":"![a](data:image/png;base64,AAAA)\n"},"expect":{"equals":"<p><img src=\"rmd-unsupported:data\" alt=\"a\" /></p>\n"}}
+{"id":"mdinline-img-rmd-file","name":"file: 图片改写成 rmd-file 标记","family":"md-inline","check":"html","input":{"md":"![图](file:///tmp/%E4%B8%AD.png)\n"},"expect":{"equals":"<p><img src=\"rmd-file:/tmp/%E4%B8%AD.png\" alt=\"图\" /></p>\n"}}
+{"id":"mdinline-img-javascript-unsupported","name":"javascript: 图片改写成不支持标记","family":"md-inline","check":"html","input":{"md":"![a](javascript:alert(1))\n"},"expect":{"equals":"<p><img src=\"rmd-unsupported:javascript\" alt=\"a\" /></p>\n"}}
+{"id":"mdinline-img-alt-emphasis-stripped","name":"alt 文本里的强调标记被剥掉","family":"md-inline","check":"html","input":{"md":"![*x*](a.png)\n"},"expect":{"equals":"<p><img src=\"a.png\" alt=\"x\" /></p>\n"}}
+{"id":"mdinline-img-relative","name":"图片相对路径原样输出","family":"md-inline","check":"html","input":{"md":"![a](../assets/p.png)\n"},"expect":{"equals":"<p><img src=\"../assets/p.png\" alt=\"a\" /></p>\n"}}
+{"id":"mdinline-img-query-kept","name":"图片相对路径带 query 原样输出","family":"md-inline","check":"html","input":{"md":"![a](a.png?x=1)\n"},"expect":{"equals":"<p><img src=\"a.png?x=1\" alt=\"a\" /></p>\n"}}
+{"id":"mdinline-img-angle-dest-space","name":"图片尖括号目标里的空格被编码","family":"md-inline","check":"html","input":{"md":"![alt](<a b.png>)\n"},"expect":{"equals":"<p><img src=\"a%20b.png\" alt=\"alt\" /></p>\n"}}
+# —— GFM 自动链接：URL、邮箱、末尾标点 ——
+{"id":"mdinline-autolink-url","name":"裸 URL 自动链接","family":"md-inline","check":"html","input":{"md":"https://example.com\n"},"expect":{"equals":"<p><a href=\"https://example.com\">https://example.com</a></p>\n"}}
+{"id":"mdinline-autolink-trailing-dot","name":"URL 末尾句点不算进链接","family":"md-inline","check":"html","input":{"md":"见 https://example.com.\n"},"expect":{"equals":"<p>见 <a href=\"https://example.com\">https://example.com</a>.</p>\n"}}
+{"id":"mdinline-autolink-trailing-question","name":"URL 末尾问号被剥掉","family":"md-inline","check":"html","input":{"md":"见 https://example.com? 下一步\n"},"expect":{"equals":"<p>见 <a href=\"https://example.com\">https://example.com</a>? 下一步</p>\n"}}
+{"id":"mdinline-autolink-parens","name":"圆括号包裹的 URL","family":"md-inline","check":"html","input":{"md":"(https://example.com)\n"},"expect":{"equals":"<p>(<a href=\"https://example.com\">https://example.com</a>)</p>\n"}}
+{"id":"mdinline-autolink-email","name":"裸邮箱自动链接成 mailto","family":"md-inline","check":"html","input":{"md":"联系 a.b+c@example.com 谢谢\n"},"expect":{"equals":"<p>联系 <a href=\"mailto:a.b+c@example.com\">a.b+c@example.com</a> 谢谢</p>\n"}}
+{"id":"mdinline-autolink-www","name":"www 前缀自动补 http 协议","family":"md-inline","check":"html","input":{"md":"www.example.com\n"},"expect":{"equals":"<p><a href=\"http://www.example.com\">www.example.com</a></p>\n"}}
+{"id":"mdinline-autolink-angle-url","name":"尖括号 URL 自动链接","family":"md-inline","check":"html","input":{"md":"<https://example.com/x>\n"},"expect":{"equals":"<p><a href=\"https://example.com/x\">https://example.com/x</a></p>\n"}}
+{"id":"mdinline-autolink-angle-email","name":"尖括号邮箱自动链接","family":"md-inline","check":"html","input":{"md":"<a@b.com>\n"},"expect":{"equals":"<p><a href=\"mailto:a@b.com\">a@b.com</a></p>\n"}}
+{"id":"mdinline-autolink-query-escape","name":"自动链接 query 里的与号被转义","family":"md-inline","check":"html","input":{"md":"https://example.com/a?b=1&c=2\n"},"expect":{"equals":"<p><a href=\"https://example.com/a?b=1&amp;c=2\">https://example.com/a?b=1&amp;c=2</a></p>\n"}}
+{"id":"mdinline-autolink-underscore","name":"URL 里的下划线不触发强调","family":"md-inline","check":"html","input":{"md":"https://example.com/a_b_c\n"},"expect":{"equals":"<p><a href=\"https://example.com/a_b_c\">https://example.com/a_b_c</a></p>\n"}}
+{"id":"mdinline-autolink-balanced-paren","name":"URL 内的成对括号算进链接","family":"md-inline","check":"html","input":{"md":"https://example.com/a(b)\n"},"expect":{"equals":"<p><a href=\"https://example.com/a(b)\">https://example.com/a(b)</a></p>\n"}}
+{"id":"mdinline-autolink-cjk-comma-swallowed","name":"自动链接会吞掉紧邻的中文逗号（GFM 行为）","family":"md-inline","check":"html","input":{"md":"见 https://example.com，然后\n"},"expect":{"contains":["href=\"https://example.com%EF%BC%8C%E7%84%B6%E5%90%8E\"",">https://example.com，然后</a>"]}}
+# —— GFM 删除线 ——
+{"id":"mdinline-del-double-tilde","name":"双波浪线删除线","family":"md-inline","check":"html","input":{"md":"~~删掉~~\n"},"expect":{"equals":"<p><del>删掉</del></p>\n"}}
+{"id":"mdinline-del-single-tilde","name":"单波浪线删除线（GFM 允许）","family":"md-inline","check":"html","input":{"md":"~x~\n"},"expect":{"equals":"<p><del>x</del></p>\n"}}
+{"id":"mdinline-del-single-tilde-cjk","name":"中文单波浪线删除线","family":"md-inline","check":"html","input":{"md":"~中文~\n"},"expect":{"equals":"<p><del>中文</del></p>\n"}}
+{"id":"mdinline-del-space-inside-literal","name":"内容带外侧空格的波浪线不成立","family":"md-inline","check":"html","input":{"md":"~~ x ~~\n"},"expect":{"equals":"<p>~~ x ~~</p>\n"}}
+{"id":"mdinline-del-nested-em","name":"删除线内嵌斜体","family":"md-inline","check":"html","input":{"md":"~~*a*~~\n"},"expect":{"equals":"<p><del><em>a</em></del></p>\n"}}
+{"id":"mdinline-del-intraword","name":"词内删除线","family":"md-inline","check":"html","input":{"md":"a~~b~~c\n"},"expect":{"equals":"<p>a<del>b</del>c</p>\n"}}
+{"id":"mdinline-del-triple-tilde-literal","name":"三连波浪线保持字面","family":"md-inline","check":"html","input":{"md":"~~a~~~\n"},"expect":{"equals":"<p>~~a~~~</p>\n"}}
+{"id":"mdinline-del-strong-nested","name":"删除线内嵌加粗","family":"md-inline","check":"html","input":{"md":"~~a **b** c~~\n"},"expect":{"equals":"<p><del>a <strong>b</strong> c</del></p>\n"}}
+# —— 任务列表复选框的行内 class 输出 ——
+{"id":"mdinline-task-checked","name":"已完成任务项的复选框与 class","family":"md-inline","check":"html","input":{"md":"- [x] 完成\n"},"expect":{"equals":"<ul class=\"contains-task-list\">\n<li class=\"task-list-item\"><input type=\"checkbox\" class=\"task-list-item-checkbox\" checked=\"\" disabled=\"\" /> 完成</li>\n</ul>\n"}}
+{"id":"mdinline-task-unchecked","name":"未完成任务项没有 checked 属性","family":"md-inline","check":"html","input":{"md":"- [ ] 待办\n"},"expect":{"equals":"<ul class=\"contains-task-list\">\n<li class=\"task-list-item\"><input type=\"checkbox\" class=\"task-list-item-checkbox\" disabled=\"\" /> 待办</li>\n</ul>\n"}}
+# —— HTML 实体与反斜杠转义 ——
+{"id":"mdinline-entity-amp","name":"HTML 实体与号保持转义","family":"md-inline","check":"html","input":{"md":"&amp;\n"},"expect":{"equals":"<p>&amp;</p>\n"}}
+{"id":"mdinline-entity-numeric-apostrophe","name":"数字实体单引号解码后不转义","family":"md-inline","check":"html","input":{"md":"&#39;\n"},"expect":{"equals":"<p>'</p>\n"}}
+{"id":"mdinline-entity-named-copy","name":"命名实体解码成 Unicode","family":"md-inline","check":"html","input":{"md":"&copy;\n"},"expect":{"equals":"<p>©</p>\n"}}
+{"id":"mdinline-entity-unknown","name":"未知实体按字面转义","family":"md-inline","check":"html","input":{"md":"&nosuch;\n"},"expect":{"equals":"<p>&amp;nosuch;</p>\n"}}
+{"id":"mdinline-entity-quot","name":"引号实体解码后重新转义","family":"md-inline","check":"html","input":{"md":"&quot;\n"},"expect":{"equals":"<p>&quot;</p>\n"}}
+{"id":"mdinline-entity-hex-apostrophe","name":"十六进制实体单引号","family":"md-inline","check":"html","input":{"md":"&#x27;\n"},"expect":{"equals":"<p>'</p>\n"}}
+{"id":"mdinline-escape-less-than","name":"转义的小于号输出实体","family":"md-inline","check":"html","input":{"md":"\\<tag\n"},"expect":{"equals":"<p>&lt;tag</p>\n"}}
+{"id":"mdinline-escape-brackets","name":"转义的方括号不成链接","family":"md-inline","check":"html","input":{"md":"\\[x\\]\n"},"expect":{"equals":"<p>[x]</p>\n"}}
+{"id":"mdinline-escape-hash","name":"转义的井号不成标题","family":"md-inline","check":"html","input":{"md":"\\# 不是标题\n"},"expect":{"equals":"<p># 不是标题</p>\n"}}
+{"id":"mdinline-escape-backtick","name":"转义的反引号不成代码","family":"md-inline","check":"html","input":{"md":"\\`x\\`\n"},"expect":{"equals":"<p>`x`</p>\n"}}
+{"id":"mdinline-escape-tilde","name":"转义的波浪线不成删除线","family":"md-inline","check":"html","input":{"md":"\\~x\\~\n"},"expect":{"equals":"<p>~x~</p>\n"}}
+{"id":"mdinline-escape-pipe","name":"转义的竖线保持字面","family":"md-inline","check":"html","input":{"md":"a\\|b\n"},"expect":{"equals":"<p>a|b</p>\n"}}
+{"id":"mdinline-escape-brace","name":"转义的花括号保持字面","family":"md-inline","check":"html","input":{"md":"\\{x\\}\n"},"expect":{"equals":"<p>{x}</p>\n"}}
+{"id":"mdinline-escape-backslash","name":"双反斜杠输出一个反斜杠","family":"md-inline","check":"html","input":{"md":"a\\\\b\n"},"expect":{"equals":"<p>a\\b</p>\n"}}
+{"id":"mdinline-escape-amp-entity","name":"转义的与号不触发实体解码","family":"md-inline","check":"html","input":{"md":"\\&amp;\n"},"expect":{"equals":"<p>&amp;amp;</p>\n"}}
+{"id":"mdinline-escape-dollar-no-math","name":"转义的美元号不成公式","family":"md-inline","check":"html","input":{"md":"\\$x\\$\n"},"expect":{"equals":"<p>$x$</p>\n","not_contains":["<math"]}}
+{"id":"mdinline-escape-full-table","name":"反斜杠转义全表选点","family":"md-inline","check":"html","input":{"md":"\\!\\\"\\#\\$\\%\\&\\'\\(\\)\\*\\+\\,\\-\\.\\/\\:\\;\\<\\=\\>\\?\\@\\[\\\\\\]\\^\\_\\`\\{\\|\\}\\~\n"},"expect":{"equals":"<p>!&quot;#$%&amp;'()*+,-./:;&lt;=&gt;?@[\\]^_`{|}~</p>\n"}}
+{"id":"mdinline-text-raw-amp","name":"正文裸与号被转义","family":"md-inline","check":"html","input":{"md":"a&b\n"},"expect":{"equals":"<p>a&amp;b</p>\n"}}
+{"id":"mdinline-text-lt-gt","name":"正文裸尖括号被转义","family":"md-inline","check":"html","input":{"md":"5 < 6 > 4\n"},"expect":{"equals":"<p>5 &lt; 6 &gt; 4</p>\n"}}
+{"id":"mdinline-escape-dollar-exact","name":"价格文本里的转义美元号不误判","family":"md-inline","check":"html","input":{"md":"价格 \\$5\n"},"expect":{"equals":"<p>价格 $5</p>\n"}}
+# —— 数学：定界符、误判反例、MathML 且无色 ——
+{"id":"mdinline-math-inline","name":"行内公式输出 MathML 容器","family":"md-inline","check":"html","input":{"md":"$x$\n"},"expect":{"contains":["<span class=\"rmd-math-inline\"><span class=\"katex\"><math","<annotation encoding=\"application/x-tex\">x</annotation>"],"not_contains":["rmd-math-display"]}}
+{"id":"mdinline-math-superscript","name":"行内公式的上下标结构","family":"md-inline","check":"html","input":{"md":"$x^2$\n"},"expect":{"contains":["<msup><mi>x</mi><mn>2</mn></msup>"]}}
+{"id":"mdinline-math-display-inline","name":"$$…$$ 输出块级公式且不套 p","family":"md-inline","check":"html","input":{"md":"$$x$$\n"},"expect":{"contains":["<div class=\"rmd-math-display\"><span class=\"katex\"><math","display=\"block\"","</div>"],"not_contains":["<p>"]}}
+{"id":"mdinline-math-display-multiline","name":"多行 $$ 块级公式","family":"md-inline","check":"html","input":{"md":"$$\nE = mc^2\n$$\n"},"expect":{"contains":["<div class=\"rmd-math-display\">","display=\"block\"","<annotation encoding=\"application/x-tex\">E = mc^2</annotation>"],"not_contains":["<p>"]}}
+{"id":"mdinline-math-escaped-dollar-no-math","name":"转义美元号不进入公式","family":"md-inline","check":"html","input":{"md":"价格 \\$5\n"},"expect":{"equals":"<p>价格 $5</p>\n","not_contains":["<math"]}}
+{"id":"mdinline-math-price-not-math","name":"价格文本里的两个美元号不误判","family":"md-inline","check":"html","input":{"md":"价格是 $5 到 $10 元\n"},"expect":{"equals":"<p>价格是 $5 到 $10 元</p>\n","not_contains":["<math"]}}
+{"id":"mdinline-math-code-not-math","name":"行内代码里的美元号不解析成公式","family":"md-inline","check":"html","input":{"md":"用 `$a+b$` 表示\n"},"expect":{"equals":"<p>用 <code>$a+b$</code> 表示</p>\n","not_contains":["<math"]}}
+{"id":"mdinline-math-single-dollar-literal","name":"单个美元号保持字面","family":"md-inline","check":"html","input":{"md":"只要 $ 一个\n"},"expect":{"equals":"<p>只要 $ 一个</p>\n"}}
+{"id":"mdinline-math-unclosed-dollar-literal","name":"美元号未闭合保持字面","family":"md-inline","check":"html","input":{"md":"开始 $x+y 没有结束\n"},"expect":{"equals":"<p>开始 $x+y 没有结束</p>\n"}}
+{"id":"mdinline-math-off-switch","name":"math_dollars 关闭后不解析公式","family":"md-inline","check":"html","input":{"md":"$x$\n","opts":{"math_dollars":false}},"expect":{"equals":"<p>$x$</p>\n","not_contains":["<math"]}}
+{"id":"mdinline-math-color-stripped","name":"公式里的字面色属性被剥掉","family":"md-inline","check":"html","input":{"md":"$\\textcolor{#ff0000}{x}$\n"},"expect":{"contains":["<mstyle><mi>x</mi></mstyle>","<math"],"not_contains":["mathcolor","mathbackground","style="]}}
+{"id":"mdinline-math-error-fallback","name":"解析失败的公式回退成转义源码","family":"md-inline","check":"html","input":{"md":"$\\def\\a{\\a}\\a$\n"},"expect":{"equals":"<p><span class=\"rmd-math-source rmd-math-error\" data-math-style=\"inline\">\\def\\a{\\a}\\a</span></p>\n"}}
+{"id":"mdinline-math-frac","name":"分式公式输出 mfrac","family":"md-inline","check":"html","input":{"md":"$\\frac{a}{b}$\n"},"expect":{"contains":["<mfrac><mi>a</mi><mi>b</mi></mfrac>"]}}
+{"id":"mdinline-math-single-dollar-space-literal","name":"只有一个空格的 $ $ 不是公式","family":"md-inline","check":"html","input":{"md":"$ $\n"},"expect":{"equals":"<p>$ $</p>\n"}}
+{"id":"mdinline-math-empty-display-fallback","name":"空块级公式直接回退且不带 MathML","family":"md-inline","check":"html","input":{"md":"$$ $$\n"},"expect":{"equals":"<div class=\"rmd-math-source rmd-math-empty\" data-math-style=\"display\"></div>","not_contains":["<math"]}}
+{"id":"mdinline-math-two-inline","name":"同一段落两个行内公式","family":"md-inline","check":"html","input":{"md":"$x$和$y$\n"},"expect":{"counts":{"rmd-math-inline":2}}}
+{"id":"mdinline-math-adjacent-no-separator","name":"两个相邻行内公式不合并","family":"md-inline","check":"html","input":{"md":"$x$$y$\n"},"expect":{"counts":{"rmd-math-inline":2}}}
+{"id":"mdinline-math-display-mid-paragraph","name":"段落中间的块级公式仍是 div（已知边界）","family":"md-inline","check":"html","input":{"md":"前后 $$x$$ 中间\n"},"expect":{"contains":["<p>前后 <div class=\"rmd-math-display\">","</div> 中间</p>"]}}
+{"id":"mdinline-math-heading-ids","name":"公式标题的 id 与锚点","family":"md-inline","check":"html","input":{"md":"# $x$\n","opts":{"heading_ids":true}},"expect":{"contains":["<h1 id=\"x\">","<span class=\"rmd-math-inline\">","<a href=\"#x\"","data-heading-content=\"x\""]}}
+{"id":"mdinline-math-latex-paren-not-math","name":"反斜杠圆括号不触发公式（未开 math_latex）","family":"md-inline","check":"html","input":{"md":"用 \\(x+y\\) 表示\n"},"expect":{"equals":"<p>用 (x+y) 表示</p>\n","not_contains":["<math"]}}
+# —— 软换行 / 硬换行、连续空格与制表符 ——
+{"id":"mdinline-break-softbreak-default","name":"软换行默认断行","family":"md-inline","check":"html","input":{"md":"甲\n乙\n"},"expect":{"equals":"<p>甲<br />\n乙</p>\n"}}
+{"id":"mdinline-break-softbreak-off","name":"关闭 hardbreaks 后软换行不断行","family":"md-inline","check":"html","input":{"md":"甲\n乙\n","opts":{"hardbreaks":false}},"expect":{"equals":"<p>甲\n乙</p>\n"}}
+{"id":"mdinline-break-hardbreak-spaces","name":"行尾两空格的硬换行","family":"md-inline","check":"html","input":{"md":"甲  \n乙\n"},"expect":{"equals":"<p>甲<br />\n乙</p>\n"}}
+{"id":"mdinline-break-hardbreak-backslash","name":"行尾反斜杠的硬换行","family":"md-inline","check":"html","input":{"md":"甲\\\n乙\n"},"expect":{"equals":"<p>甲<br />\n乙</p>\n"}}
+{"id":"mdinline-break-hardbreak-unaffected","name":"关闭 hardbreaks 不影响硬换行","family":"md-inline","check":"html","input":{"md":"甲  \n乙\n","opts":{"hardbreaks":false}},"expect":{"equals":"<p>甲<br />\n乙</p>\n"}}
+{"id":"mdinline-space-two-consecutive","name":"行内两个连续空格保留","family":"md-inline","check":"html","input":{"md":"a  b\n"},"expect":{"equals":"<p>a  b</p>\n"}}
+{"id":"mdinline-space-three-consecutive","name":"行内三个连续空格保留","family":"md-inline","check":"html","input":{"md":"a   b\n"},"expect":{"equals":"<p>a   b</p>\n"}}
+{"id":"mdinline-space-tab-inline","name":"行内制表符保留","family":"md-inline","check":"html","input":{"md":"a\tb\n"},"expect":{"equals":"<p>a\tb</p>\n"}}
+{"id":"mdinline-space-trailing-single-line","name":"段落末尾空格被剥掉","family":"md-inline","check":"html","input":{"md":"甲  \n"},"expect":{"equals":"<p>甲</p>\n"}}
+{"id":"mdinline-break-backslash-at-end","name":"段落末行的反斜杠保持字面","family":"md-inline","check":"html","input":{"md":"abc\\\n"},"expect":{"equals":"<p>abc\\</p>\n"}}
+# —— Unicode：中文、emoji、组合字符、零宽字符 ——
+{"id":"mdinline-unicode-cjk","name":"中文正文原样输出","family":"md-inline","check":"html","input":{"md":"中文排版测试\n"},"expect":{"equals":"<p>中文排版测试</p>\n"}}
+{"id":"mdinline-unicode-emoji-4byte","name":"四字节 emoji 原样输出","family":"md-inline","check":"html","input":{"md":"🚀 火箭\n"},"expect":{"equals":"<p>🚀 火箭</p>\n"}}
+{"id":"mdinline-unicode-zwj-family","name":"ZWJ 组合 emoji 原样输出","family":"md-inline","check":"html","input":{"md":"👨‍👩‍👧‍👦\n"},"expect":{"equals":"<p>👨‍👩‍👧‍👦</p>\n"}}
+{"id":"mdinline-unicode-combining","name":"组合字符（e + 重音）原样输出","family":"md-inline","check":"html","input":{"md":"é\n"},"expect":{"equals":"<p>é</p>\n"}}
+{"id":"mdinline-unicode-zwsp","name":"零宽空格保留在文本里","family":"md-inline","check":"html","input":{"md":"a​b\n"},"expect":{"equals":"<p>a​b</p>\n"}}
+{"id":"mdinline-unicode-zwj-zero-width","name":"零宽连接符保留在文本里","family":"md-inline","check":"html","input":{"md":"a‍b\n"},"expect":{"equals":"<p>a‍b</p>\n"}}
+{"id":"mdinline-unicode-fullwidth-punct","name":"全角标点原样输出","family":"md-inline","check":"html","input":{"md":"！？，。\n"},"expect":{"equals":"<p>！？，。</p>\n"}}
+{"id":"mdinline-unicode-emoji-in-em","name":"emoji 可参与强调","family":"md-inline","check":"html","input":{"md":"*🚀*\n"},"expect":{"equals":"<p><em>🚀</em></p>\n"}}
+{"id":"mdinline-unicode-emoji-around-em","name":"中文与 emoji 之间的强调","family":"md-inline","check":"html","input":{"md":"🚀*火箭*🚀\n"},"expect":{"equals":"<p>🚀<em>火箭</em>🚀</p>\n"}}
+# —— 代码高亮：语言 class、未知/空语言回退 ——
+{"id":"mdinline-hl-rust-shell","name":"Rust 围栏的外壳与关键字 token","family":"md-inline","check":"html","input":{"md":"```rust\nfn main() {}\n```\n"},"expect":{"contains":["<pre class=\"rmd-code\"><code class=\"language-rust\">","<span class=\"rmd-source rmd-rust\">","rmd-storage rmd-type rmd-function rmd-rust\">fn</span>"]}}
+{"id":"mdinline-hl-python-shell","name":"Python 围栏的外壳与关键字 token","family":"md-inline","check":"html","input":{"md":"```python\ndef f():\n    pass\n```\n"},"expect":{"contains":["<pre class=\"rmd-code\"><code class=\"language-python\">","rmd-storage rmd-type rmd-function rmd-python\">def</span>","rmd-keyword rmd-control rmd-flow rmd-python\">pass</span>"]}}
+{"id":"mdinline-hl-unknown-language","name":"未知语言回落纯文本但保留外壳","family":"md-inline","check":"html","input":{"md":"```zzz\nx < y & z\n```\n"},"expect":{"equals":"<pre class=\"rmd-code\"><code class=\"language-zzz\"><span class=\"rmd-text rmd-plain\">x &lt; y &amp; z\n</span></code></pre>\n"}}
+{"id":"mdinline-hl-empty-language","name":"空语言围栏不写 language class","family":"md-inline","check":"html","input":{"md":"```\nx < y\n```\n"},"expect":{"equals":"<pre class=\"rmd-code\"><code><span class=\"rmd-text rmd-plain\">x &lt; y\n</span></code></pre>\n","not_contains":["language-"]}}
+{"id":"mdinline-hl-rust-string-escape","name":"Rust 代码里的字符串被转义","family":"md-inline","check":"html","input":{"md":"```rust\nlet s = \"<a>\";\n```\n"},"expect":{"contains":["<span class=\"rmd-string rmd-quoted rmd-double rmd-rust\">","&lt;a&gt;"],"not_contains":["<a>"]}}
+{"id":"mdinline-hl-info-space-trimmed","name":"围栏 info 前导空格不影响语言","family":"md-inline","check":"html","input":{"md":"``` rust\nlet x = 1;\n```\n"},"expect":{"contains":["<code class=\"language-rust\">","rmd-storage rmd-type rmd-rust\">let</span>"]}}
+{"id":"mdinline-hl-text-language-plain","name":"text 围栏仍走纯文本语法","family":"md-inline","check":"html","input":{"md":"```text\nplain\n```\n"},"expect":{"equals":"<pre class=\"rmd-code\"><code class=\"language-text\"><span class=\"rmd-text rmd-plain\">plain\n</span></code></pre>\n"}}
+{"id":"mdinline-hl-rust-comment","name":"Rust 行注释的 token class","family":"md-inline","check":"html","input":{"md":"```rust\n// 注释\nfn f() {}\n```\n"},"expect":{"contains":["rmd-comment rmd-line rmd-double-slash rmd-rust","//</span> 注释"]}}
+{"id":"mdinline-hl-fence-hash-not-heading","name":"围栏里的井号不被当标题","family":"md-inline","check":"html","input":{"md":"```rust\n# 注释\n```\n"},"expect":{"contains":["<code class=\"language-rust\">","rmd-keyword rmd-operator rmd-rust\">#</span> 注释"]}}
+# —— 原始 HTML 一律丢弃 ——
+{"id":"mdinline-raw-script-omitted","name":"script 整段被丢弃","family":"md-inline","check":"html","input":{"md":"<script>alert(1)</script>\n"},"expect":{"equals":"<!-- raw HTML omitted -->\n","not_contains":["<script"]}}
+{"id":"mdinline-raw-inline-bold-omitted","name":"行内 b 标签被丢弃但文字保留","family":"md-inline","check":"html","input":{"md":"前<b>粗</b>后\n"},"expect":{"equals":"<p>前<!-- raw HTML omitted -->粗<!-- raw HTML omitted -->后</p>\n"}}
+{"id":"mdinline-raw-img-onerror-omitted","name":"带 onerror 的 img 整段被丢弃","family":"md-inline","check":"html","input":{"md":"<img src=x onerror=alert(1)>\n"},"expect":{"equals":"<!-- raw HTML omitted -->\n","not_contains":["<img","onerror"]}}
+{"id":"mdinline-raw-iframe-omitted","name":"iframe 整段被丢弃","family":"md-inline","check":"html","input":{"md":"<iframe src=\"https://evil.example\"></iframe>\n"},"expect":{"equals":"<!-- raw HTML omitted -->\n","not_contains":["<iframe"]}}
+{"id":"mdinline-raw-br-in-paragraph-omitted","name":"段落里的裸 br 不生效","family":"md-inline","check":"html","input":{"md":"甲<br>乙\n"},"expect":{"equals":"<p>甲<!-- raw HTML omitted -->乙</p>\n","not_contains":["<br"]}}
+{"id":"mdinline-raw-comment-omitted","name":"HTML 注释被丢弃","family":"md-inline","check":"html","input":{"md":"<!-- 注释 -->\n"},"expect":{"equals":"<!-- raw HTML omitted -->\n"}}
+{"id":"mdinline-raw-style-omitted","name":"style 整段被丢弃","family":"md-inline","check":"html","input":{"md":"<style>body{display:none}</style>\n"},"expect":{"equals":"<!-- raw HTML omitted -->\n","not_contains":["<style"]}}
+{"id":"mdinline-raw-multiple-inline-omitted","name":"连续多个行内标签逐个丢弃","family":"md-inline","check":"html","input":{"md":"<b>x</b><i>y</i>\n"},"expect":{"equals":"<p><!-- raw HTML omitted -->x<!-- raw HTML omitted --><!-- raw HTML omitted -->y<!-- raw HTML omitted --></p>\n"}}
+# —— 标题 id 与 sourcepos 开关 ——
+{"id":"mdinline-opt-heading-ids-on","name":"打开 heading_ids 后标题带 id 与锚点","family":"md-inline","check":"html","input":{"md":"# 标题\n","opts":{"heading_ids":true}},"expect":{"contains":["<h1 id=\"标题\">标题","<a href=\"#标题\"","aria-label=\"Link to heading '标题'\"","data-heading-content=\"标题\"","class=\"anchor\""]}}
+{"id":"mdinline-opt-heading-ids-off","name":"默认标题没有 id 与锚点","family":"md-inline","check":"html","input":{"md":"# 标题\n"},"expect":{"equals":"<h1>标题</h1>\n","not_contains":["id=\"","class=\"anchor\""]}}
+{"id":"mdinline-opt-heading-ids-cjk-space","name":"标题 id 把空格换成连字符","family":"md-inline","check":"html","input":{"md":"# 中文 标题\n","opts":{"heading_ids":true}},"expect":{"contains":["<h1 id=\"中文-标题\">","href=\"#中文-标题\""]}}
+{"id":"mdinline-opt-heading-ids-duplicate","name":"重复标题的 id 加后缀去重","family":"md-inline","check":"html","input":{"md":"# 一\n\n# 一\n","opts":{"heading_ids":true}},"expect":{"contains":["<h1 id=\"一\">","<h1 id=\"一-1\">"]}}
+{"id":"mdinline-opt-heading-ids-code","name":"含行内代码的标题 id 与文字","family":"md-inline","check":"html","input":{"md":"# 含 `code` 的标题\n","opts":{"heading_ids":true}},"expect":{"contains":["<h1 id=\"含-code-的标题\">含 <code>code</code> 的标题","data-heading-content=\"含 code 的标题\""]}}
+{"id":"mdinline-opt-sourcepos-on","name":"打开 sourcepos 后段落带字节列号","family":"md-inline","check":"html","input":{"md":"中文\n","opts":{"render_sourcepos":true}},"expect":{"equals":"<p data-sourcepos=\"1:1-1:6\">中文</p>\n"}}
+{"id":"mdinline-opt-sourcepos-chars","name":"sourcepos_chars 让列号按字符计","family":"md-inline","check":"html","input":{"md":"中文\n","opts":{"render_sourcepos":true,"sourcepos_chars":true}},"expect":{"equals":"<p data-sourcepos=\"1:1-1:2\">中文</p>\n"}}
+{"id":"mdinline-opt-sourcepos-off","name":"默认不输出 sourcepos","family":"md-inline","check":"html","input":{"md":"中文\n"},"expect":{"equals":"<p>中文</p>\n","not_contains":["data-sourcepos"]}}
+{"id":"mdinline-opt-sourcepos-inline-em","name":"行内强调元素也带 sourcepos","family":"md-inline","check":"html","input":{"md":"*x*\n","opts":{"render_sourcepos":true}},"expect":{"equals":"<p data-sourcepos=\"1:1-1:3\"><em data-sourcepos=\"1:1-1:3\">x</em></p>\n"}}
+{"id":"mdinline-opt-sourcepos-hardbreak","name":"硬换行的 br 带 sourcepos","family":"md-inline","check":"html","input":{"md":"中文\n中文\n","opts":{"render_sourcepos":true}},"expect":{"contains":["<p data-sourcepos=\"1:1-2:6\">","<br data-sourcepos=\"1:7-1:7\" />"]}}
+{"id":"mdinline-opt-heading-ids-no-sourcepos","name":"heading_ids 不连带 sourcepos","family":"md-inline","check":"html","input":{"md":"# 标题\n","opts":{"heading_ids":true}},"expect":{"contains":["id=\"标题\""],"not_contains":["data-sourcepos"]}}
+# —— 行内语法组合 ——
+{"id":"mdinline-mix-link-in-em","name":"斜体里的链接","family":"md-inline","check":"html","input":{"md":"*[t](https://example.com)*\n"},"expect":{"equals":"<p><em><a href=\"https://example.com\">t</a></em></p>\n"}}
+{"id":"mdinline-mix-em-in-link","name":"链接文字里的加粗","family":"md-inline","check":"html","input":{"md":"[**粗**](https://example.com)\n"},"expect":{"equals":"<p><a href=\"https://example.com\"><strong>粗</strong></a></p>\n"}}
+{"id":"mdinline-mix-code-in-em","name":"斜体里的行内代码","family":"md-inline","check":"html","input":{"md":"*a `b` c*\n"},"expect":{"equals":"<p><em>a <code>b</code> c</em></p>\n"}}
+{"id":"mdinline-mix-star-in-code-in-em","name":"斜体里代码中的星号不破坏强调","family":"md-inline","check":"html","input":{"md":"*a `*` b*\n"},"expect":{"equals":"<p><em>a <code>*</code> b</em></p>\n"}}
+{"id":"mdinline-mix-autolink-in-em","name":"斜体里的自动链接","family":"md-inline","check":"html","input":{"md":"*https://example.com*\n"},"expect":{"equals":"<p><em><a href=\"https://example.com\">https://example.com</a></em></p>\n"}}
+{"id":"mdinline-mix-link-in-strong","name":"加粗里的链接","family":"md-inline","check":"html","input":{"md":"**加粗 [l](https://e.com)**\n"},"expect":{"equals":"<p><strong>加粗 <a href=\"https://e.com\">l</a></strong></p>\n"}}
+{"id":"mdinline-mix-code-then-em","name":"代码 span 紧邻强调","family":"md-inline","check":"html","input":{"md":"`a`*b*\n"},"expect":{"equals":"<p><code>a</code><em>b</em></p>\n"}}
+{"id":"mdinline-mix-blockquote-inline","name":"引用块里的行内强调","family":"md-inline","check":"html","input":{"md":"> 引用 *斜*\n"},"expect":{"equals":"<blockquote>\n<p>引用 <em>斜</em></p>\n</blockquote>\n"}}
+{"id":"mdinline-mix-list-inline","name":"列表项里的行内强调","family":"md-inline","check":"html","input":{"md":"- 项 *斜*\n"},"expect":{"equals":"<ul>\n<li>项 <em>斜</em></li>\n</ul>\n"}}

@@ -47,8 +47,14 @@
    * @property {string} id 对象名（状态条与判据里说人话用）
    * @property {boolean} inlineOnly 呈现：装饰层**只按行内语义**（旧 `cellContext`）
    * @property {boolean} box 呈现：是否把被替换元素的盒子搬到 host（`live/box.js`）
-   * @property {'leave'|'walk'} tab `Tab`：提交并退出这一块 / 走到下一格
+   * @property {'leave'|'walk'|'indent'} tab `Tab`：提交并退出这一块 / 走到下一格 /
+   *   在列表里**降一级缩进**（`⇧Tab` 升一级；`bugs/0116`，2026-11-13 用户裁定）
    * @property {'newline'|'walk'} enter 裸 `Enter`：换行 / 走格
+   * @property {'stay'|'cross'} arrows 方向键到边界：停在本块 / 进相邻格
+   *   ⭐ 2026-11-06（`bugs/0104`）：Mardo 在表格里按 ←→↑↓ 会跨单元格（用户原话
+   *   「表格中光标移动，左右上下 mardo 可以跨单元格，RMD 不行」）。⛔ 只有格子声明
+   *   `'cross'`——段落/标题/列表里按方向键到边界本来就没有"相邻格"这回事，
+   *   让它们也去算格子下标只会撞上"不在表格里"的空路径。
    * @property {TextRule} text **任何**文本入口（键盘 / `beforeinput` / `paste` /
    *   `compositionend`）的约束 —— ⛔ 只在某一个入口上折的行，别的入口照样漏得进来
    * @property {'lines'|'structure'} verify 写回校验：行区间 / 行区间 ＋ 结构
@@ -69,6 +75,7 @@
     box: true,
     tab: /** @type {const} */ ('leave'),
     enter: /** @type {const} */ ('newline'),
+    arrows: /** @type {const} */ ('stay'),
     // ⛔ 不折：`INV-LIVE-13` 的归一化只有状态机那一份，在这里再折一遍
     //    等于把"粘贴两行"变成"粘一行"（探针 `O-*-5c` 的期望正好相反）。
     text: /** @type {TextRule} */ (identity),
@@ -96,27 +103,67 @@
     box: false,
     tab: /** @type {const} */ ('walk'),
     enter: /** @type {const} */ ('newline'),
+    // ⭐ bugs/0104：方向键到格子边界 ⇒ 进相邻格（复刻 Mardo）。
+    arrows: /** @type {const} */ ('cross'),
     text: /** @type {TextRule} */ (identity),
     verify: /** @type {const} */ ('structure'),
   });
+
+  /**
+   * ⭐ **列表块**：`Tab` / `⇧Tab` = 缩进降一级 / 升一级（`bugs/0116`）。
+   *
+   * 用户原话（2026-11-13）：「输入多级 List Item 是，一般加一个 tab，或者平级的 list Item
+   * 加一个 tab 就变成下一级的，这是通用体验，RMD 对 TAB 支持很差，明显有问题。
+   * 重点参考 Notion Mardo 的输入和展示体验。」
+   *
+   * ⚠️ 为什么会话里其它块**保持 `'leave'`**：`Tab` 是键盘用户离开一个文本控件的标准出口，
+   *    只有列表把它"吃掉"是有共识的例外（Notion / 飞书 / 幕布都如此）⇒ 只给列表换这一格，
+   *    ⛔ 别顺手把 `BLOCK.tab` 也改掉。
+   * ⚠️ 判的是**块的品种**（被换掉的那个元素是 `<ul>` / `<ol>`），⛔ 不是"文本里有没有 `- `"：
+   *    契约表在**进块那一刻**就要定下来（`INV-EDITOBJ-05`），而 `- ` 是敲出来的。
+   *    一个段落块里打出 `- ` 之后提交、再进编辑才会变成列表块——这与阅读态重渲的节拍一致。
+   */
+  const LIST = Object.freeze({
+    id: 'list',
+    inlineOnly: false,
+    box: true,
+    tab: /** @type {const} */ ('indent'),
+    enter: /** @type {const} */ ('newline'),
+    arrows: /** @type {const} */ ('stay'),
+    text: /** @type {TextRule} */ (identity),
+    verify: /** @type {const} */ ('lines'),
+  });
+
+  /** 被换掉的那个元素是不是列表（`<ul>` / `<ol>`）。 */
+  function isListEl(el) {
+    if (!el) return false;
+    const tag = String(el.tagName || el.nodeName || '').toUpperCase();
+    return tag === 'UL' || tag === 'OL';
+  }
 
   /**
    * 这个语境用哪一份策略。
    *
    * ⚠️ `INV-EDITOBJ-05`：**新对象先填契约表再接线**——⛔ 不许"先接线、回头补一行"，
    *    也不许在调用点写 `ctx.cell ? … : …` 那样的第三份判断。
-   * @param {{cell?:object|null}|null|undefined} ctx
+   * @param {{cell?:object|null, el?:object|null, tag?:string}|null|undefined} ctx
+   *   `el` = 被换掉的那个元素（`makeLiveView` 收到的 `req.el`）；
+   *   `tag` = 直接给标签名（单测与离屏探针用，免得造假 DOM）。
    * @returns {Policy}
    */
   function policyOf(ctx) {
     const c = ctx || {};
-    return c.cell ? CELL : BLOCK;
+    if (c.cell) return CELL;
+    if (c.tag ? /^(UL|OL)$/i.test(String(c.tag)) : isListEl(c.el)) return LIST;
+    return BLOCK;
   }
 
   const api = {
     policyOf: policyOf,
+    isListEl: isListEl,
     BLOCK: BLOCK,
     CELL: CELL,
+    LIST: LIST,
   };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

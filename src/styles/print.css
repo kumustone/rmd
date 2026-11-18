@@ -1,0 +1,88 @@
+/*
+ * 打印布局（`design/0076` §2.1.7）。
+ *
+ * # 它只干一件事：把「界面」从纸面上去掉，只留正文
+ *
+ * ⚠️ 打印走的是原生 `WebviewWindow::print()`（wry → AppKit 的模态打印面板）；
+ *    wry 会把 `NSPrintInfo` 的四个边距写成 **0**，页边距**只能**由这里补
+ *    （`design/0076` §1.5 的取证；WKWebView 是否认 `@page` 的 margin 是人工验收项）。
+ *
+ * # 两条硬约束
+ *
+ * ① ⭐ **顶层只允许 `@page` 与 `@media print`**（`INV-EXP-07`）：
+ *    这里写一条无 `@media` 的正文规则，屏幕排版就会被它污染，
+ *    而症状只在"某天有人打开了打印样式"时才出现（`tests/js/export.test.js` 守着）。
+ * ② ⛔ **不写任何字面色值**：颜色的真相只有 `tokens.css` / `themes.css` 一处
+ *    （`INV-THEME-02`；`make lint-theme` 会扫这里）。
+ *
+ * ⚠️ `body > :not(#doc)` 成立的前提是 `#doc` 是 `<body>` 的直接子节点
+ *    （`index.html` 实测如此）；将来若有人包一层容器，`export.test.js` 先红。
+ *
+ * ⭐ **屏幕上的布局偏移要归零**（`bugs/0323`）：`display:none` 只拿掉元素、
+ *    不还回它占的位；`body` 的 `padding-left: var(--sidebar-width)`
+ *    与 `#doc` 的画布缩放都必须在这里清掉，否则正文被推到纸面右半边。
+ *    `export.test.js` 有一条带变异的判据钉住它。
+ */
+@page {
+  margin: 18mm 16mm;
+}
+
+@media print {
+  /*
+   * ⭐ `bugs/0323`（2026-11-15 真机）：屏幕布局的偏移必须在这里**归零**。
+   *
+   * ⚠️ `sidebar.css` 给 `body` 留了 `padding-left: var(--sidebar-width)`（280px），
+   *    打印时侧边栏**元素**被下面那条 `display:none` 拿掉，但**占位不还**
+   *    ⇒ 正文整块被推到纸面右半边（用户截图：只占页面右侧一半）。
+   *    ⛔ 别指望 `#doc { margin: 0 }` 抵消它——`padding` 在 `body` 上，
+   *    子元素的 margin 只会更靠右。
+   * ⚠️ `!important`：`body.sidebar-collapsed` 那一族是 (0,1,1)，
+   *    将来任何带类的 `body` 规则都会压过这里裸 `body` 的 (0,0,1)。
+   * ⚠️ `zoom: 1` 同理：`design/0079` 的画布缩放只属于屏幕，
+   *    带着它上纸面会让 `zoom > 1` 的正文按倍数溢出 `@page`。
+   */
+  html,
+  body {
+    height: auto;
+    overflow: visible;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  /* 侧边栏 / 顶栏 / 状态条 / 编辑分栏 / 各种浮层：纸面上一个都不留。 */
+  body > :not(#doc) {
+    display: none !important;
+  }
+
+  #doc {
+    max-width: none;
+    margin: 0;
+    padding: 0;
+    /* ⭐ `bugs/0323`：画布缩放（`design/0079`）只属于屏幕，纸面按 100% 排。 */
+    zoom: 1;
+  }
+
+  .doc {
+    max-width: none;
+  }
+
+  pre,
+  blockquote,
+  table,
+  figure {
+    break-inside: avoid;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    break-after: avoid;
+  }
+
+  .img-placeholder {
+    border-color: var(--ui-border);
+  }
+}

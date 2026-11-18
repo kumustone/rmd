@@ -56,6 +56,7 @@ CHUNKED="$ROOT/src/services/chunked.js"
 DIRSESSION="$ROOT/src/services/dirsession.js"
 TAURIJS="$ROOT/src/services/tauri.js"
 SEARCHJS="$ROOT/src/services/search.js"
+DISKEVENTS="$ROOT/src/services/diskevents.js"
 SESSIONJS="$ROOT/src/services/session.js"
 TREEREFRESH="$ROOT/src/services/treerefresh.js"
 CLIPBOARD="$ROOT/src/services/clipboard.js"
@@ -67,8 +68,8 @@ if ! command -v swiftc >/dev/null 2>&1; then
   echo "⛔ 没有 swiftc。需要 Xcode 命令行工具：xcode-select --install" >&2
   exit 3
 fi
-for f in "$I18N" "$VERSIONS" "$CHUNKED" "$DIRSESSION" "$TAURIJS" "$SEARCHJS" "$SESSIONJS" \
-         "$TREEREFRESH" "$CLIPBOARD" "$FILETREE" "$HARNESS" "$SWIFT"; do
+for f in "$I18N" "$VERSIONS" "$CHUNKED" "$DIRSESSION" "$TAURIJS" "$SEARCHJS" \
+         "$DISKEVENTS" "$SESSIONJS" "$TREEREFRESH" "$CLIPBOARD" "$FILETREE" "$HARNESS" "$SWIFT"; do
   if [ ! -f "$f" ]; then
     echo "⛔ 缺 $f" >&2
     exit 3
@@ -99,6 +100,7 @@ build_page() {
   cp "$DIRSESSION" "$dir/dirsession.js"
   cp "$TAURIJS"    "$dir/tauri.js"
   cp "$SEARCHJS"   "$dir/search.js"
+  cp "$DISKEVENTS" "$dir/diskevents.js"
   cp "$SESSIONJS"  "$dir/session.js"
   cp "$TREEREFRESH" "$dir/treerefresh.js"
   cp "$CLIPBOARD"  "$dir/clipboard.js"
@@ -106,10 +108,12 @@ build_page() {
   cp "$HARNESS"    "$dir/harness.js"
 
   # ⚠️ `<script>` 顺序照 `src/index.html` 的相对次序（经典脚本按顺序执行、依赖是**加载期取值**）：
-  #    `i18n → versions → chunked → dirsession → tauri → search → session
+  #    `i18n → versions → chunked → dirsession → tauri → search → diskevents → session
   #     → treerefresh → clipboard → FileTree`。
-  #    ⛔ 别调换：`session.js` 在加载期取 `window.rmd.{tauri,versions,search,dirSession}`，
-  #    `FileTree.js` 又取 `window.rmd.{i18n,versions,chunked,session,dirSession,treeRefresh,clipboard}`。
+  #    ⛔ 别调换：`session.js` 在加载期取 `window.rmd.{tauri,versions,search,dirSession,diskEvents}`，
+  #    `FileTree.js` 又取 `window.rmd.{i18n,versions,chunked,session,dirSession,treeRefresh,clipboard,diskEvents}`。
+  #    ⚠️ 2026-11-05（`bugs/0095`）：补上 `diskevents`——漏拷时 `session.js` 的 `DE` 是
+  #    `undefined`，`listDir` 一调 `DE.seq()` 就抛，树是空的（28/32 红）。
   cat > "$dir/index.html" <<'HTML'
 <!doctype html>
 <meta charset="utf-8">
@@ -149,6 +153,7 @@ build_page() {
 <script src="dirsession.js"></script>
 <script src="tauri.js"></script>
 <script src="search.js"></script>
+<script src="diskevents.js"></script>
 <script src="session.js"></script>
 <script src="treerefresh.js"></script>
 <script src="clipboard.js"></script>

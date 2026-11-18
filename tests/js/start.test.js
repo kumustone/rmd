@@ -130,7 +130,28 @@ test('favoriteRows：坏行跳过、非数组退回空、不截断', function ()
     '收藏段不该按最近表的上限截断（上限的真值在后端）');
 });
 
-test('tilde / basename 的边界（都**只用于显示**）', function () {  assert.strictEqual(Start.tilde('/Users/example/workspace/rmd'), '~/workspace/rmd');
+// ⭐ `design/0081` §2.1 ③：导航页「开始」段的动作清单。
+//    ⚠️ 这里只管**有哪些动作、按什么顺序**：文案与键位来自后端 `SHORTCUTS` 表
+//    （`INV-START-08`），本模块拿不到也不该拿。
+test('actionRows：顺序固定为 打开 → 打开文件 → 快速打开', function () {
+  assert.deepStrictEqual(Start.actionRows(true),
+    ['file.open', 'file.open-file', 'file.quick-open']);
+  assert.deepStrictEqual(Start.actionRows(false),
+    ['file.open', 'file.open-file'],
+    '⚠️ 「快速打开…」只在目录模式（可用）时出现——画一行点了没反应的入口比少画一行更糟');
+});
+
+test('actionRows：只有 `true` 才算可用（⛔ 真值判断）', function () {
+  // ⚠️ 与 `theme.js` 的 `vim_mode` 同一条纪律：`"false"` / `1` 这种值不该让这一行冒出来。
+  const withQuick = function (rows) { return rows.indexOf('file.quick-open') >= 0; };
+  assert.strictEqual(withQuick(Start.actionRows(true)), true);
+  [false, null, undefined, 0, 1, 'true', 'false', {}].forEach(function (v) {
+    assert.strictEqual(withQuick(Start.actionRows(v)), false, '非 true ⇒ 不画快速打开（拿到 ' + String(v) + '）');
+  });
+});
+
+test('tilde / basename 的边界（都**只用于显示**）', function () {
+  assert.strictEqual(Start.tilde('/Users/example/workspace/rmd'), '~/workspace/rmd');
   assert.strictEqual(Start.tilde('/opt/x'), '/opt/x', '不是家目录就不改');
   assert.strictEqual(Start.tilde(null), '');
 
@@ -229,10 +250,16 @@ function score(s) {
   if (!/startScreen\.clear\(\);[\s\S]{0,300}?doc\.innerHTML\s*=/.test(s.main)) {
     bad.push('openDocument 没有在 innerHTML 之前 startScreen.clear()（正文在屏上按 1 仍会打开目录）');
   }
-  // ⭐ 数据只有一个来源：快照的 `recent`
+  // ⭐ 数据只有一个来源：快照的 `recent`。⚠️ `design/0071` §3（2026-11-14 批准）起有**两个**读者
+  //    ——启动页（`INV-START-01`）与 `⌘O` 面板的 `recent` 取值器（`INV-OPEN-05`，⛔ 不建第二份缓存）
+  //    ——所以闸门**点名这两处**，⛔ 不再只数字面次数：数目对了但第三处偷偷抄一份
+  //    （`var r = S.state.recent`）才是这条要防的形态。
+  const START_READ = /startScreen\.render\(box, S\.state\.recent, S\.state\.favorites\)/;
+  const PANEL_READ = /recent:\s*function\s*\(\)\s*\{\s*return S\.state\.recent;\s*\}/;
+  if (!START_READ.test(s.main)) bad.push('main.js 没把 S.state.recent 递给启动页（INV-START-01）');
+  if (!PANEL_READ.test(s.main)) bad.push('main.js 没把 S.state.recent 递给 ⌘O 面板（INV-OPEN-05）');
   const fromState = (s.main.match(/S\.state\.recent/g) || []).length;
-  if (fromState !== 1) bad.push('main.js 取 S.state.recent ' + fromState + ' 次（应恰好 1 次）');
-  if (!/S\.state\.recent/.test(s.main)) bad.push('main.js 没把 S.state.recent 递给启动页');
+  if (fromState !== 2) bad.push('main.js 取 S.state.recent ' + fromState + ' 次（应恰好 2 次：启动页 ＋ ⌘O 面板）');
   if (!/state\.recent\s*=\s*snap\.recent\s*\|\|\s*\[\]/.test(s.session)) {
     bad.push('session.js 的 applySnapshot 没有 state.recent = snap.recent || []（INV-START-05）');
   }
@@ -294,27 +321,72 @@ function score(s) {
   if (!/\.start-row\[data-missing='1'\]/.test(s.css)) bad.push('style.css 没有 data-missing 的可见样式');
   if (!/status\.recent-not-found/.test(s.main)) bad.push('main.js 没有把打不开的那句写进状态条');
 
-  // ── INV-START-06：File 菜单那三行（id ＋ 分隔线） ──
+  // ── INV-START-06：File 菜单那几行（id ＋ 位置 ＋ 分隔线） ──
+  // ⚠️ 2026-11-15 收紧：原实现用"命中位置前后 260 字符"找 `position:`，
+  //    而条目之间的注释有几百字 ⇒ 它会捞到**上一条**的 `position:`
+  //    （实测 `file.open-external-editor` 写 4 也照样绿，真值是 5）。
+  //    现在逐块解析 `PlainMenuItem { … }`，id / position / sep 必须出自**同一块**。
+  // ⚠️ 2026-11-15（阶段 4）：菜单表里允许用**字符串常量**写 id
+  //    （`window.new` 是 `id: WINDOW_NEW_ID`，与 `handle_menu_event` 共用一处定义）。
+  //    ⇒ 解析器先把 `const NAME: &str = "value";` 收成一张表，再按名字回查；
+  //    ⛔ 别退回"只认字面量"——那会把真实的 `window.new` 行当成不存在（项数也会少一条）。
+  const 常量值 = {};
+  const 常量反查 = {};
+  const 常量Re = /const\s+([A-Z][A-Z0-9_]*)\s*:\s*&str\s*=\s*"([^"]+)";/g;
+  let cm;
+  while ((cm = 常量Re.exec(s.rust))) {
+    常量值[cm[1]] = cm[2];
+    常量反查[cm[2]] = cm[1];
+  }
   const table = s.rust.slice(s.rust.indexOf('const PLAIN_MENU_ITEMS'));
-  const rows = [['file.open-directory', 0, 'None'], ['file.open-file', 1, 'None'],
-    ['file.quick-open', 2, 'After'], ['file.save', 3, 'After'],
-    ['file.open-external-editor', 4, 'After']];
+  const blockOnly = table.slice(0, table.indexOf('];'));
+  const items = {};
+  const itemRe = /PlainMenuItem\s*\{([\s\S]*?)\}/g;
+  let m;
+  while ((m = itemRe.exec(blockOnly))) {
+    const b = m[1];
+    const sm = /submenu:\s*"([^"]+)"/.exec(b);
+    if (!sm || sm[1] !== 'File') continue;
+    const idm = /id:\s*(?:"([^"]+)"|([A-Z][A-Z0-9_]*))/.exec(b);
+    const id = idm ? (idm[1] || 常量值[idm[2]] || '') : '';
+    if (!id) continue;
+    const pos = /position:\s*(\d+)/.exec(b);
+    const sep = /sep:\s*SepSide::(\w+)/.exec(b);
+    items[id] = { position: pos ? Number(pos[1]) : NaN, sep: sep ? sep[1] : '' };
+  }
+  // ⭐ `design/0071` §4.2（阶段 3）：`新建文件…` 插到 0，下面 6 项各 +1。
+  // ⚠️ 2026-11-15（`design/0076`）：`保存 · 保存为 HTML · 导出为 PDF` 连成一串
+  //    ⇒ 保存由 `After` 改 `None`，后面三项全部顺延两位。
+  // ⭐ `design/0071` §5（阶段 4，多窗口）：`新建窗口` 插到 **0**（`SepSide::After`），
+  //    下面的既有项**全部 +1**。
+  // ⭐ `design/0083` §2.2（2026-11-15，原生窗口标签）：`新建标签页`（`⌘T`）插到 **0**
+  //    （`SepSide::None` —— 它与 `新建窗口` 是同一类"造一个窗口形态"的动作，两项连成一串），
+  //    `新建窗口` 让到 **1**、下面 9 项**再整体 +1** ⇒ `file.new` 2，其余 3..10。File 组共 11 项。
+  //    ⚠️ 在这一轮之前是 `window.new` 0 / `file.new` 1 / 其余 2..9（共 10 项）。
+  const rows = [['window.new-tab', 0, 'None'], ['window.new', 1, 'After'],
+    ['file.new', 2, 'None'],
+    ['file.open', 3, 'None'], ['file.open-file', 4, 'None'],
+    ['file.quick-open', 5, 'After'], ['file.save', 6, 'None'],
+    ['file.export-html', 7, 'None'], ['file.export-pdf', 8, 'After'],
+    ['file.toggle-favorite', 9, 'After'], ['file.open-external-editor', 10, 'After']];
   rows.forEach(function (r) {
-    const at = table.indexOf('"' + r[0] + '"');
-    if (at < 0) { bad.push('PLAIN_MENU_ITEMS 里没有 ' + r[0]); return; }
-    const blk = table.slice(Math.max(0, at - 260), at + 40);
-    if (!new RegExp('position:\\s*' + r[1] + '\\b').test(blk)) {
-      bad.push(r[0] + ' 的 position 不是 ' + r[1] + '（位置是"前面有几个非分隔线元素"）');
+    const got = items[r[0]];
+    if (!got) { bad.push('PLAIN_MENU_ITEMS 的 File 里没有 ' + r[0]); return; }
+    if (got.position !== r[1]) {
+      bad.push(r[0] + ' 的 position 是 ' + got.position + '，应为 ' + r[1] +
+        '（位置是"前面有几个非分隔线元素"）');
     }
-    if (!new RegExp('sep:\\s*SepSide::' + r[2] + '\\b').test(blk)) {
-      bad.push(r[0] + ' 的 sep 不是 SepSide::' + r[2]);
-    }
-    if (!new RegExp('id:\\s*"' + r[0].replace('.', '\\.') + '"').test(s.rust)) {
+    if (got.sep !== r[2]) bad.push(r[0] + ' 的 sep 是 SepSide::' + got.sep + '，应为 SepSide::' + r[2]);
+    if (!new RegExp('id:\\s*"' + r[0].replace('.', '\\.') + '"').test(s.rust)
+      && !(常量反查[r[0]] && s.rust.indexOf('id: ' + 常量反查[r[0]]) >= 0)) {
       bad.push('SHORTCUTS 里没有 ' + r[0] + '（菜单项的 id 必须已在表里）');
     }
   });
+  if (Object.keys(items).length !== rows.length) {
+    bad.push('File 子菜单的项数变了（解析到 ' + Object.keys(items).length + ' 条，期望 ' +
+      rows.length + '）：新增/删除项要同批改本判据');
+  }
   // ⭐ 菜单块里**不许**出现文案字面量：`menu_label` 从 `SHORTCUTS` 派生（`INV-START-06`）
-  const blockOnly = table.slice(0, table.indexOf('];'));
   const labelHits = blockOnly.split('\n').filter(function (line) {
     return /label|title|"[^"]*[^\x00-\x7F][^"]*"/.test(line) && !/^\s*$/.test(line);
   });
@@ -329,8 +401,11 @@ function score(s) {
   if (!/onOpenLastDirectory/.test(s.sidebar)) {
     bad.push('Sidebar.js 的「上次的目录」没接 onOpenLastDirectory（它仍会弹系统面板）');
   }
-  if (!/onOpenLastDirectory:\s*onOpenRecentDirectory/.test(s.main)) {
-    bad.push('main.js 没把 onOpenRecentDirectory 接给侧边栏');
+  // ⚠️ `design/0070` §2.4 起 `onOpenRecentDirectory` **从不拒绝**（失败用 `{ok:false}` 回答）
+  //    ⇒ 接线多了一层：把结果交给 `reportStartOpen` 报告，否则失败会变成"点了没反应"。
+  if (!/onOpenLastDirectory:\s*function[\s\S]{0,400}?onOpenRecentDirectory\(root\)/.test(s.main) ||
+      !/onOpenLastDirectory:[\s\S]{0,400}?reportStartOpen\(res\)/.test(s.main)) {
+    bad.push('main.js 没把 onOpenRecentDirectory 接给侧边栏（并经 reportStartOpen 报告失败）');
   }
 
   // ── 脚本顺序（`session.start` 与 `main.js` 的加载期取值） ──
@@ -371,7 +446,7 @@ test('⭐ 三条 i18n 键在**两本**字典里都有（启动页不许出现"�
 // ③ 变异自测（⚠️ 没有这一步，"全绿"不说明判据真的在看）
 // ────────────────────────────────────────────────────────────────
 
-test('⭐ 变异自测：五处写坏各必须让**对应**判据变红', function () {
+test('⭐ 变异自测：七处写坏各必须让**对应**判据变红', function () {
   assert.deepStrictEqual(score(SRC), [], '基线必须先全绿，否则下面分不清是谁的红');
   const with_ = function (patch) { return Object.assign({}, SRC, patch); };
 
@@ -385,8 +460,8 @@ test('⭐ 变异自测：五处写坏各必须让**对应**判据变红', functi
 
   // 变异 3：`快速打开…` 的分隔线被挪走（菜单排版变了）
   const m3 = score(with_({ rust: SRC.rust.replace(
-    'position: 2,\n        sep: SepSide::After,\n        id: "file.quick-open"',
-    'position: 2,\n        sep: SepSide::None,\n        id: "file.quick-open"'
+    'position: 5,\n        sep: SepSide::After,\n        id: "file.quick-open"',
+    'position: 5,\n        sep: SepSide::None,\n        id: "file.quick-open"'
   ) }));
   assert.ok(m3.some(function (x) { return x.indexOf('file.quick-open 的 sep') >= 0; }), m3.join('\n'));
 
@@ -397,4 +472,24 @@ test('⭐ 变异自测：五处写坏各必须让**对应**判据变红', functi
   // 变异 5：启动页在别处又被造了一次（有正文时也会出现）
   const m5 = score(with_({ main: SRC.main + '\nstartScreen.render(doc, []);\n' }));
   assert.ok(m5.some(function (x) { return x.indexOf('startScreen.render') >= 0; }), m5.join('\n'));
+
+  // 变异 6：`⌘O` 面板的 `recent` 取值器被换成一个空数组（面板永远说"没有最近"）
+  const m6 = score(with_({ main: SRC.main.replace(
+    'recent: function () { return S.state.recent; },',
+    'recent: function () { return []; },'
+  ) }));
+  assert.ok(m6.some(function (x) { return x.indexOf('⌘O 面板') >= 0; }), m6.join('\n'));
+
+  // 变异 7：第三处也去读快照（数目对了也可能偷偷抄第二份"最近"）
+  const m7 = score(with_({ main: SRC.main + '\nvar __recent = S.state.recent;\n' }));
+  assert.ok(m7.some(function (x) { return x.indexOf('应恰好 2 次') >= 0; }), m7.join('\n'));
+
+  // 变异 8：`file.open-external-editor` 的位置退回 9（与上一条 `收藏` 撞格）。
+  // ⚠️ 这正是 2026-11-15 之前那条判据的**假绿**形态：它按"命中处前 260 字符"找
+  //    `position:`，会捞到上一条（`file.toggle-favorite` 的 9）⇒ 期望值写 9 也绿。
+  const m8 = score(with_({ rust: SRC.rust.replace(
+    'position: 10,\n        sep: SepSide::After,\n        id: "file.open-external-editor"',
+    'position: 9,\n        sep: SepSide::After,\n        id: "file.open-external-editor"'
+  ) }));
+  assert.ok(m8.some(function (x) { return x.indexOf('file.open-external-editor 的 position') >= 0; }), m8.join('\n'));
 });

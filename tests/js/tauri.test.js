@@ -473,7 +473,12 @@ function 抠函数体(代码, 签名) {
  * 都能让"提到了"变绿，而**该挡的那条 IPC 照样发出去**。
  */
 function 有早退闸(段) {
-  return /if\s*\(\s*!\s*S\.state\.currentDoc\s*\)\s*\{[\s\S]*?\breturn\b/.test(段);
+  return /if\s*\(\s*!\s*S\.state\.currentDoc\s*(\|\|\s*S\.state\.currentDoc\.draft\s*)?\)\s*\{[\s\S]*?\breturn\b/.test(段);
+}
+
+/** 草稿那半：`design/0082` §4「收藏 / 导出 / 外部编辑器：草稿期间按"没有文档"处理」。 */
+function 有草稿闸(段) {
+  return /if\s*\(\s*!\s*S\.state\.currentDoc\s*\|\|\s*S\.state\.currentDoc\.draft\s*\)\s*\{/.test(段);
 }
 
 test('⭐⭐ 接线（源码级）：`⌘E` 入口在没有当前文档时必须早退（`docs/bugs/0005`）', function () {
@@ -484,6 +489,12 @@ test('⭐⭐ 接线（源码级）：`⌘E` 入口在没有当前文档时必须
     有早退闸(段),
     '⛔ `openExternalEditor` 里没有「`!S.state.currentDoc` ⇒ return」这道闸 —— ' +
       '空会话下按 `⌘E` 会发一条注定被拒的 IPC，用户拿到的是后端的拒绝而不是"你还没打开文档"'
+  );
+  // ⭐ `design/0082` §4：草稿**没有路径** ⇒ 外部编辑器按"没有文档"处理。
+  //    ⚠️ 单独判这一条：上面那条正则把草稿子句当可选，漏了它照样绿。
+  assert.ok(
+    有草稿闸(段),
+    '⛔ `openExternalEditor` 没有把 `currentDoc.draft` 一起挡掉 —— 草稿没有盘上的文件可交给别人'
   );
   // ⚠️ 反面判据：闸必须在**问"有没有未保存修改"之前**吗？不必——
   //    但**必须在** `openExternalEditorNow()` 之前（否则那条 IPC 已经在飞了）。
@@ -496,7 +507,111 @@ test('⭐⭐ 接线（源码级）：`⌘E` 入口在没有当前文档时必须
 test('⭐ 诱饵：把早退闸摘掉，上面那条判据必须**变红**', function () {
   // ⚠️ 这条证明的是判据**真的在看那道闸**，⛔ 不是恒真的正则。
   const 段 = 抠函数体(fs.readFileSync(MAIN_JS, 'utf8'), 'function openExternalEditor(');
-  const 摘掉 = 段.replace(/if\s*\(\s*!\s*S\.state\.currentDoc\s*\)\s*\{[\s\S]*?\}/, '');
+  const 摘掉 = 段.replace(/if\s*\(\s*!\s*S\.state\.currentDoc\s*(\|\|\s*S\.state\.currentDoc\.draft\s*)?\)\s*\{[\s\S]*?\}/, '');
   assert.notStrictEqual(摘掉, 段, '⛔ 诱饵没生效：闸没被摘掉，这条自证是假的');
   assert.strictEqual(有早退闸(摘掉), false, '⛔ 闸摘了判据还绿 —— 判据是空转的');
+});
+
+// ═════════════════════════════════════════════════════════════════════════
+// ⑥ `listen` 的目标必须是**当前窗口**（`design/0071` §5 / `design/0068` §2.6）
+//
+// ⚠️ 默认 `event.listen` 的 target 是 `Any`——多窗口下**每个窗口都收到**同一个事件：
+//    菜单按一下，所有窗口一起动。而这个错**没有任何报错**，只有"另一个窗口莫名其妙
+//    跟着变"这一种表现。
+// ⇒ 本闸门钉住：主路径必须是 `getCurrentWebviewWindow().listen`；
+//    `event.listen` 只允许留在**拿不到 Tauri 时的回退分支**里（离屏测试环境）。
+// ═════════════════════════════════════════════════════════════════════════
+
+const TAURI_JS = path.join(仓库根, 'src', 'services', 'tauri.js');
+
+/**
+ * 判据本体：给一段 `listen` 函数体，返回问题清单（空 = 过）。
+ *
+ * ⚠️ 只认**调用**形状（`x.listen(`）——`typeof ev.listen !== 'function'`
+ *    这种能力探测不算调用，⛔ 不能拿它冒充主路径。
+ *
+ * @param {string} 体
+ * @returns {string[]}
+ */
+function listen目标问题(体) {
+  const bad = [];
+  const atWin = 体.indexOf('getCurrentWebviewWindow');
+  if (atWin < 0) {
+    bad.push('⛔ `listen` 没有用 `getCurrentWebviewWindow()` —— 默认 `event.listen` 会广播到所有窗口');
+  }
+
+  // 从赋值里认「窗口对象」与「全局 event 对象」两种来源（名字由实现决定）。
+  const 窗口变量 = [];
+  const 事件变量 = [];
+  let m;
+  const 窗口赋值 = /(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*[^;\n]*getCurrentWebviewWindow\b/g;
+  while ((m = 窗口赋值.exec(体))) 窗口变量.push(m[1]);
+  const 事件赋值 = /(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*[^;\n]*(?:__TAURI__|g)\s*(?:&&|\.)\s*\w*event\b/g;
+  while ((m = 事件赋值.exec(体))) 事件变量.push(m[1]);
+  // 兜底：`const ev = g && g.event;` 这一形态（上面的 \w*event 已覆盖，但保留直白写法）
+  const 直白事件 = /(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*[^;\n]*\.event\b/g;
+  while ((m = 直白事件.exec(体))) if (事件变量.indexOf(m[1]) < 0) 事件变量.push(m[1]);
+
+  const 调用 = [];
+  const 调用式 = /\b([A-Za-z_$][\w$]*)\s*\.listen\s*\(/g;
+  while ((m = 调用式.exec(体))) {
+    // ⚠️ 跳过能力探测（`typeof ev.listen !== 'function'`）：它没有 `(` 紧跟，
+    //    正则在上面已经不会命中；这里只再排掉明显在 `typeof` 之后的写法。
+    const 前 = 体.slice(Math.max(0, m.index - 16), m.index);
+    if (/typeof\s*$/.test(前)) continue;
+    调用.push({ 名: m[1], 位置: m.index });
+  }
+
+  if (!调用.length) {
+    bad.push('⛔ `listen` 里没有任何 `x.listen(...)` 调用');
+  } else {
+    const 首个 = 调用[0];
+    if (事件变量.indexOf(首个.名) >= 0 || 首个.名 === 'event' || 首个.名 === 'ev') {
+      bad.push('⛔ 第一个 `listen` 调用落在全局 `event` 上 —— 多窗口下会**广播到所有窗口**');
+    }
+    const 前文 = 体.slice(Math.max(0, 首个.位置 - 200), 首个.位置);
+    if (窗口变量.indexOf(首个.名) < 0 && 前文.indexOf('getCurrentWebviewWindow') < 0) {
+      bad.push('⛔ 第一个 `listen` 调用看不出是 `getCurrentWebviewWindow()` 的对象');
+    }
+  }
+
+  // ⚠️ `event.listen` **只许**出现在回退里（位置必须在主路径之后）。
+  调用.forEach(function (c) {
+    if (事件变量.indexOf(c.名) < 0 && c.名 !== 'event' && c.名 !== 'ev') return;
+    if (atWin >= 0 && c.位置 < atWin) {
+      bad.push('⛔ `' + c.名 + '.listen` 出现在 `getCurrentWebviewWindow()` **之前** —— 它成了主路径');
+    }
+  });
+
+  return bad;
+}
+
+test('⭐ 接线（源码级）：`listen` 走 `getCurrentWebviewWindow()`，`event.listen` 只留在回退里', function () {
+  const 体 = 抠函数体(fs.readFileSync(TAURI_JS, 'utf8'), 'async function listen(');
+  assert.deepStrictEqual(listen目标问题(体), []);
+});
+
+test('⭐ 诱饵：把主路径换成 `ev.listen` 或整个删掉 `getCurrentWebviewWindow`，判据必须变红', function () {
+  // ① 主路径退回全局 event（`design/0071` 之前的老写法）
+  const 老写法 = 'async function listen(event, handler) { const g = window.__TAURI__; const ev = g && g.event; ' +
+    'if (!ev || typeof ev.listen !== "function") throw new Error("no"); return await ev.listen(event, handler); }';
+  assert.ok(
+    listen目标问题(老写法).length > 0,
+    '⛔ 老写法（只用 `event.listen`）居然全绿 —— 闸门是空转的'
+  );
+  // ② 窗口对象取到了却**先用** event（主路径仍是广播）
+  const 假接 = 'async function listen(event, handler) { const g = window.__TAURI__; ' +
+    'const ww = g && g.webviewWindow; const w = ww.getCurrentWebviewWindow(); ' +
+    'const ev = g && g.event; if (ev) return await ev.listen(event, handler); return await w.listen(event, handler); }';
+  assert.ok(
+    listen目标问题(假接).some(function (x) { return x.indexOf('第一个 `listen`') >= 0; }),
+    '⛔ 第一个调用落在 event 上还没红 —— 判据只看"有没有出现过 getCurrentWebviewWindow"是不行的'
+  );
+  // ③ 反面对照：真实保留回退的写法必须**过**（⛔ 别把回退也一起判死）
+  const 正确 = 'async function listen(event, handler) { const g = window.__TAURI__; ' +
+    'const ww = g && g.webviewWindow; if (ww && typeof ww.getCurrentWebviewWindow === "function") { ' +
+    'const w = ww.getCurrentWebviewWindow(); if (w && typeof w.listen === "function") return await w.listen(event, handler); } ' +
+    'const ev = g && g.event; if (!ev || typeof ev.listen !== "function") throw new Error("no"); ' +
+    'return await ev.listen(event, handler); }';
+  assert.deepStrictEqual(listen目标问题(正确), [], '⛔ 带合法回退的写法被误判了');
 });

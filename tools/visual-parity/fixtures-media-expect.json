@@ -1,0 +1,52 @@
+{
+  "assets": {
+    "pic.png": {
+      "bit_depth": 8,
+      "chunks": [
+        "IHDR",
+        "IDAT",
+        "IEND"
+      ],
+      "color_model": "RGB",
+      "color_type": 2,
+      "file": "fixtures/pic.png",
+      "generator_params": {
+        "background": "#ffffff",
+        "bit_depth": 8,
+        "color_type": 2,
+        "compression": "zlib level 9",
+        "filter": 0,
+        "foreground": "#000000",
+        "height": 64,
+        "interlace": 0,
+        "rect_size": [
+          48,
+          48
+        ],
+        "rect_x0": 8,
+        "rect_x1": 55,
+        "rect_y0": 8,
+        "rect_y1": 55,
+        "width": 64
+      },
+      "has_alpha": false,
+      "height": 64,
+      "interlace": 0,
+      "pixels": {
+        "black": 2304,
+        "black_bbox": [
+          8,
+          8,
+          55,
+          55
+        ],
+        "white": 1792
+      },
+      "sha256": "01504d664e787469c4f3266292b91a9e160d01a33b678619f85db4f7c1b41a14",
+      "size_bytes": 139,
+      "width": 64
+    }
+  },
+  "generator": "make-fixture-image.py",
+  "schema": "l2-fixtures-media-expect/1"
+}

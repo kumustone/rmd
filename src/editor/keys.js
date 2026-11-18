@@ -213,6 +213,15 @@
         return K.isEditableElement(win && win.document && win.document.activeElement);
       },
     };
+    // ⭐ `design/0077`：**菜单路径**的可编辑焦点放行钩子（可选）。
+    //    ⚠️ 只影响 `keymap.dispatch(id, 'menu')`；键盘路径仍由 `handleKeydown`
+    //       与上面的 `editable()` 挡住（编辑区内部按键走 `forward()`，那时 `forwarding` 为真）。
+    //    ⛔ 别把放行列表写在这里：它由调用方给（`main.js` 只给复制/粘贴五个 id）。
+    if (typeof conf.allowEditable === 'function') {
+      ctx.allowEditable = function (id, source) {
+        return conf.allowEditable(id, source) === true;
+      };
+    }
 
     return {
       ctx: ctx,

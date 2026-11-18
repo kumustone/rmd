@@ -277,5 +277,71 @@ out="$(run_check "$TMP/c16" --strict)"; rc=$?
 [ "$rc" -eq 1 ] && printf '%s' "$out" | grep -q 'E11' \
   && ok "C16 §4 标题的格数与矩阵「未测」不符 → E11" || bad "C16 未报红（rc=${rc}）：${out}"
 
+# --- C17 bug 状态词越界＝ERROR（2026-11-07 方案 A：拆分 Session 后 fixer 按枚举筛待办）
+seed "$TMP/c17"; sed -i '' 's/`已修复`/`已关闭`/' "$TMP/c17/docs/bugs/0001-乙.md"
+out="$(run_check "$TMP/c17")"; rc=$?
+[ "$rc" -eq 1 ] && printf '%s' "$out" | grep -q 'ERROR E3.*bugs' \
+  && ok "C17 bug 状态越界 → E3 判 ERROR、退出码 1" || bad "C17 未报红（rc=${rc}）：${out}"
+# 负对照：同一次注入不能把 feature（默认 WARN）也一起判红
+seed "$TMP/c17b"; sed -i '' 's/`已修复`/`已关闭`/' "$TMP/c17b/docs/bugs/0001-乙.md"
+sed -i '' 's/`已立项`/`待评审`/' "$TMP/c17b/docs/features/0001-甲.md"
+run_check "$TMP/c17b" >/dev/null; rc=$?
+[ "$rc" -eq 1 ] && ok "C17b 负对照：feature 越界仍只 WARN（红只来自 bug）" \
+  || bad "C17b 退出码 ${rc}（bug 那条应让整体红）"
+
+# --- C18 bug 的 `阻塞` / `授权` 取值越界＝E3b；合法值不误报 ------------------
+seed "$TMP/c18"
+python3 - "$TMP/c18/docs/bugs/0001-乙.md" <<'PY3'
+import sys
+p = sys.argv[1]; s = open(p, encoding='utf-8').read()
+s = s.replace('| 影响 | 无 |',
+              '| 影响 | 无 |\n| 阻塞 | `待设计批准` |\n| 授权 | `只记录` |')
+open(p, 'w', encoding='utf-8').write(s)
+PY3
+run_check "$TMP/c18" >/dev/null; rc=$?
+[ "$rc" -eq 0 ] && ok "C18a 合法「阻塞 / 授权」→ 绿" || bad "C18a 误报（rc=${rc}）"
+sed -i '' 's/`待设计批准`/`等着吧`/' "$TMP/c18/docs/bugs/0001-乙.md"
+out="$(run_check "$TMP/c18")"; rc=$?
+[ "$rc" -eq 1 ] && printf '%s' "$out" | grep -q 'ERROR E3b.*阻塞' \
+  && ok "C18b 「阻塞」越界 → E3b、退出码 1" || bad "C18b 未报红（rc=${rc}）：${out}"
+sed -i '' 's/`等着吧`/`待设计批准`/; s/`只记录`/`随便改`/' "$TMP/c18/docs/bugs/0001-乙.md"
+out="$(run_check "$TMP/c18")"; rc=$?
+[ "$rc" -eq 1 ] && printf '%s' "$out" | grep -q 'ERROR E3b.*授权' \
+  && ok "C18c 「授权」越界 → E3b、退出码 1" || bad "C18c 未报红（rc=${rc}）：${out}"
+# ⭐ 2026-11-08：模板形状是「枚举词 ＋ 括号解释」——词后面跟说明必须仍是绿的，
+#    而「无需…」这种**以「无」开头却不是一个枚举词**的写法必须红（只认格首的词）。
+sed -i '' 's/`待设计批准`/`待设计批准（用户已批准方案 A）`/; s/`随便改`/`可修代码（本轮授权）`/' \
+  "$TMP/c18/docs/bugs/0001-乙.md"
+run_check "$TMP/c18" >/dev/null; rc=$?
+[ "$rc" -eq 0 ] && ok "C18d 枚举词后面跟解释 → 绿" || bad "C18d 误报（rc=${rc}）"
+sed -i '' 's/`待设计批准（用户已批准方案 A）`/`无需处理`/' "$TMP/c18/docs/bugs/0001-乙.md"
+out="$(run_check "$TMP/c18")"; rc=$?
+[ "$rc" -eq 1 ] && printf '%s' "$out" | grep -q 'ERROR E3b.*阻塞' \
+  && ok "C18e 负对照：「无需处理」不能因含「无」被判合法" \
+  || bad "C18e 未报红（rc=${rc}）：${out}"
+
+# --- C19 占位垃圾行（E12）：仓库根与 docs/ 都要查；正常英文与围栏内不误报 ---------
+seed "$TMP/c19"
+printf '\n- [ ] sdfdf\n' >> "$TMP/c19/docs/features/0001-甲.md"
+printf '# 架构\n\n- [ ] dfd\n- [ ] dfdffdsdfasdfasdddddddddddddddddddddddd\n' > "$TMP/c19/ARCHITECTURE.md"
+out="$(run_check "$TMP/c19")"; rc=$?
+[ "$rc" -eq 1 ] && printf '%s' "$out" | grep -q 'ERROR E12.*features/0001-甲.md' \
+  && printf '%s' "$out" | grep -q 'ERROR E12.*ARCHITECTURE.md' \
+  && ok "C19a docs/ 与仓库根的乱序行 → E12、退出码 1" \
+  || bad "C19a 未报红（rc=${rc}）：${out}"
+
+seed "$TMP/c19b"
+printf '\n- [ ] test\n- [ ] note\n- [ ] try\n- [ ] hmm\n- [ ] sync\n- [ ] ssh\n- [ ] src\n- [ ] cfg\n- [ ] html\n- [ ] tcp\n' \
+  >> "$TMP/c19b/docs/features/0001-甲.md"
+run_check "$TMP/c19b" --strict >/dev/null; rc=$?
+[ "$rc" -eq 0 ] && ok "C19b 正常英文与技术缩写不误报（--strict 仍为 0）" \
+  || bad "C19b 误报（rc=${rc}）"
+
+seed "$TMP/c19c"
+printf '\n```text\nsdfdf\ndfd\n```\n' >> "$TMP/c19c/docs/features/0001-甲.md"
+run_check "$TMP/c19c" --strict >/dev/null; rc=$?
+[ "$rc" -eq 0 ] && ok "C19c 围栏代码块里的乱序不误报（--strict 仍为 0）" \
+  || bad "C19c 围栏内被误报（rc=${rc}）"
+
 printf '\nselftest: %d PASS / %d FAIL\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

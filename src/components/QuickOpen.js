@@ -389,6 +389,14 @@
       open: open,
       close: close,
       isOpen: function () { return opened; },
+      /**
+       * ⭐ 现在**能不能用**（`design/0081` §2.1 ③）：启动页「开始」段用它决定
+       * 「快速打开…」那一行画不画。
+       * ⚠️ 暴露的是**同一个判据**（`opts.isAvailable`），⛔ 别让调用方再写一份
+       * "目录模式且有根"——两处各写一份，某天放宽了一边，导航页就会出现一行
+       * 点了没反应的入口（`INV-START-08` 的同一套理由）。
+       */
+      isAvailable: function () { return isAvailable(); },
       /** ⚠️ 给冒烟回报用（`design/0009` §7）：现在显示了几条、选中的是第几条。 */
       count: function () { return items.length; },
       selected: function () { return selected; },

@@ -50,6 +50,8 @@ function installFake() {
     renameGate: null,
     renameCalls: 0,
     watchSeq: 100,
+    /** ⭐ `design/0056`：`close_document` 收到的入参（逐次记下来，供断言）。 */
+    closeArgs: [],
     install: function () {
       global.window.__TAURI__.core.invoke = function (cmd, args) {
         if (cmd === 'get_session') return Promise.resolve(clone(fake.snap));
@@ -59,6 +61,9 @@ function installFake() {
             gen: args.generation,
             req: args.req,
             real_path: args.path,
+            // ⚠️ 真后端的 payload **带 `doc_seq`**（`document.rs:315`），而前端只从**它**
+            //    认得当前会话号（`main.js::currentDocSeq()`）——⛔ 不是从快照。
+            doc_seq: fake.snap.doc_seq,
             roots_nonempty: true,
             outside_roots: false,
           });
@@ -73,6 +78,19 @@ function installFake() {
           return fake.renameGate.promise;
         }
         if (cmd === 'unwatch_document') return Promise.resolve();
+        // ⭐ `design/0056`：与真后端同形——`doc_seq` 不符 ⇒ **一个字段都不改**，
+        // 原样回当前快照（`apply_close` 的无副作用合同）。
+        if (cmd === 'close_document') {
+          fake.closeArgs.push(clone(args));
+          if (args.docSeq === fake.snap.doc_seq) {
+            fake.snap = Object.assign(clone(fake.snap), {
+              doc_seq: 0,
+              startup_document: null,
+              mode: fake.snap.roots.length ? 'directory' : 'empty',
+            });
+          }
+          return Promise.resolve(clone(fake.snap));
+        }
         throw new Error('未预料的命令：' + cmd);
       };
     },
@@ -588,4 +606,64 @@ test('最近_写盘失败时抛出、内存不改，且队列不因此断掉', a
     recent: [recentRow('/rootA/sub', '/rootA/sub/x.md')], last_directory: null,
   })));
   assert.strictEqual((await next).applied, true);
+});
+
+// ────────────────────────────────────────────────────────────────
+// ⭐ `design/0056`：`closeDocument()` 的两条判据（F2 = 关掉当前文档回导航页）
+//
+// ⚠️ 这一层的错法同样是**静默的**：回包说"没关上"却照清界面，屏幕上就是
+//    "文档没了、后端还在读它"——`⌘R`、外部编辑器、进度写盘全都指向一份看不见的文档。
+// ────────────────────────────────────────────────────────────────
+
+test('关闭文档：回包 `doc_seq` 归零 ⇒ 认下来（清文档身份 + 本地监视真值）', async function () {
+  const fake = installFake();
+  fake.install();
+  await fake.reset(snapshot());
+  await S.openDocument('/rootA/a.md');
+  await S.watchDocument('/rootA/a.md');
+  assert.ok(S.state.currentDoc, '前置：先得有一份打开的文档');
+  const seqBefore = S.state.currentDoc.doc_seq;
+
+  const closed = await S.closeDocument();
+
+  assert.strictEqual(closed, true);
+  assert.strictEqual(fake.closeArgs.length, 1);
+  assert.strictEqual(fake.closeArgs[0].docSeq, seqBefore, '⭐ 带的是**打开会话号**（身份判据），⛔ 不是路径');
+  assert.strictEqual(S.state.currentDoc, null);
+  assert.strictEqual(S.state.currentPath, null);
+  assert.strictEqual(S.state.docSeq, 0);
+  assert.strictEqual(S.state.watchSeq, 0, '⚠️ 监视真值必须清：迟到的文件事件不许再指向一份已关掉的文档');
+  assert.strictEqual(S.state.watchPath, null);
+  assert.strictEqual(S.state.mode, 'directory', '⚠️ 根还在 ⇒ 回目录模式的导航页，⛔ 不是空会话');
+});
+
+test('关闭文档：`doc_seq` 不符 ⇒ 交回 `false`，文档身份一个字段都不动（界面才不会先清后闪）', async function () {
+  const fake = installFake();
+  fake.install();
+  await fake.reset(snapshot());
+  await S.openDocument('/rootA/a.md');
+  await S.watchDocument('/rootA/a.md');
+  const docBefore = S.state.currentDoc;
+  const pathBefore = S.state.currentPath;
+  const seqBefore = S.state.currentDoc.doc_seq;
+
+  // 模拟"回包迟到"：后端此刻的会话号已经不是我们手里这个了
+  fake.snap.doc_seq = seqBefore + 1;
+
+  const errs = [];
+  const origErr = console.error;
+  console.error = function () { errs.push(Array.prototype.join.call(arguments, ' ')); };
+  let closed;
+  try {
+    closed = await S.closeDocument();
+  } finally {
+    console.error = origErr;
+  }
+
+  assert.strictEqual(closed, false, '⛔ 回包没归零 = 后端没关，不能当成功');
+  assert.strictEqual(S.state.currentDoc, docBefore, '⛔ 不清：界面上那份文档还在（后端也还在读它）');
+  assert.strictEqual(S.state.currentPath, pathBefore);
+  assert.strictEqual(S.state.docSeq, seqBefore + 1, '⚠️ 会话号以后端回包为准');
+  assert.strictEqual(S.state.watchSeq, 0, '⚠️ 本地监视真值仍然清（它已经不可信）');
+  assert.match(errs.join('\n'), /doc_seq 不符/, '⛔ 不许静默：这条走 stderr');
 });

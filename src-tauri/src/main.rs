@@ -36,6 +36,11 @@ mod config;
 //    `external.rs::watch`，需要 `AppHandle` 的那半（emit）在 `commands/fs.rs`。
 mod disk;
 mod document;
+
+// ⚠️ 只给 `cargo test` 用的用例矩阵执行器（`tests/auto/`）。⛔ 不进 release 二进制。
+#[cfg(test)]
+mod autotest;
+
 mod error;
 mod external;
 mod fs;

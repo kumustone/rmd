@@ -195,6 +195,18 @@ pub enum Denied {
         /// 该集合的上限。
         limit: usize,
     },
+    /// ⭐ **导出失败**（`design/0076` §2.3）。
+    ///
+    /// ⚠️ **前端取消保存面板⛔ 不走这里**：取消是 `Ok(None)`，不是错误
+    /// （`INV-EXP-06`）——把它做成 `Err` 会让"我不想导出了"在 failbar 上变成一条失败。
+    ///
+    /// ⚠️ 与 [`Io`](Self::Io) 分开：磁盘 / 权限那两种仍然复用 `Io`（`reason` 说不清
+    /// "是哪个目录不可写"）；这里只有**导出这条流程独有**的三种前置/运行时拒绝，
+    /// 前端按 `reason` 给不同出路（先打开文档 / 换个位置 / 改走文件打印）。
+    Export {
+        /// 具体是哪一条不过。
+        reason: ExportReason,
+    },
 }
 
 /// [`Denied::InvalidName`] 的六种原因（`design/0034` §2.1 B）。
@@ -254,6 +266,43 @@ impl RenameRefusal {
             RenameRefusal::Symlink => "是符号链接",
             RenameRefusal::NotMarkdown => "不是普通 Markdown 文件",
             RenameRefusal::Editing => "当前文档正在编辑",
+        }
+    }
+}
+
+/// [`Denied::Export`] 的三种原因（`design/0076` §2.3）。
+///
+/// ⚠️ 三者分开是因为**出路不同**：
+/// `NoDocument` ⇒ 先打开一篇再导出；`TargetInvalid` / `TargetIsDocument` ⇒ 换一个位置
+/// （或别覆盖正在读的那篇）；`PrintUnavailable` / `PrintFailed` ⇒ 这台机器/这次打印不行
+/// （设计 §7.2 的人工验收项 ⑨ 就是这条的系统层对照）。
+///
+/// ⚠️ 顺序不是校验顺序（没有"先后"这回事）：保存面板**先**弹，目标检查**后**做——
+/// 因为目标检查要等用户在面板里选定一个路径才有对象可查（`design/0076` §2.2）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ExportReason {
+    /// 当前没有打开任何文档（只有启动页）⇒ 没有东西可导。
+    NoDocument,
+    /// 目标路径不合法：相对路径 / 末段是 `..` / 父目录不存在或不是目录。
+    TargetInvalid,
+    /// 目标就是**当前文档**本身（会把自己的 Markdown 覆盖成 HTML）。
+    TargetIsDocument,
+    /// 这台平台 / 这个 webview 上打印不可用（`WebviewWindow::print()` 报错）。
+    PrintUnavailable,
+    /// 打印面板已经打开但打印失败（含用户取消后的系统错误）。
+    PrintFailed,
+}
+
+impl ExportReason {
+    /// 给人看的短标签（只用于 stderr）。
+    pub fn label(self) -> &'static str {
+        match self {
+            ExportReason::NoDocument => "没有可导出的文档",
+            ExportReason::TargetInvalid => "目标路径不可用",
+            ExportReason::TargetIsDocument => "目标是当前文档",
+            ExportReason::PrintUnavailable => "打印不可用",
+            ExportReason::PrintFailed => "打印失败",
         }
     }
 }
@@ -343,6 +392,11 @@ impl Denied {
         Denied::LimitReached { what, limit }
     }
 
+    /// 「导出失败」（`design/0076`）。
+    pub fn export(reason: ExportReason) -> Self {
+        Denied::Export { reason }
+    }
+
     /// 给人看的短标签。⛔ 只用于 stderr 日志，前端文案看 `kind`。
     pub fn label(&self) -> &'static str {
         match self {
@@ -362,6 +416,7 @@ impl Denied {
             Denied::CreatedOutsideRoot { .. } => "复核落在根外",
             Denied::NotRenamable { reason, .. } => reason.label(),
             Denied::LimitReached { .. } => "已达上限",
+            Denied::Export { reason } => reason.label(),
         }
     }
 }
@@ -398,6 +453,7 @@ impl std::fmt::Display for Denied {
                 write!(f, "不能改名：{path}（{}）", reason.label())
             }
             Denied::LimitReached { what, limit } => write!(f, "{what} 已达上限 {limit} 条"),
+            Denied::Export { reason } => write!(f, "导出失败：{}", reason.label()),
         }
     }
 }
@@ -513,5 +569,42 @@ mod tests {
         assert!(!b.contains("当前"), "票失效不许说『当前』：{b}");
         assert!(b.contains('5'), "票失效要把修订号说出来：{b}");
         assert_ne!(a, b);
+    }
+
+    /// ⭐ `design/0076`：导出失败的 `kind` 与五种 `reason` 都是**前端契约**。
+    ///
+    /// ⚠️ 判据有两层：
+    /// ① `kind` 是全表里的**新一格**（⛔ 别并进 `no_document`——那会让前端把它当
+    ///    "还没打开文档"静默处理）；
+    /// ② 五个 `reason` 两两不同（前端按它给不同出路：换路径 / 先打开文档 / 改走系统打印）。
+    /// ⚠️ 只断言 `contains` 抓不到"两个变体改成同一个字符串"，所以第 ② 条是两两比较。
+    #[test]
+    fn 导出失败可区分且五种原因两两不同() {
+        let d = |r: ExportReason| serde_json::to_string(&Denied::export(r)).unwrap();
+        let reasons = [
+            ExportReason::NoDocument,
+            ExportReason::TargetInvalid,
+            ExportReason::TargetIsDocument,
+            ExportReason::PrintUnavailable,
+            ExportReason::PrintFailed,
+        ];
+        for r in reasons {
+            let s = d(r);
+            let want = serde_json::to_string(&r).unwrap(); // `"target_invalid"` 这种
+            assert!(s.contains("\"kind\":\"export\""), "{s}");
+            assert!(s.contains(&format!("\"reason\":{want}")), "reason 缺失：{s}");
+        }
+        for i in 0..reasons.len() {
+            for j in (i + 1)..reasons.len() {
+                assert_ne!(d(reasons[i]), d(reasons[j]), "第 {i} 与第 {j} 种原因撞了");
+            }
+        }
+        // 与 `NoDocument`（读侧的前置条件）不是一个 `kind`。
+        let no_doc = serde_json::to_string(&Denied::NoDocument).unwrap();
+        assert_ne!(no_doc, d(ExportReason::NoDocument));
+        // Display 必须说的是"导出失败"，⛔ 不是"读写失败"（否则用户会去找权限）。
+        let text = Denied::export(ExportReason::TargetInvalid).to_string();
+        assert!(text.starts_with("导出失败"), "{text}");
+        assert!(!text.contains("读写失败"), "{text}");
     }
 }

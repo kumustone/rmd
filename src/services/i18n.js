@@ -155,6 +155,15 @@
       'qo.refresh-hint': '{key} 刷新索引',
       'qo.empty-hint': '输入文件名开始搜索',
       'qo.error': '搜索失败：{msg}',
+      // ── ⭐ `design/0071` §3：`⌘O` 打开面板（最近优先）──
+      //    ⚠️ 数据源就是启动页那一份（`INV-OPEN-05`），文案也共用 `start.last-mark`。
+      'open.title': '打开',
+      'open.recent': '最近',
+      'open.browse-dir': '浏览目录…',
+      'open.browse-file': '浏览文件…',
+      'open.empty': '还没有最近打开的目录。',
+      'open.row-file': '打开 {name}',
+      'open.row-dir': '打开目录 {name}',
       // ── 文件树里的灰字与提示 ──
       'tree.ignored-title': '{path}\n（在忽略清单里：不展开、不扫描）',
       'tree.too-deep': '层级过深（超过 {n} 层），不再展开',
@@ -185,6 +194,26 @@
       'tree.copy.unsupported': '这个环境不支持复制，请手动记录这个路径',
       'tree.copy.denied': '系统拒绝了复制请求',
       'tree.copy.failed': '复制失败',
+      // ── 多格式复制与字面粘贴（`design/0077`）──
+      'clip.copy.ok-markdown': '已复制 Markdown 源码',
+      'clip.copy.ok-html': '已复制 HTML 源码',
+      'clip.copy.ok-plain': '已复制纯文本',
+      'clip.copy.ok-rich': '已复制富文本',
+      'clip.copy.ok-markdown-block': '已复制 Markdown（按整块）',
+      'clip.copy.no-selection': '没有选中内容，先选中一段再复制',
+      'clip.copy.no-document': '还没有打开的文档',
+      'clip.copy.no-source': '阅读态拿不到 Markdown 源码，请进入编辑态后从源码选区再复制',
+      'clip.copy.unsupported': '这个环境不支持复制为这种格式',
+      'clip.copy.denied': '系统拒绝了复制请求',
+      'clip.copy.failed': '复制失败',
+      'clip.copy.render-failed': '渲染选中内容失败，没能复制 HTML',
+      'clip.copy.no-html': '选中内容没有可复制的 HTML',
+      'clip.paste.ok': '已按字面粘贴 Markdown 源码',
+      'clip.paste.empty': '剪贴板里没有文本',
+      'clip.paste.no-editor': '请先在编辑区定位，再粘贴为字面 Markdown 源码',
+      'clip.paste.unsupported': '这个环境不支持读取剪贴板',
+      'clip.paste.denied': '系统拒绝了读取剪贴板的请求',
+      'clip.paste.failed': '粘贴失败',
       // ⭐ 成功不需要提示（访达自己会浮上来，那就是反馈）；只有失败要说出来。
       'tree.reveal.failed': '没能打开访达',
       // ⭐ 改名成功但后续某一步降级（§3.6：降级不是失败，但必须说出来）。
@@ -245,46 +274,67 @@
       // ⚠️ `INV-I18N-05`：菜单没换成时**必须**说出来（界面换了、菜单没换是可见的不一致）。
       'status.menu-lang-pending': '菜单将在重启后生效',
       // ⭐ `main.js` 那几处空态与失败态（⛔ 诊断串不在这里，§2.2）。
-      'status.hint-open': '用 {dir} 打开一个目录，或 {file} 打开一份文档',
+      // ⭐ `design/0071` §3.2：`⌘O` 不再是"直接打开目录"，而是打开面板（最近优先）
+      //    ⇒ 文案跟着改，⛔ 不能还写着"打开一个目录"。
+      'status.hint-open': '按 {dir} 打开（最近 / 目录 / 文件），或按 {file} 直接打开一份文档',
       'status.hint-open-no-keys': '用工具栏的「目录…」打开一个目录，或直接打开一份 .md 文件',
       'status.ready': '就绪 · 未打开任何文件（{hint}）',
-      'status.ready-open-dir': '{dir} 打开目录',
+      'status.ready-open': '{dir} 打开最近或目录',
       'status.ready-no-table': '未加载快捷键表',
       'status.dir-opened': '已打开目录 {name}（根 {roots} 个 · 代次 {gen}）· 从左侧选择一份文档',
-      'status.open-failed': '⛔ 打开失败：{msg}{path}',
-      'status.choose-dir-failed': '⛔ 打开目录失败：{msg}',
+      'status.open-failed': '打开失败：{msg}{path}',
+      'status.choose-dir-failed': '打开目录失败：{msg}',
       // ⭐ `design/0038`：启动页点一行被后端拒绝（目录被移走 / 记录已非规范 / 不在白名单）。
       //    ⚠️ 行本身也会被标成 `data-missing`（`INV-START-07`），这句是另一半。
       //    ⚠️ ⛔ 句子里**不许提键位**：键位只能从后端那张表现取（`INV-SET-01`）。
-      'status.recent-not-found': '⛔ 打不开「{dir}」：它可能已被移动，或已不在最近的目录里',
+      'status.recent-not-found': '打不开「{dir}」',
       // ⭐ `design/0043` §2.7：收藏行的失败与两条成功提示。
       //    ⚠️ 成功提示**不承诺"已加进收藏表"**之外的事——真正能不能打开，要等点击那一刻。
-      'status.favorite-open-failed': '⛔ 打不开这条收藏「{dir}」：它可能已被移动、删除或改成了软链',
+      'status.favorite-open-failed': '打不开这条收藏「{dir}」',
+      // ⭐ `design/0071` §5：启动页右键「在新窗口中打开」没建成窗口（后端拒绝/建窗失败）。
+      //    ⚠️ 句子里**不许提键位**（`INV-SET-01`）。
+      'status.new-window-failed': '在新窗口中打开失败：{msg}',
       'status.favorited': '已收藏',
       'status.unfavorited': '已取消收藏',
-      'status.favorite-failed': '⛔ 收藏操作失败：{msg}',
+      'status.favorite-failed': '收藏操作失败：{msg}',
+      // ── `design/0057`：菜单「收藏 / 取消收藏」（`⌘D`）的两种回话 ──
+      //    ⚠️ 空态下菜单项照样可点（原生菜单没有"按文档状态禁用"这一档）⇒ 必须有这句话，
+      //       而且它**不发 IPC**（后端 `Add` 会以 `NotFound` 拒，那句话读起来像缺陷）。
+      //    ⚠️ 句子里**不许提键位**（`INV-SET-01`：键位只能从后端那张表现取）。
+      'status.favorite-no-doc': '还没有打开的文档——先在侧边栏选一份，或用「文件」菜单打开',
+      // ── `design/0056`：`⌘L` 真关失败（IPC 被 ACL 静默拒 / 后端报错；2026-11-11 由 F2 改来）──
+      'status.close-failed': '关不掉当前文档：{msg}',
       // ── 最近目录的删除（`design/0045`）──
       'status.recent-removed': '已从「最近的目录」移除（磁盘上的目录没动）',
       'status.recent-cleared': '已清空「最近的目录」（磁盘上的目录没动）',
-      'status.recent-clear-failed': '⛔ 没删下来：{msg}',
-      'status.choose-file-failed': '⛔ 打开文件失败：{msg}',
-      'status.session-failed': '⛔ 拿不到会话状态：{msg}',
-      'status.startup-failed': '⛔ 启动失败：{msg}',
-      'status.no-doc-external': '⛔ 还没有打开文档：先打开一份 .md 再用外部编辑器打开',
+      'status.recent-clear-failed': '没删下来：{msg}',
+      'status.choose-file-failed': '打开文件失败：{msg}',
+      'status.session-failed': '拿不到会话状态：{msg}',
+      'status.startup-failed': '启动失败：{msg}',
+      'status.no-doc-external': '还没有打开文档：先打开一份 .md 再用外部编辑器打开',
       'status.external-opened': '已交给外部编辑器打开（改完保存，这里会自动刷新）',
-      'status.external-failed': '⛔ 打不开外部编辑器：{msg}{path}',
+      'status.external-failed': '打不开外部编辑器：{msg}{path}',
       'status.not-editing': '现在不在编辑态：按工具栏的「编辑」先进入编辑',
-      'status.no-doc-edit': '⛔ 还没有打开文档：先打开一份 .md 再进入编辑',
-      'status.edit-unavailable': '⛔ 编辑功能不可用：{note}',
-      'status.edit-enter-failed': '⛔ 进不了编辑态：{msg}{path}',
+      'status.no-doc-edit': '还没有打开文档：先打开一份 .md 再进入编辑',
+      'status.edit-unavailable': '编辑功能不可用：{note}',
+      'status.edit-enter-failed': '进不了编辑态：{msg}{path}',
+      // ── 导出（`design/0076`）──
+      // ⚠️ 前三句是**入口拦截**（本地就知道，⛔ 不发 IPC、⛔ 不弹保存面板）；
+      //    第四、五句是成功回执（中性状态条，⛔ 不是失败条）。
+      'status.export-no-document': '还没有打开文档：先打开一份 .md 再导出',
+      'status.export-needs-save': '有没保存的修改：先保存（或退出编辑）再导出',
+      'status.export-done': '已导出：{path}',
+      'status.export-partial': '已导出：{path}（{n} 张图片没能内联，已按原样保留或换成占位框）',
       // ⭐ `design/0047`（阅读—编辑连续性，live）：**上屏**的那一路。
       //    ⚠️ 与 `src/live/*.js` 里的诊断出口是两回事——那批进 `console.*`、进降级判据、进测试断言，
       //    ⛔ 一个都不进窗口，所以登记在 `tests/js/i18n.test.js` 的 `EXEMPT` 里，⛔ 不在这一段。
-      'status.live-not-editable': '⛔ 这一块不能就地改：{why}',
+      'status.live-not-editable': '这一块不能就地改：{why}',
       'status.live-why-structural': '它不是段落（表格 / 代码块 / 列表项等）',
       'status.live-why-html': '它含原始 HTML',
       'status.live-why-math': '它含块级公式',
-      'status.live-identity': '⛔ 正文在打开后被改过（{why}）⇒ 就地编辑没有开始',
+      'status.live-identity': '正文在打开后被改过（{why}）⇒ 就地编辑没有开始',
+      // ⭐ `design/0047` §6：「身份四件套不符 ⇒ 用户可见『正文已变化，重新载入中』＋ 自动重载」。
+      'status.live-reloading': '正文已变化，正在重新载入…',
       'status.live-why-line-count': '行数 {want} → {got}',
       'status.live-why-content': '磁盘上的内容已经变了',
       'status.live-why-path': '文件换成了 {got}',
@@ -293,51 +343,60 @@
       // ⭐ `design/0054`：候选是照"上一次提交时的全文"造的，等包期间会话被别的提交动过
       //    ⇒ 这一包作废（⛔ 不覆盖）。⛔ 别与 `live-why-content` 混用：那条说的是**磁盘**。
       'status.live-why-stale-session': '生成候选之后，正文又被改过一次',
-      'status.live-eol': '⛔ 这个文件行尾不统一，不能就地改（请在分栏里改）',
-      'status.live-enter-failed': '⛔ 进不了就地编辑：{msg}',
+      'status.live-eol': '这个文件行尾不统一，不能就地改（请在分栏里改）',
+      'status.live-enter-failed': '进不了就地编辑：{msg}',
       'status.live-short': '⚠️ 这一块进去之后比原来矮（{want} → {got} px），排版可能丢了东西',
-      'status.live-block-too-large': '⛔ 这一块太大（{lines} 行），请在分栏里改',
+      'status.live-block-too-large': '这一块太大（{lines} 行），请在分栏里改',
       // ⚠️ 字节闸门走**另一条**文案（评审第 17 条）：3 行 / 300 KB 的块说成「太大（3 行）」
       //    会让用户去数行数，而真正的原因是体积。
-      'status.live-block-too-large-bytes': '⛔ 这一块太大（约 {kb} KB），请在分栏里改',
+      'status.live-block-too-large-bytes': '这一块太大（约 {kb} KB），请在分栏里改',
       'status.live-committed': '已改在内存里（未保存）',
-      'status.live-commit-failed': '⛔ 改不进去：{msg}',
-      'status.live-save-failed': '⛔ 保存失败：{msg}',
-      'status.live-align': '⛔ 正文结构与预期不符，就地编辑已关闭：{msg}',
+      // ⭐ `design/0059` C′：组合期间的暂存输入**没有**落进文档（目标已经变了）。
+      //    ⚠️ 这句必须说出来：静默丢掉用户刚上屏的字是这一族最难查的缺陷。
+      'status.live-composition-stale': '组合的目标已改变，这段输入没有被写入（请重新输入）',
+      'status.live-commit-failed': '改不进去：{msg}',
+      // ⭐ `bugs/0320`：后端错误对象既没有 `wording` 也没有 `message` 时的兜底。
+      //    ⛔ 别再退回 `String(err)`（那就是 `[object Object]` 上屏的来历）。
+      'status.unknown-error': '未知错误',
+      'status.live-save-failed': '保存失败：{msg}',
+      'status.live-align': '正文结构与预期不符，就地编辑已关闭：{msg}',
       'status.live-undo': '已撤销上一次修改',
       'status.live-nothing-to-undo': '没有可撤销的修改',
+      'status.live-redo': '已重做上一次撤销',
+      'status.live-nothing-to-redo': '没有可重做的修改',
       // ⚠️ 结构块（表格 / 分隔线 / 公式 / 图）：⛔ 不进就地编辑，但**给一条可执行的路**
       //    （`design/0047` §4.1）。键位从后端那张表现取，⛔ 不写字面量（`INV-SET-01`）。
       'status.live-structural': '结构块不能就地改：按 {accel} 到分栏里改',
       // ⭐ `design/0049`：表格单元格（`Table` 块仍是 `editable = 0`，这是**另一条**入口）。
       'status.cell-hint': '表格请点格子改字：按 {accel} 到分栏里改结构',
-      'status.cell-unavailable': '⛔ 这张表没有可编辑的格子（载荷里没有 table_cells）',
-      'status.cell-locked': '⛔ 这一格改不了（表格缺列，没有对应的源码位置）',
-      'status.cell-pairing': '⛔ 这一格对不上源码位置（表格与块表数量不一致）⇒ 没有进入编辑',
-      'status.cell-write-failed': '⛔ 改不进这一格：{msg}',
+      'status.cell-unavailable': '这张表没有可编辑的格子（载荷里没有 table_cells）',
+      'status.cell-locked': '这一格改不了（表格缺列，没有对应的源码位置）',
+      'status.cell-pairing': '这一格对不上源码位置（表格与块表数量不一致）⇒ 没有进入编辑',
+      'status.cell-write-failed': '改不进这一格：{msg}',
+      'status.cell-inexpressible': '这一格里的反斜杠紧贴竖线，写回源码后读不回来；请先改掉它再退出',
       // ⭐ `design/0054`：候选校验的三种结局（**后端判决、前端只说人话**）。
       //    ⚠️ 三句都必须在：缺一句时 `t()` 会回退成键名（`status.live-verify-failed`），
       //    用户看到的就是一串英文点号。
-      'status.live-verify-missing': '⛔ 这一次改动没有拿到结构校验结果，因此没有写进去（输入还在）',
+      'status.live-verify-missing': '这一次改动没有拿到结构校验结果，因此没有写进去（输入还在）',
       // ⭐ 2026-10-29 代码评审第 7 条：**声明了 `structure` 却没带结构证据**——
       //    这是**我们的**接线缺陷（新对象忘了填 `verify`），⛔ 不是用户输入的问题。
       //    ⚠️ 必须有自己的句子：借用 `live-verify-missing` 会把"后端没回包"和
       //    "我们压根没问"混成同一句，前者用户重试有用、后者永远没用。
-      'status.live-verify-plan': '⛔ 这一类对象的改动必须先做结构校验，但它没有带上校验请求，因此没有写进去（这是接线问题，请报告；输入还在）',
-      'status.live-verify-failed': '⛔ 这一格没有写进去：{msg}（输入还在）',
-      'status.live-publish-failed': '⛔ 内容没能上屏，这一步没有完成：{msg}',
+      'status.live-verify-plan': '这一类对象的改动必须先做结构校验，但它没有带上校验请求，因此没有写进去（这是接线问题，请报告；输入还在）',
+      'status.live-verify-failed': '这一格没有写进去：{msg}（输入还在）',
+      'status.live-publish-failed': '内容没能上屏，这一步没有完成：{msg}',
       // ⭐ 2026-10-29 复评 P1-3：补提交三轮之后视图里**还有字**。
       //    ⚠️ 这句话只在"我们放弃了收敛"时出现——它必须说清**输入还在、没有退出**，
       //    否则用户会以为已经成功（旧写法返回的是成功）。
-      'status.live-still-dirty': '⛔ 还有改动没能提交进去（刚刚的输入还在），请先处理这一块再离开',
+      'status.live-still-dirty': '还有改动没能提交进去（刚刚的输入还在），请先处理这一块再离开',
       'status.cell-structure': '这次改动会改变表格结构：{msg}',
       'status.verify-newline': '格子里不能有换行',
       'status.verify-rejected': '这一格的内容与表格结构对不上',
       // ⭐ `design/0051`：任务项打勾（`INV-TASK-01..07`）。
-      'status.task-unavailable': '⛔ 这一页没有任务项的位置信息（载荷里没有 task_items）',
-      'status.task-pairing': '⛔ 这个方框对不上源码位置（与块表的任务项数量或状态不一致）⇒ 没有改',
-      'status.task-locked': '⛔ 这一项打不了勾（源码里不是 [ ] / [x] / [X] 这三种写法）',
-      'status.task-write-failed': '⛔ 打勾没写进源码：{msg}',
+      'status.task-unavailable': '这一页没有任务项的位置信息（载荷里没有 task_items）',
+      'status.task-pairing': '这个方框对不上源码位置（与块表的任务项数量或状态不一致）⇒ 没有改',
+      'status.task-locked': '这一项打不了勾（源码里不是 [ ] / [x] / [X] 这三种写法）',
+      'status.task-write-failed': '打勾没写进源码：{msg}',
       'status.task-checked': '已勾选（已保存）',
       'status.task-unchecked': '已取消勾选（已保存）',
       // ⚠️ `design/0047` §4.6 的产品取舍：块内逐键撤销随视图销毁结束（⛔ 不是缺陷）。
@@ -354,6 +413,60 @@
       'live.a11y-value': '第 {line} 行，第 {col} 列：{text}',
       'live.a11y-selection': '第 {line} 行，第 {col} 列，已选中 {chars} 个字符：{text}',
       'live.a11y-blank': '空行',
+      // ⭐ `design/0061` L4：选中浮动格式栏的按钮文案（`src/live/formatbar.js`）。
+      //    ⚠️ 键名的第二段与 `formatbar.js::BUTTONS` 的 `cmd` **逐字相同**，⛔ 别在那边再写一份英文。
+      'live.format.bar': '格式',
+      'live.format.bold': '加粗',
+      'live.format.italic': '斜体',
+      'live.format.code': '行内代码',
+      'live.format.strike': '删除线',
+      'live.format.link': '链接',
+      'live.format.body': '正文',
+      'live.format.h1': '一级标题',
+      'live.format.h2': '二级标题',
+      'live.format.h3': '三级标题',
+      'live.format.ul': '无序列表',
+      'live.format.quote': '引用',
+      // ⭐ `design/0078`：格式栏溢出菜单 —— 块命令与表格操作。
+      //    ⚠️ 键名的第二段与 `blockcmd.js::BLOCK_COMMANDS` / `table.js::TABLE_OPS` 逐字相同。
+      'live.format.more': '更多',
+      'live.block.menu': '块命令',
+      'live.block.code': '代码块',
+      'live.block.table': '表格',
+      'live.block.math': '公式块',
+      'live.block.callout': '提示块',
+      'live.block.hr': '分隔线',
+      'live.block.image': '图片',
+      'live.block.ol': '有序列表',
+      'live.block.clear': '清除格式',
+      'live.table.menu': '表格操作',
+      'live.table.row-insert-above': '上方插入行',
+      'live.table.row-insert-below': '下方插入行',
+      'live.table.row-delete': '删除行',
+      'live.table.row-move-up': '上移行',
+      'live.table.row-move-down': '下移行',
+      'live.table.col-insert-left': '左侧插入列',
+      'live.table.col-insert-right': '右侧插入列',
+      'live.table.col-delete': '删除列',
+      'live.table.col-move-left': '左移列',
+      'live.table.col-move-right': '右移列',
+      'live.table.align-left': '左对齐',
+      'live.table.align-center': '居中对齐',
+      'live.table.align-right': '右对齐',
+      'status.table-rejected': '表格操作无法执行：{why}',
+      'status.table-why.no-cells': '这张表没有可用的格子',
+      'status.table-why.no-delimiter': '缺少分隔行',
+      'status.table-why.bad-delimiter': '分隔行无法识别',
+      'status.table-why.bad-shape': '表格结构与格子区间不一致',
+      'status.table-why.uneven': '这一行没有补齐所有列',
+      'status.table-why.no-cell': '没有活动格',
+      'status.table-why.header-row': '表头行不能这样改',
+      'status.table-why.top-row': '已经是第一条数据行',
+      'status.table-why.bottom-row': '已经是最后一条数据行',
+      'status.table-why.last-column': '不能删除最后一列',
+      'status.table-why.left-edge': '已经是第一列',
+      'status.table-why.right-edge': '已经是最后一列',
+      'status.table-why.unknown-op': '未知的表格操作',
       // ⚠️ 这一段**整句**给模板，⛔ 不在 `main.js` 里拼（§2.2.1）：
       //    半个句子分别翻译，拼出来一定是中式英文。
       'status.summary': '{path} · {src} 源 → {html} HTML · AST {ast} 节点 · 目录 {toc} 项 · ' +
@@ -366,6 +479,9 @@
       'status.commit-slow': ' · 本次重渲整篇 {ms} ms（文档越大越慢）',
       // ⚠️ 与 `services/renderstat.js` 的 `DEFAULT_TPL` **逐字相同**（测试钉着）。
       'doc.code-unhighlighted': ' · 代码未高亮 {un} / {all} 块（规模限制，内容完整）',
+      // ⚠️ 与 `services/renderstat.js` 的 `MERMAID_TPL` **逐字相同**（测试钉着）。
+      //    ⛔ 不写"规模限制"：回退成因有五种，逐块原因在文内那句 `rmd-diagram-note` 里。
+      'doc.diagrams-unrendered': ' · 图表未渲染 {un} / {all} 张（原因见文内，原文完整）',
       // ⭐ `design/0033` 命令行工具：**22 条**（install 7 ＋ uninstall 5 ＋ none 1 ＋ verify 5 ＋ kind 4）。
       //    ⚠️ 设计写的是 16 条 —— 多出来的那几条是"一句话装不下"逼出来的，理由见
       //    `design/0033` §10（`shadowed` 拆成"被路径挡"与"被 kind 挡"两句；四类 kind 要各自的词）。
@@ -373,15 +489,15 @@
       'status.cli.install.installed': '已建立链接：{path}（指向当前应用，换新版 .app 后它跟着变）',
       'status.cli.install.replaced': '已改写悬空链接：{path}（原链接指向的应用已不在了）',
       'status.cli.install.already': '已经装好了：{path} 就指向当前应用（未改动）',
-      'status.cli.install.conflict': '⛔ 未安装：{path} 已存在且不是本应用建的链接（{detail}）',
-      'status.cli.install.refused': '⛔ 不能从当前位置安装：{detail}',
-      'status.cli.install.failed': '⛔ 安装失败：{path}（{detail}）',
+      'status.cli.install.conflict': '未安装：{path} 已存在且不是本应用建的链接（{detail}）',
+      'status.cli.install.refused': '不能从当前位置安装：{detail}',
+      'status.cli.install.failed': '安装失败：{path}（{detail}）',
       'status.cli.install.cancelled': '已取消：没有安装命令行工具',
       'status.cli.uninstall.uninstalled': '已删除：{path}',
       'status.cli.uninstall.absent': '本来就没有：{path}',
       'status.cli.uninstall.not-ours': '未删除：{path} 不是本应用建的链接（{detail}）',
       'status.cli.uninstall.cancelled': '未删除：{path}（授权被取消）',
-      'status.cli.uninstall.failed': '⛔ 删除失败：{path}（{detail}）',
+      'status.cli.uninstall.failed': '删除失败：{path}（{detail}）',
       // ⚠️ 连接词在**这里**（⛔ 不在 `clitool.js` 里拼「A 与 B」——那会把中文烤进载荷）。
       'status.cli.uninstall.none': '本来就没装：{a} 与 {b} 都没有本应用的链接',
       // ⚠️ `{dir}` 由 `clitool.js` 从链接路径现算（⛔ 不是后端字段）。
@@ -424,6 +540,20 @@
       'find.what-next': '下一个',
       'find.what-prev': '上一个',
       'find.what-close': '关闭',
+      'find.replace.placeholder': '替换为…',
+      'find.replace.input-label': '替换为',
+      'find.replace.one': '替换',
+      'find.replace.all': '全部替换',
+      'find.replace.scope': '替换作用于左栏源码（从光标处向后）',
+      'find.replace.need-edit': '先按 {key} 进入分栏编辑',
+      'find.replace.need-edit-nokey': '先进入分栏编辑',
+      'find.replace.empty-query': '没有可替换的内容（关键词为空）',
+      'find.replace.none': '没有可替换的内容（没有命中）',
+      'find.replace.done-one': '已替换 1 处（自光标处）',
+      'find.replace.done-one-wrapped': '已从头替换 1 处',
+      'find.replace.done-all': '已替换全部 {count} 处',
+      'find.replace.failed': '替换失败（编辑器不可用）',
+      'find.what-replace': '替换',
       'save.saving': '正在保存…',
       'save.ignored': '正在保存，已忽略',
       'save.failed': '保存失败',
@@ -431,6 +561,11 @@
       'save.no-change': '无改动',
       'save.done': '已保存（{bytes} 字节 / {ms} ms）',
       'save.done-but-dirty': '已保存，但你后来又改了（仍未保存）',
+      // ⭐ `design/0082`：未命名文档。面板取消**不是失败**：内容还在缓冲里。
+      'save.cancelled': '已取消保存（内容还在）',
+      'doc.untitled': '未命名',
+      'fail.draft-saved-switched': '文件已保存，但当前文档已经切换',
+      'edit.ask-close-window': '有未保存的修改，仍要关闭窗口吗？',
 
       // ── 文档内链接（`design/0026` §5 的那张表）──
       // ⚠️ 每一条都对应 `commands/link.rs` 的一种 `kind`（`services/links.js::plan` 逐格映射）：
@@ -466,11 +601,19 @@
       'start.recent-title': '最近的目录',
       'start.last-mark': '上次打开',
       'start.row-missing': '这个目录打不开了（可能已被移动或删除）',
+      // ── 启动页 · 「开始」段（`design/0081` §2.1 ③）──
+      // ⚠️ 段里那三行的**动作名与键位都不在这里**：动作名取后端 `SHORTCUTS` 表的
+      //    `label_zh`/`label_en`，键位取同一个 `display`（`INV-SET-01`/`INV-START-08`）。
+      //    这里只有段标题——⛔ 别再补一份动作名文案，那会变成第二个真值。
+      'start.act-title': '开始',
       // ── 启动页 · 收藏段（`design/0043` §2.6）──
       // ⚠️ 收藏行**不画数字**（`INV-FAV-05`），所以这里没有"第 n 条"的说法。
       'start.fav-title': '收藏',
       'start.fav-missing': '这条收藏打不开了（可能已被移动、删除或改成了软链）',
       'start.menu.unfavorite': '取消收藏',
+      // ⭐ `design/0071` §5：两张行菜单（收藏 / 最近目录）的「在新窗口中打开」。
+      //    ⚠️ 菜单项**不放加速键**；文案里也不出现键位字面量（`INV-SET-01`）。
+      'start.menu.new-window': '在新窗口中打开',
       'start.menu.move-up': '上移',
       'start.menu.move-down': '下移',
       // ── 启动页 · 最近目录的删除（`design/0045`，隐私）──
@@ -553,6 +696,9 @@
       // ⭐ `design/0043`：收藏有上限。⚠️ 句子里**不写数字**——上限的真值在后端
       //    （`Denied::LimitReached.limit`），前端再抄一份就立刻分叉。
       'err.kind.limit_reached': '已达上限，不能再加了。先移除几条再试',
+      // ⭐ `design/0076`：导出的拒绝。⚠️ 具体原因（没文档 / 落点不合法 / 落点是当前文档 /
+      //    打印不可用 / 派发失败）由后端 `message` 带过来，⛔ 不在这里拆成五个 kind。
+      'err.kind.export': '导出失败',
       'err.rename.symlink': '这是符号链接，不能重命名',
       'err.rename.not_markdown': '只能重命名普通 Markdown 文件',
       'err.rename.editing': '当前文档正在编辑，先保存并退出编辑态再重命名',
@@ -570,9 +716,35 @@
 
       // ── 通用词（多处共用）──
       'common.cancel': '取消',
+      // ⭐ `design/0070`：失败容器的动作与行内提示。
+      //    ⚠️ 动作只有三种（重试 / 详情 / 关闭）：⛔ 不放破坏性动作（评审意见 7）。
+      'fail.retry': '重试',
+      'fail.detail': '查看详情',
+      'fail.close': '关闭',
+      'fail.close-hint': '关闭这条提示',
+      // ⭐ `design/0076`：导出 / 打印失败条。⚠️ `{msg}` 放后端 `Denied` 的 `message`
+      //    （含系统原文）；⛔ 正文内容不进日志、也不进这条文案。
+      'fail.export-failed': '导出失败：{msg}',
+      'fail.print-failed': '导出 PDF 失败：{msg}',
+      'fail.start-favorite': '打不开「{name}」',
+      // ⭐ `design/0071` §2.2 / §2.4：拖入窗口的遮罩与拒绝理由。
+      //    ⚠️ 拒绝理由**只有 key**——后端发过来的是下面这几个字符串本身
+      //       （`INV-OPEN-01`：路径一个字节都不过 IPC）。
+      //    ⚠️ 五句**必须互不重复**地对应 §2.4 那张表的五行：用户看到的每一句
+      //       都要能指出"下一步该做什么"（重拖 / 换目录 / 保存后重拖）。
+      'drop.hint': '松开即可打开 Markdown 文件或目录',
+      'drop.reject.editing': '先保存并退出编辑',
+      'drop.reject.multi': '一次只能打开一份',
+      'drop.reject.not-markdown': '只支持 Markdown',
+      'drop.reject.unreadable': '文件读不到',
+      'drop.reject.root': '这个目录打不开',
       // ⚠️ 路径后缀：中文全角括号、英文半角带前导空格——
       //    一处两用会在英文界面里排成"两个字的空当里塞一个路径"（§2.2.1 同族）。
       'common.in-parens': '（{path}）',
+      // ⭐ `design/0082` §2.1：`fail.new.no-directory` 随"先建后存"一起删除——
+      //    `⌘N` 不再需要目录，也就不存在"没有地方可建"这个失败。
+      //    ⚠️ 剩下这一句是"编辑会话起不来 / 目标层读不出来"（与 `design/0071` 同一条）。
+      'fail.new.unavailable': '新建文件：这个位置打不开',
     },
 
     en: {
@@ -673,6 +845,14 @@
       'qo.refresh-hint': '{key} refresh index',
       'qo.empty-hint': 'Type a file name to search',
       'qo.error': 'Search failed: {msg}',
+      // ── ⭐ `design/0071` §3：`⌘O` 打开面板（最近优先）──
+      'open.title': 'Open',
+      'open.recent': 'Recent',
+      'open.browse-dir': 'Browse Folder…',
+      'open.browse-file': 'Browse Files…',
+      'open.empty': 'No recent folders yet.',
+      'open.row-file': 'Open {name}',
+      'open.row-dir': 'Open folder {name}',
       // ── grey notes and tooltips in the file tree ──
       'tree.ignored-title': '{path}\n(in the ignore list: not expanded, not scanned)',
       'tree.too-deep': 'Too deep (over {n} levels); not expanding',
@@ -696,6 +876,26 @@
       'tree.copy.unsupported': 'Copying is not supported here — please note the path manually',
       'tree.copy.denied': 'The system denied the copy request',
       'tree.copy.failed': 'Copy failed',
+      // ── multi-format copy and literal paste (design/0077) ──
+      'clip.copy.ok-markdown': 'Markdown source copied',
+      'clip.copy.ok-html': 'HTML source copied',
+      'clip.copy.ok-plain': 'Plain text copied',
+      'clip.copy.ok-rich': 'Rich text copied',
+      'clip.copy.ok-markdown-block': 'Markdown copied (whole blocks)',
+      'clip.copy.no-selection': 'Nothing is selected — select some content first',
+      'clip.copy.no-document': 'No document is open',
+      'clip.copy.no-source': 'Markdown source is unavailable in reading mode — enter edit mode and copy from a source selection',
+      'clip.copy.unsupported': 'This environment cannot copy in that format',
+      'clip.copy.denied': 'The system denied the copy request',
+      'clip.copy.failed': 'Copy failed',
+      'clip.copy.render-failed': 'Could not render the selection, so HTML was not copied',
+      'clip.copy.no-html': 'The selection has no HTML to copy',
+      'clip.paste.ok': 'Pasted as literal Markdown source',
+      'clip.paste.empty': 'The clipboard has no text',
+      'clip.paste.no-editor': 'Place the cursor in an editor before pasting as literal Markdown',
+      'clip.paste.unsupported': 'This environment cannot read the clipboard',
+      'clip.paste.denied': 'The system denied the clipboard read request',
+      'clip.paste.failed': 'Paste failed',
       'tree.reveal.failed': 'Could not open Finder',
       'tree.rename.degraded.watch': 'Renamed, but auto-refresh is unavailable (the file could not be re-watched)',
       'tree.rename.degraded.path_check': 'Renamed, but the new location could not be confirmed to be inside an authorized folder',
@@ -745,74 +945,92 @@
       'disk.retry': 'Rewatch',
       'disk.refresh': 'Reload From Disk',
       'status.menu-lang-pending': 'The menu will switch on the next launch',
-      'status.hint-open': 'Press {dir} to open a folder, or {file} to open a document',
+      // ⭐ `design/0071` §3.2：`⌘O` 不再是"直接打开目录"，而是打开面板（最近优先）
+      //    ⇒ 文案跟着改，⛔ 不能还写着"打开一个目录"。
+      'status.hint-open': 'Press {dir} to open recent, a folder or a file, or {file} to pick a document',
       'status.hint-open-no-keys': 'Use “Folder…” in the toolbar to open a folder, or open a .md file directly',
       'status.ready': 'Ready · no file open ({hint})',
-      'status.ready-open-dir': '{dir} to open a folder',
+      'status.ready-open': '{dir} to open recent items or a folder',
       'status.ready-no-table': 'shortcut table not loaded',
       'status.dir-opened': 'Opened folder {name} ({roots} roots · generation {gen}) · choose a document on the left',
-      'status.open-failed': "⛔ Couldn't open: {msg}{path}",
-      'status.choose-dir-failed': "⛔ Couldn't open the folder: {msg}",
+      'status.open-failed': "Couldn't open: {msg}{path}",
+      'status.choose-dir-failed': "Couldn't open the folder: {msg}",
       // ⭐ `design/0038`：启动页那一行打不开（目录被移走 / 记录已非规范 / 不在白名单）。
-      'status.recent-not-found': "⛔ Couldn't open “{dir}”: it may have moved, or it's no longer in your recent folders",
-      'status.favorite-open-failed': "⛔ Couldn't open the favorite “{dir}”: it may have moved, been deleted, or become a symlink",
+      'status.recent-not-found': "Couldn't open “{dir}”",
+      'status.favorite-open-failed': "Couldn't open the favorite “{dir}”",
+      'status.new-window-failed': "Couldn't open in a new window: {msg}",
       'status.favorited': 'Added to favorites',
       'status.unfavorited': 'Removed from favorites',
-      'status.favorite-failed': '⛔ Favorite action failed: {msg}',
+      'status.favorite-failed': 'Favorite action failed: {msg}',
+      // ── `design/0057` / `design/0056`（同上，英文那一份）──
+      'status.favorite-no-doc': 'No document is open — pick one in the sidebar, or use the File menu',
+      'status.close-failed': "Couldn't close the current document: {msg}",
       // ── 最近目录的删除（`design/0045`）──
       'status.recent-removed': 'Removed from Recent folders (nothing on disk was touched)',
       'status.recent-cleared': 'Recent folders cleared (nothing on disk was touched)',
-      'status.recent-clear-failed': "⛔ Couldn't remove it: {msg}",
-      'status.choose-file-failed': "⛔ Couldn't open the file: {msg}",
-      'status.session-failed': "⛔ Couldn't get the session state: {msg}",
-      'status.startup-failed': '⛔ Startup failed: {msg}',
-      'status.no-doc-external': '⛔ No document open: open a .md file first, then use the external editor',
+      'status.recent-clear-failed': "Couldn't remove it: {msg}",
+      'status.choose-file-failed': "Couldn't open the file: {msg}",
+      'status.session-failed': "Couldn't get the session state: {msg}",
+      'status.startup-failed': 'Startup failed: {msg}',
+      'status.no-doc-external': 'No document open: open a .md file first, then use the external editor',
       'status.external-opened': 'Opened in the external editor (save there and this window refreshes automatically)',
-      'status.external-failed': "⛔ Couldn't launch the external editor: {msg}{path}",
+      'status.external-failed': "Couldn't launch the external editor: {msg}{path}",
       'status.not-editing': 'Not editing: press “Edit” in the toolbar first',
-      'status.no-doc-edit': '⛔ No document open: open a .md file before editing',
-      'status.edit-unavailable': '⛔ Editing is unavailable: {note}',
-      'status.edit-enter-failed': "⛔ Couldn't start editing: {msg}{path}",
-      'status.live-not-editable': "⛔ This block can't be edited in place: {why}",
+      'status.no-doc-edit': 'No document open: open a .md file before editing',
+      'status.edit-unavailable': 'Editing is unavailable: {note}',
+      'status.edit-enter-failed': "Couldn't start editing: {msg}{path}",
+      // ── export (`design/0076`) ──
+      'status.export-no-document': 'No document open: open a .md file before exporting',
+      'status.export-needs-save': 'There are unsaved changes: save (or leave editing) before exporting',
+      'status.export-done': 'Exported: {path}',
+      'status.export-partial': 'Exported: {path} ({n} image(s) could not be inlined and were left as-is or replaced by placeholders)',
+      'status.live-not-editable': "This block can't be edited in place: {why}",
       'status.live-why-structural': 'it is not a paragraph (table / code block / list item …)',
       'status.live-why-html': 'it contains raw HTML',
       'status.live-why-math': 'it contains a display formula',
-      'status.live-identity': '⛔ The document changed after it was opened ({why}), so in-place editing did not start',
+      'status.live-identity': 'The document changed after it was opened ({why}), so in-place editing did not start',
+      'status.live-reloading': 'The document changed on disk; reloading…',
       'status.live-why-line-count': 'line count {want} → {got}',
       'status.live-why-content': 'the file on disk has changed',
       'status.live-why-path': 'the file is now {got}',
       'status.live-why-generation': 'the folder generation was refreshed',
       'status.live-why-grant': 'the grant carried no text',
       'status.live-why-stale-session': 'the document changed again after the candidate was built',
-      'status.live-eol': '⛔ This file has mixed line endings — edit it in the split view instead',
-      'status.live-enter-failed': "⛔ Couldn't start in-place editing: {msg}",
+      'status.live-eol': 'This file has mixed line endings — edit it in the split view instead',
+      'status.live-enter-failed': "Couldn't start in-place editing: {msg}",
       'status.live-short': '⚠️ This block came out shorter ({want} → {got} px) — some layout may have been lost',
-      'status.live-block-too-large': '⛔ This block is too large ({lines} lines) — edit it in the split view',
-      'status.live-block-too-large-bytes': '⛔ This block is too large (about {kb} KB) — edit it in the split view',
+      'status.live-block-too-large': 'This block is too large ({lines} lines) — edit it in the split view',
+      'status.live-block-too-large-bytes': 'This block is too large (about {kb} KB) — edit it in the split view',
       'status.live-committed': 'Changed in memory (not saved)',
-      'status.live-commit-failed': "⛔ Couldn't apply the change: {msg}",
-      'status.live-save-failed': "⛔ Couldn't save: {msg}",
-      'status.live-align': '⛔ The structure did not line up, so in-place editing was turned off: {msg}',
+      'status.live-composition-stale': 'The text being composed has changed; that input was not written',
+      'status.live-commit-failed': "Couldn't apply the change: {msg}",
+      'status.unknown-error': 'Unknown error',
+      'status.live-save-failed': "Couldn't save: {msg}",
+      'status.live-align': 'The structure did not line up, so in-place editing was turned off: {msg}',
       'status.live-undo': 'Reverted the last change',
       'status.live-nothing-to-undo': 'Nothing to undo',
+      'status.live-redo': 'Redid the last undo',
+      'status.live-nothing-to-redo': 'Nothing to redo',
       'status.live-structural': "Structural blocks can't be edited in place: press {accel} to edit in the split view",
       'status.cell-hint': 'Click a cell to edit its text; press {accel} to change the table structure in the split view',
-      'status.cell-unavailable': '⛔ This table has no editable cells (no table_cells in the payload)',
-      'status.cell-locked': "⛔ This cell can't be edited (the table has no matching source position)",
-      'status.cell-pairing': "⛔ This cell has no matching source position (the table and block table disagree), so editing did not start",
-      'status.cell-write-failed': "⛔ Couldn't write this cell: {msg}",
-      'status.live-verify-missing': "⛔ This change had no structural verdict, so nothing was written (your input is still here)",
-      'status.live-verify-plan': "⛔ This kind of object requires a structural check, but the change carried no check request, so nothing was written (this is a wiring bug — please report it; your input is still here)",
-      'status.live-verify-failed': "⛔ This cell was not written: {msg} (your input is still here)",
-      'status.live-publish-failed': "⛔ The change didn't make it on screen, so this step is unfinished: {msg}",
-      'status.live-still-dirty': "⛔ Some changes could not be committed (your latest input is still here) — deal with this block before leaving",
+      'status.cell-unavailable': 'This table has no editable cells (no table_cells in the payload)',
+      'status.cell-locked': "This cell can't be edited (the table has no matching source position)",
+      'status.cell-pairing': "This cell has no matching source position (the table and block table disagree), so editing did not start",
+      'status.cell-write-failed': "Couldn't write this cell: {msg}",
+      'status.cell-inexpressible':
+        '⛔ A backslash right before a pipe can’t be stored in a cell; change it before leaving',
+      'status.live-verify-missing': "This change had no structural verdict, so nothing was written (your input is still here)",
+      'status.live-verify-plan': "This kind of object requires a structural check, but the change carried no check request, so nothing was written (this is a wiring bug — please report it; your input is still here)",
+      'status.live-verify-failed': "This cell was not written: {msg} (your input is still here)",
+      'status.live-publish-failed': "The change didn't make it on screen, so this step is unfinished: {msg}",
+      'status.live-still-dirty': "Some changes could not be committed (your latest input is still here) — deal with this block before leaving",
       'status.cell-structure': 'This change would alter the table structure: {msg}',
       'status.verify-newline': "a cell can't contain a line break",
       'status.verify-rejected': 'the cell content does not match the table structure',
-      'status.task-unavailable': '⛔ This page has no task-item positions (no task_items in the payload)',
-      'status.task-pairing': "⛔ This checkbox doesn't match a source position (the block table's task items disagree), so nothing changed",
-      'status.task-locked': '⛔ This item cannot be toggled (the source is not [ ] / [x] / [X])',
-      'status.task-write-failed': "⛔ Couldn't write the toggle into the source: {msg}",
+      'status.task-unavailable': 'This page has no task-item positions (no task_items in the payload)',
+      'status.task-pairing': "This checkbox doesn't match a source position (the block table's task items disagree), so nothing changed",
+      'status.task-locked': 'This item cannot be toggled (the source is not [ ] / [x] / [X])',
+      'status.task-write-failed': "Couldn't write the toggle into the source: {msg}",
       'status.task-checked': 'Checked (saved)',
       'status.task-unchecked': 'Unchecked (saved)',
       'status.live-undo-scope': 'You can undo the last commit of this block; per-keystroke undo ends when you leave it',
@@ -823,25 +1041,76 @@
       'live.a11y-value': 'Line {line}, column {col}: {text}',
       'live.a11y-selection': 'Line {line}, column {col}, {chars} characters selected: {text}',
       'live.a11y-blank': 'blank line',
+      'live.format.bar': 'Formatting',
+      'live.format.bold': 'Bold',
+      'live.format.italic': 'Italic',
+      'live.format.code': 'Inline code',
+      'live.format.strike': 'Strikethrough',
+      'live.format.link': 'Link',
+      'live.format.body': 'Paragraph',
+      'live.format.h1': 'Heading 1',
+      'live.format.h2': 'Heading 2',
+      'live.format.h3': 'Heading 3',
+      'live.format.ul': 'Bullet list',
+      'live.format.quote': 'Quote',
+      'live.format.more': 'More',
+      'live.block.menu': 'Block commands',
+      'live.block.code': 'Code block',
+      'live.block.table': 'Table',
+      'live.block.math': 'Math block',
+      'live.block.callout': 'Callout',
+      'live.block.hr': 'Horizontal rule',
+      'live.block.image': 'Image',
+      'live.block.ol': 'Ordered list',
+      'live.block.clear': 'Clear formatting',
+      'live.table.menu': 'Table actions',
+      'live.table.row-insert-above': 'Insert row above',
+      'live.table.row-insert-below': 'Insert row below',
+      'live.table.row-delete': 'Delete row',
+      'live.table.row-move-up': 'Move row up',
+      'live.table.row-move-down': 'Move row down',
+      'live.table.col-insert-left': 'Insert column left',
+      'live.table.col-insert-right': 'Insert column right',
+      'live.table.col-delete': 'Delete column',
+      'live.table.col-move-left': 'Move column left',
+      'live.table.col-move-right': 'Move column right',
+      'live.table.align-left': 'Align left',
+      'live.table.align-center': 'Align center',
+      'live.table.align-right': 'Align right',
+      'status.table-rejected': 'Table action unavailable: {why}',
+      'status.table-why.no-cells': 'No cell data for this table',
+      'status.table-why.no-delimiter': 'Missing delimiter row',
+      'status.table-why.bad-delimiter': 'Unrecognized delimiter row',
+      'status.table-why.bad-shape': 'Table shape does not match cell spans',
+      'status.table-why.uneven': 'This row does not have all columns',
+      'status.table-why.no-cell': 'No active cell',
+      'status.table-why.header-row': 'The header row cannot be changed this way',
+      'status.table-why.top-row': 'Already the first body row',
+      'status.table-why.bottom-row': 'Already the last body row',
+      'status.table-why.last-column': 'Cannot delete the only column',
+      'status.table-why.left-edge': 'Already the first column',
+      'status.table-why.right-edge': 'Already the last column',
+      'status.table-why.unknown-op': 'Unknown table action',
       'status.summary': '{path} · {src} source → {html} HTML · AST {ast} nodes · TOC {toc} entries · ' +
         'images {total} (loaded {loaded} / unauthorized {unauthorized} / remote {remote} / missing {missing}) · ' +
         'T1 {t1} / T2 {t2} / T3 {t3} ms',
       'status.bom-stripped': ' · BOM stripped',
       'status.commit-slow': ' · full rerender took {ms} ms (larger documents are slower)',
       'doc.code-unhighlighted': ' · {un} / {all} code blocks not highlighted (size limit; content is complete)',
+      'doc.diagrams-unrendered': ' · {un} / {all} diagrams not rendered (reason is shown inline; source is intact)',
       // ⭐ `design/0033`: **22** keys — see the zh block for why it is not 16.
       'status.cli.install.installed': 'Linked: {path} (points at the running app, so it follows .app upgrades)',
       'status.cli.install.replaced': 'Replaced a dangling link: {path} (its app is gone)',
       'status.cli.install.already': 'Already installed: {path} points at the running app (unchanged)',
-      'status.cli.install.conflict': '⛔ Not installed: {path} exists and is not a link this app created ({detail})',
-      'status.cli.install.refused': '⛔ Cannot install from this location: {detail}',
-      'status.cli.install.failed': '⛔ Install failed: {path} ({detail})',
+      'status.cli.install.conflict': 'Not installed: {path} exists and is not a link this app created ({detail})',
+      'status.cli.install.refused': 'Cannot install from this location: {detail}',
+      'status.cli.install.failed': 'Install failed: {path} ({detail})',
       'status.cli.install.cancelled': 'Cancelled: the command line tool was not installed',
       'status.cli.uninstall.uninstalled': 'Removed: {path}',
       'status.cli.uninstall.absent': 'Nothing there to begin with: {path}',
       'status.cli.uninstall.not-ours': 'Not removed: {path} is not a link this app created ({detail})',
       'status.cli.uninstall.cancelled': 'Not removed: {path} (authorization cancelled)',
-      'status.cli.uninstall.failed': '⛔ Removal failed: {path} ({detail})',
+      'status.cli.uninstall.failed': 'Removal failed: {path} ({detail})',
       'status.cli.uninstall.none': 'Not installed to begin with: neither {a} nor {b} holds a link from this app',
       'status.cli.verify.verified': 'You can run rmd in the terminal now',
       'status.cli.verify.not-on-path': 'The terminal cannot find it yet: {dir} is not on PATH. Add ' +
@@ -881,6 +1150,20 @@
       'find.what-next': 'next',
       'find.what-prev': 'previous',
       'find.what-close': 'close',
+      'find.replace.placeholder': 'Replace with…',
+      'find.replace.input-label': 'Replace with',
+      'find.replace.one': 'Replace',
+      'find.replace.all': 'Replace All',
+      'find.replace.scope': 'Replaces in the source pane (from the caret)',
+      'find.replace.need-edit': 'Press {key} to enter split editing first',
+      'find.replace.need-edit-nokey': 'Enter split editing first',
+      'find.replace.empty-query': 'Nothing to replace: the search term is empty',
+      'find.replace.none': 'Nothing to replace: no matches',
+      'find.replace.done-one': 'Replaced 1 match (from the caret)',
+      'find.replace.done-one-wrapped': 'Replaced 1 match from the beginning',
+      'find.replace.done-all': 'Replaced all {count} matches',
+      'find.replace.failed': 'Replace failed (editor unavailable)',
+      'find.what-replace': 'replace',
       'save.saving': 'Saving…',
       'save.ignored': 'Already saving — ignored',
       'save.failed': 'Save failed',
@@ -888,6 +1171,10 @@
       'save.no-change': 'No changes',
       'save.done': 'Saved ({bytes} bytes / {ms} ms)',
       'save.done-but-dirty': 'Saved, but you changed it again afterwards (still unsaved)',
+      'save.cancelled': 'Save cancelled (your text is still here)',
+      'doc.untitled': 'Untitled',
+      'fail.draft-saved-switched': 'The file was saved, but the current document has changed',
+      'edit.ask-close-window': 'You have unsaved changes. Close this window anyway?',
 
       // ── links inside a document (`design/0026` §5) ──
       'link.empty': 'This link has no target',
@@ -914,9 +1201,12 @@
       'start.recent-title': 'Recent folders',
       'start.last-mark': 'Last opened',
       'start.row-missing': "This folder can't be opened (it may have moved or been deleted)",
+      // ── Start page · "Start" section (`design/0081` §2.1 ③) ──
+      'start.act-title': 'Start',
       'start.fav-title': 'Favorites',
       'start.fav-missing': "This favorite can't be opened (it may have moved, been deleted, or become a symlink)",
       'start.menu.unfavorite': 'Remove from Favorites',
+      'start.menu.new-window': 'Open in New Window',
       'start.menu.move-up': 'Move Up',
       'start.menu.move-down': 'Move Down',
       // ── Start page · removing recent entries (`design/0045`, privacy) ──
@@ -988,6 +1278,7 @@
       'err.kind.created_outside_root': 'Post-create check failed (the item is outside the authorized folder; not deleted)',
       'err.kind.not_renamable': 'This file cannot be renamed',
       'err.kind.limit_reached': 'The limit has been reached — remove a few before adding more',
+      'err.kind.export': 'Export failed',
       'err.rename.symlink': 'This is a symbolic link and cannot be renamed',
       'err.rename.not_markdown': 'Only plain Markdown files can be renamed',
       'err.rename.editing': 'The document is being edited — save and leave edit mode first',
@@ -1001,7 +1292,23 @@
 
       // ── shared bits ──
       'common.cancel': 'Cancel',
+      'fail.retry': 'Retry',
+      'fail.detail': 'Details',
+      'fail.close': 'Close',
+      'fail.close-hint': 'Dismiss this notice',
+      'fail.export-failed': 'Export failed: {msg}',
+      'fail.print-failed': 'PDF export failed: {msg}',
+      'fail.start-favorite': "Couldn't open “{name}”",
+      // ⭐ `design/0071` §2.2 / §2.4（与中文那五句一一对应，⛔ 别合并）。
+      'drop.hint': 'Drop to open a Markdown file or folder',
+      'drop.reject.editing': 'Save and leave editing first',
+      'drop.reject.multi': 'Only one item can be opened at a time',
+      'drop.reject.not-markdown': 'Only Markdown is supported',
+      'drop.reject.unreadable': "Couldn't read the file",
+      'drop.reject.root': "Couldn't open this folder",
       'common.in-parens': ' ({path})',
+      // ⭐ `design/0082` §2.1：见 `zh` 那边同一条的说明（`fail.new.no-directory` 已删除）。
+      'fail.new.unavailable': "New file: this location can't be opened",
     },
   };
 

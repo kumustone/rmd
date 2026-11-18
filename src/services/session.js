@@ -600,6 +600,52 @@
   }
 
   /**
+   * ⭐ **关闭当前文档**（`design/0056` / `INV-CLOSE-01`：这是"关掉"的**唯一**路径）。
+   *
+   * ⛔ 别让调用方"自己把 `currentDoc` 清掉再画空态"：后端还握着 `current_document`
+   * 与监视时，`⌘R` 会把一份**看不见的文档**重新挂上来、外部编辑器也仍指向它——
+   * 那是本仓一贯拒绝的"静默旧真值"。
+   *
+   * 顺序（与 `applySnapshot` 里那段**对账**同一条纪律）：
+   * ① 先捕获 `docSeq`（提交给后端做身份判据，`INV-CLOSE-02`）；
+   * ② 再把本地 `watchSeq/watchPath` 清零 —— 之后迟到的事件在 `reload.js` 里
+   *    就会被 `seq <= 0` 挡掉，⛔ 不会画到导航页上；
+   * ③ 发命令；④ 回包确认关掉了才清文档身份；⑤ 交给 `applySnapshot` 覆盖其余字段
+   *    （它内部只 `emit()` 一次，所以身份必须**先**清）。
+   *
+   * @returns {Promise<boolean>} `true` = 后端确认关掉了（回包 `doc_seq === 0`）；
+   *   `false` = 身份不符（这段时间用户已经开了别的文档）⇒ **界面不动**。
+   *   ⚠️ 抛错（命令没注册 / ACL 静默拒）由调用方接住并说出来，⛔ 不在这里吞掉。
+   */
+  async function closeDocument() {
+    // ⚠️⚠️ 身份取 **`currentDoc.doc_seq`**（与 `main.js::currentDocSeq()` 同一个字段），
+    //    ⛔ **不是** `state.docSeq`：后者只随**快照**更新，而"打开一份文档"**不走快照**
+    //    （`open_document` 的回包就是那份 payload）⇒ 用它拿到的是**上一次快照时**的会话号，
+    //    于是每一次 `close_document` 都会被后端判成身份不符——表现是"⌘L 按下去毫无反应"，
+    //    而日志里只有一行"不动"。⭐ 这一条是 `tests/js/session.test.js` 那条用例逼出来的。
+    const docSeq = (state.currentDoc && state.currentDoc.doc_seq) || 0;
+    const staleSeq = state.watchSeq;
+    state.watchSeq = 0;
+    state.watchPath = null;
+    const snap = await T.call('close_document', { docSeq });
+    // ⚠️ 只有回包说"会话号归零"才认；否则后端根本没关（身份不符）。
+    const closed = !!(snap && snap.doc_seq === 0);
+    if (closed) {
+      // ⚠️ 身份**先清、再**让快照 emit：`applySnapshot` 里只有这一次 `emit()`，
+      //    而 `renderSidebar` 的空会话那一支要求 `mode === 'empty' && !currentDoc`
+      //    ⇒ 反过来做会先画一帧"未授权态"（两个说法，虽然只闪一下）。
+      state.currentDoc = null;
+      state.currentPath = null;
+    }
+    applySnapshot(snap);
+    if (!closed) {
+      // ⚠️ 本地把监视真值清早了，这里如实说一句：真值已经不可信，让下一份文档重建。
+      console.error('close_document 未生效（doc_seq 不符），本地监视真值已清；旧 seq=', staleSeq);
+    }
+    return closed;
+  }
+
+  /**
    * 停止监视（⛔ 不清正文、⛔ 不碰授权）。
    *
    * ⚠️ 唯一的调用点是 `applySnapshot` 里那次**对账**（授权变了 ⇒ 监视在后端也作废）。
@@ -733,6 +779,80 @@
   }
 
   /**
+   * ⭐ **新建一份未命名文档**（`design/0082` §2.1 ②）——**读取命令，⛔ 零写盘**。
+   *
+   * ⚠️ `req` 走**文档那个计数器**（`latestReq`），后端把它写进 `latest_doc_req`
+   * ⇒ 在飞的 `open_document` 回来时两边一起判陈旧。⛔ 换一个计数器就会让
+   * "点文件 → 立刻 `⌘N`"那份迟到的打开把草稿**无声顶掉**（`commands/document.rs::commit_open`）。
+   * ⚠️ 回包与 `open_document` 同形，挂载走同一条 `mountDocument`（按 `draft` 分流）。
+   *
+   * @returns {{payload: object|null, decision: object}} 与 `openDocument` 同形
+   */
+  async function newUntitled() {
+    const req = ++state.latestReq;
+    const generation = state.generation;
+    const payload = await T.call('new_untitled', { generation: generation, req: req });
+    const decision = V.docCommitDecision(payload, current());
+    if (!decision.commit) return { payload: null, decision };
+    state.currentDoc = payload;
+    state.committedReq = req;
+    // 草稿的 `real_path` 是**空串**（不是缺字段）：身份就是"没有路径"。
+    state.currentPath = payload.real_path;
+    emit();
+    return { payload, decision };
+  }
+
+  /**
+   * ⭐ **保存未命名文档**（`design/0082` §2.1 ④）。落点由**后端**弹系统面板产生，
+   * 前端⛔ 不传路径（"用户已选择"标记不可信，根 `CLAUDE.md` 的硬约束）。
+   *
+   * @param {number} id 草稿号（`currentDoc.draft`，与后端 `Session.draft` 对应）
+   * @param {string} text 编辑缓冲（后端负责信封化）
+   * @param {number} req 保存请求号（由调用方的保存器维护）
+   * @returns {Promise<{path:string, doc_dir:string, doc_seq:number, bytes:number, req:number, ms:number}|null>}
+   *          `null` = 用户在面板里取消（**不是错误**：内容原样留在缓冲里）
+   */
+  async function saveUntitled(id, text, req) {
+    return T.call('save_untitled', {
+      id: id,
+      text: text,
+      generation: state.generation,
+      req: req,
+    });
+  }
+
+  /**
+   * ⭐ **草稿保存成功之后就地采纳**（`design/0082` §2.1 ⑤ 的实施偏差，登记在 §10）。
+   *
+   * 设计原文说"保存成功后整体换成 `openDocument(path)` 的结果"，落地改成就地改身份：
+   * `openDocument` 会先过**脏闸**（这时分栏编辑又脏了）⇒ 结果是把用户从编辑态踢出去、
+   * 再重新读一遍盘、再渲一遍。而手头这份回包已经把新身份的四件套给全了
+   * （`path` / `doc_dir` / `doc_seq` / 新基线），⛔ 不需要第二次读盘。
+   *
+   * ⚠️ 只改**身份**，⛔ 不碰正文、⛔ 不触发挂载：缓冲是同一份文本，屏幕已经是对的。
+   * ⚠️ 判据用 `doc.draft`：放锁那几秒（用户在系统面板里挑目录）里用户可能已经
+   *    `⌘N` 了一份新草稿 ⇒ 这份回包**不属于**现在这一份，⛔ 不采纳（调用方报一句）。
+   *
+   * @param {object} out `save_untitled` 的回包
+   * @returns {boolean} 采纳了没有（`false` = 当前文档已经不是那份草稿）
+   */
+  function adoptSavedDraft(out) {
+    const doc = state.currentDoc;
+    if (!doc || !doc.draft || !out || !out.path) return false;
+    // ⚠️ 四件套**同批**改（与 `commit_open` 的字段口径一致）：漏一个就是"两份真值"。
+    doc.draft = null;
+    doc.path = out.path;
+    doc.real_path = out.path;
+    doc.doc_dir = out.doc_dir || '';
+    // ⚠️ 身份取 `currentDoc.doc_seq`（与 `closeDocument` / `main.js::currentDocSeq()` 同一字段，
+    //    理由见 `closeDocument` 里那段注释）。
+    doc.doc_seq = out.doc_seq;
+    state.currentPath = out.path;
+    emit();
+    return true;
+  }
+
+  /**
    * ⭐ **记录阅读位置**（`design/0017` §2.2 ②）。
    *
    * ⚠️ 它**只写 `config.json`**：⛔ 不读文档、⛔ 不改授权、⛔ 不是第二条可读路径。
@@ -742,7 +862,10 @@
   async function setReadingProgress(path, docSeq, progress) {
     return T.call('set_reading_progress', {
       path: path,
-      doc_seq: docSeq,
+      // ⚠️ 键名 **camelCase**：Tauri 2 的 `#[tauri::command]` 默认用
+      //    `ArgumentCase::Camel` 取键，后端的 `doc_seq` 在 IPC 上叫 `docSeq`。
+      //    ⛔ 写成 `doc_seq` 不会报错，后端只当"缺键"静默失败（`bugs/0088`）。
+      docSeq: docSeq,
       progress: progress,
     });
   }
@@ -760,8 +883,10 @@
     return T.call('set_dir_session', {
       root: root,
       generation: generation,
-      // ⚠️ 字段名 snake_case：后端 `last_file` / `expanded`（`docs/bugs/0007` 的教训）。
-      last_file: lastFile,
+      // ⚠️ 键名 **camelCase**：后端形参 `last_file` 在 IPC 上叫 `lastFile`
+      //    （Tauri 2 默认 `ArgumentCase::Camel`）。⛔ 别按 `docs/bugs/0007` 的
+      //    **结构体字段** serde 映射推断参数键——那是两回事，写错就是静默缺键（`bugs/0088`）。
+      lastFile: lastFile,
       expanded: expanded,
     });
   }
@@ -1100,14 +1225,16 @@
   /**
    * ⭐ **打开文档内的一条链接**（`design/0026` §2.2 ③）——薄封装，判据全在别处。
    *
-   * ⚠️ 前端只递 **`href` 原文**（`getAttribute('href')` 那个）＋ **`doc_seq`**：
+   * ⚠️ 前端只递 **`href` 原文**（`getAttribute('href')` 那个）＋ **`docSeq`**：
    *    ⛔ 不递路径、⛔ 不递基准目录——那两样只有后端拿得到（`INV-LINK-03`）。
-   * ⚠️ `doc_seq` 由调用方在**点击那一刻**取好并原样带回：后端在**读 `doc_dir` 的同一把锁**
+   * ⚠️ `docSeq` 由调用方在**点击那一刻**取好并原样带回：后端在**读 `doc_dir` 的同一把锁**
    *    里核对它（`INV-LINK-11`），对不上就回 `stale` 且**什么都不做**。
+   *    ⚠️ 载荷键名是 **`docSeq`**（后端形参 `doc_seq` 的 camelCase，Tauri 2 默认口径）；
+   *    ⛔ 写 `doc_seq` 会让后端"缺键"——点击链接静默无反应（`bugs/0088`）。
    * @returns {Promise<object>} `{kind, href, path?, fragment?, message?}`（见 `commands/link.rs`）
    */
   async function openLink(href, docSeq) {
-    return T.call('open_link', { href: href, doc_seq: docSeq });
+    return T.call('open_link', { href: href, docSeq: docSeq });
   }
 
   const api = {
@@ -1150,6 +1277,8 @@
     // `design/0006`
     watchDocument,
     unwatchDocument,
+    // ⭐ `design/0056`：关闭当前文档（⌘L 回导航页的唯一路径；2026-11-11 由 F2 改来、2026-11-16 定为 ⌘L）。
+    closeDocument,
     noteDroppedEvent,
     reloadDocument,
     // ⭐ `design/0012` §3.2：编辑面的四个 IPC 薄封装。
@@ -1161,6 +1290,11 @@
     endEdit,
     renderPreview,
     saveDocument,
+    // ⭐ `design/0082`：未命名文档（`new_untitled` 是读取命令，`save_untitled` 是写命令）。
+    newUntitled,
+    saveUntitled,
+    // ⭐ `design/0082`：保存成功后把草稿身份**就地**换成真实文档（§10 的实施偏差）。
+    adoptSavedDraft,
     // ⭐ `design/0017`：阅读进度（**只写 `config.json`**，⛔ 不改授权）。
     setReadingProgress,
     // ⭐ `design/0020`：目录会话（同上，**只写 `config.json`**）。

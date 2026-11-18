@@ -1,4 +1,4 @@
-//! ⭐ **编辑面**：`design/0012` 的三条命令 ＋ **本项目唯一的写盘路径**。
+//! ⭐ **编辑面**：`design/0012` 的三条命令 ＋ **本项目全部写盘路径**。
 //!
 //! # 命令一览（⛔ 少一条都不行，多一条也不行）
 //!
@@ -7,7 +7,8 @@
 //! | [`begin_edit`] | **授权命令**（唯一！） | 进入/刷新编辑态 ＝ **产生写授权** ＋ 把文本交给编辑器 |
 //! | [`end_edit`] | **授权命令**（唯一！） | 退出编辑态 ＝ **撤销写授权** |
 //! | [`render_preview`] | 读取命令 | 缓冲文本 → `DocumentPayload`（⛔ 不读盘、⛔ 不写会话状态） |
-//! | [`save_document`] | ⭐ **写命令** | 唯一的写盘入口（`INV-EDIT-10`） |
+//! | [`save_document`] | ⭐ **写命令** | 已授权文档的写盘入口（`INV-EDIT-10` ①） |
+//! | [`save_untitled`] | ⭐ **写命令** | 未命名文档的"先建后存"入口（`INV-EDIT-10` ②，`design/0082`） |
 //!
 //! ⚠️ 与 `commands/mod.rs` 模块头那张"两类命令"的表**不矛盾**：
 //! 那张表说的是"只有授权命令能改 [`SessionGrants`]"（`INV-FS-04`），
@@ -44,18 +45,22 @@
 //! 而它换来的是"我看到的确实是磁盘现在这份"。⚠️ 这条偏离已登记在
 //! `design/0012` §10 实施记录里。
 //!
-//! # ⛔ 唯一写路径（`INV-EDIT-10`）
+//! # ⛔ 写盘入口只有两个（`INV-EDIT-10`）
 //!
-//! `⌘S`、工具栏「保存」按钮、将来的 `:w` **都走 [`save_document`]**。
-//! ⛔ 不许再开第二条：那不是风格问题，`design/0017` 的「两条路径说同一件事」
+//! ⭐ **`design/0082` 起由"一条"放宽为"两条"**（原文「唯一的写盘入口」已被取代）：
+//!
+//! ① [`save_document`]：已授权文档的保存。`⌘S`、工具栏「保存」按钮、将来的 `:w` 都走它；
+//! ② [`save_untitled`]：**没有路径**的未命名文档"先建后存"——落点由后端弹的系统保存面板
+//!    当次产生，写完才 `authorize_file`（`INV-FS-04` 的第六处写入点）。
+//!
+//! ⛔ **两条都不许再开第三条**：那不是风格问题，`design/0017` 的「两条路径说同一件事」
 //! 是用一次真金白银的事故换来的教训。
 //! ⚠️ 反过来说，本文件的 `std::fs::write` / `rename` 出现次数就是判据：
-//! **写盘只允许出现在 [`write_off_lock`] 一处**。
+//! **原子写只有 [`crate::fs::atomic::replace_atomic`] 一份实现**，
+//! 它的两个调用点就是上面两条路（`write_off_lock` 与 `save_untitled` 的写盘线程）。
 
-use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{Instant, SystemTime, UNIX_EPOCH};
+use std::time::Instant;
 
 use serde::{Deserialize, Serialize};
 
@@ -91,6 +96,14 @@ pub struct EditGrant {
     pub envelope: Envelope,
 }
 
+/// [`begin_edit`] 第一段取到的东西：真实文档要**放锁读盘**，草稿**当刻就能交差**。
+enum BeginPre {
+    /// 真实文档（已过 `check_writable`）：第二段放锁读盘。
+    Real(PathBuf),
+    /// ⭐ 草稿（`design/0082` §2.1 ③）：⛔ 免读盘——磁盘上还没有这一份。
+    Draft(u64, EditGrant),
+}
+
 /// ⭐ **进入（或刷新）编辑态**——`design/0012` §2.4-1 的「进入编辑」按钮。
 ///
 /// 三件事，**按这个顺序**（详见模块头那段"基线的生产者"）：
@@ -105,15 +118,41 @@ pub struct EditGrant {
 #[tauri::command]
 pub async fn begin_edit(
     state: tauri::State<'_, AppState>,
+    window: tauri::WebviewWindow,
     generation: u64,
 ) -> Result<EditGrant, Denied> {
     let t_start = Instant::now();
+    // ⭐ 多窗口：编辑态属于**这个窗口**的会话（`design/0068` §2.1）；
+    //    label 在跨 `await` 之前取成自有字符串。
+    let label = window.label().to_string();
 
     // —— 第一段（持锁）：授权。⛔ 这里只有内存操作 ——
-    let real = state.with(|s| -> Result<PathBuf, Denied> {
+    let pre = state.with(&label, |s| -> Result<BeginPre, Denied> {
         let current = s.grants.root_generation();
         if generation != current {
             return Err(Denied::stale(generation, current));
+        }
+        // ⭐ `design/0082` §2.1 ③：**草稿分支**——没有路径 ⇒ 没有对象可校验、
+        //    没有字节可读。⚠️ 这不是"放宽判据"：`current_document` 在草稿期间
+        //    本来就是 `None`，写授权改为落在**草稿号**（`edit_draft`）上。
+        if let Some(id) = s.draft {
+            // ⚠️ 授权与基线**同一次持锁**落完（草稿没有"放锁读盘"那一段可以造成竞态）。
+            s.edit_target = None;
+            s.edit_draft = Some(id);
+            // ⭐ 基线 = **空字节**：诚实地表达"磁盘上还不存在"。
+            //    ⇒ 保存时的信封是 LF、无 BOM（`Envelope::detect_raw(&[])`），
+            //      与"新建一个文本文件"的默认一致。
+            s.baseline_bytes = Some(Vec::new());
+            return Ok(BeginPre::Draft(
+                id,
+                EditGrant {
+                    // ⚠️ 空串（⛔ 不是假路径）：前端按 `draft` 字段分流，
+                    //    真实文档那侧的所有路径判据在草稿上都没有对象。
+                    real_path: String::new(),
+                    text: String::new(),
+                    envelope: Envelope::detect_raw(&[]),
+                },
+            ));
         }
         // ⭐ 判据零：必须**有**当前文档（`begin_edit` 不接受路径参数，理由同 `reload_document`）
         let Some(target) = s.current_document.clone() else {
@@ -122,8 +161,21 @@ pub async fn begin_edit(
         // ⭐ 判据一：**同源**的写侧判定（`check_readable` 原样调一遍）
         //    ＋ 恒等于"当前这一份"。⛔ 别在这里另写一遍 canonicalize + roots/files
         //    （`INV-EDIT-02` 前半句）。
-        s.grants.check_writable(&target, s.current_document.as_deref())
+        s.grants
+            .check_writable(&target, s.current_document.as_deref())
+            .map(BeginPre::Real)
     })?;
+
+    // ⭐ 草稿：第一段就把话说完了，⛔ 不进第二段（没有盘可读）。
+    let real = match pre {
+        BeginPre::Draft(id, grant) => {
+            diag!(
+                "▶ begin_edit 草稿#{id}（0 字节，行尾 LF、无 BOM）· ⭐ 写授权落在草稿上（⛔ 不产生写盘路径）"
+            );
+            return Ok(grant);
+        }
+        BeginPre::Real(real) => real,
+    };
 
     // —— 第二段（放锁）：读盘 ——
     let real_for_err = real.clone();
@@ -151,8 +203,8 @@ pub async fn begin_edit(
         .map_err(|e| Denied::io(&real_for_err, format!("基线不是合法 UTF-8：{e}")))?;
 
     // —— 第三段（持锁）：核对后**落写授权** ——
-    let generation_now = state.with(|s| s.grants.root_generation());
-    let grant = state.with(|s| -> Option<EditGrant> {
+    let generation_now = state.with(&label, |s| s.grants.root_generation());
+    let grant = state.with(&label, |s| -> Option<EditGrant> {
         if s.grants.root_generation() != generation {
             return None;
         }
@@ -200,8 +252,9 @@ pub async fn begin_edit(
 /// ⛔ 尤其**不许**让"没在编辑态"变成一个前端要处理的失败分支——
 /// 那会诱使前端把 `end_edit` 塞进 `try/catch` 里忽略，而它**是**一道安全动作。
 #[tauri::command]
-pub fn end_edit(state: tauri::State<'_, AppState>) {
-    let was = state.with(|s| {
+pub fn end_edit(state: tauri::State<'_, AppState>, window: tauri::WebviewWindow) {
+    // ⭐ 多窗口：撤销的是**这个窗口**的写授权，⛔ 不碰别的窗口。
+    let was = state.with(window.label(), |s| {
         let was = s.edit_target.is_some();
         // ⚠️ 只清编辑态那一组字段，⛔ 不碰 `current_document` / `watch`
         //    （那是 `drop_watch` 的活儿；两者混起来就是"退编辑顺手把文档也关了"）。
@@ -225,6 +278,10 @@ struct PreviewPre {
     roots_nonempty: bool,
     /// ⭐ `design/0017`：这份预览属于哪一次打开（**只读回显**，⛔ 不加号）。
     doc_seq: u64,
+    /// ⭐ `design/0082` §2.1 ③：这份预览是不是在给一份**草稿**渲染。
+    /// `Some(id)` ⇒ `real_path` / `doc_dir` 恒为空串，`outside_roots` 恒 `false`。
+    /// ⚠️ 它**只回显**（前端据此决定 `⌘S` 走哪条路），⛔ 不改变任何判据。
+    draft: Option<u64>,
 }
 
 /// ⭐ **候选校验请求**（`design/0054` §7 第 4 条）：`render_preview` 的可选参数。
@@ -289,18 +346,45 @@ pub struct VerifyReply {
 #[tauri::command]
 pub async fn render_preview(
     state: tauri::State<'_, AppState>,
+    window: tauri::WebviewWindow,
     text: String,
     generation: u64,
     req: u64,
     verify: Option<VerifyRequest>,
 ) -> Result<DocumentPayload, Denied> {
     let t_start = Instant::now();
+    // ⭐ 多窗口：预览只对**这个窗口**正在编辑的那一份成立（`design/0068` §2.1）。
+    let label = window.label().to_string();
 
     // —— 第一段（持锁）：**只读**取快照 ——
-    let pre = state.with(|s| -> Result<PreviewPre, Denied> {
+    let pre = state.with(&label, |s| -> Result<PreviewPre, Denied> {
         let current = s.grants.root_generation();
         if generation != current {
             return Err(Denied::stale(generation, current));
+        }
+        // ⭐ `design/0082` §2.1 ③：**草稿分支**。⛔ 不是第二条渲染路径——
+        //    它只决定"这份预览的路径/基准是什么"，comrak 那一趟在下面**同一段**里跑。
+        //    ⚠️ 判据是"用户正在编辑这份草稿"（`edit_draft == draft`），
+        //    与真实那侧的 `edit_target == current_document` 对称。
+        if let Some(id) = s.edit_draft {
+            if s.draft != Some(id) {
+                return Err(Denied::NoDocument);
+            }
+            let Some(baseline) = s.baseline_bytes.as_ref() else {
+                return Err(Denied::NoDocument);
+            };
+            return Ok(PreviewPre {
+                // ⚠️ 空串（⛔ 不是假路径）：相对图片 / 相对链接在 `doc_dir` 为空时
+                //    按原样保留（`commands/asset.rs::resolve` 的既有行为）。
+                real_path: String::new(),
+                doc_dir: String::new(),
+                envelope: Envelope::detect_raw(baseline),
+                // 草稿不属于任何 root ⇒ 越权提示无从谈起（⛔ 不取反成 true）。
+                outside_roots: false,
+                roots_nonempty: s.grants.has_roots(),
+                doc_seq: s.doc_seq,
+                draft: Some(id),
+            });
         }
         let Some(real) = s.current_document.clone() else {
             return Err(Denied::NoDocument);
@@ -323,6 +407,7 @@ pub async fn render_preview(
             outside_roots: s.grants.has_roots() && !s.grants.is_inside_roots(&real),
             roots_nonempty: s.grants.has_roots(),
             doc_seq: s.doc_seq,
+            draft: None,
         })
     })?;
 
@@ -370,7 +455,9 @@ pub async fn render_preview(
     let (r, verify_reply) = match join {
         Ok(r) => r,
         Err(e) => {
-            return Err(Denied::worker_lost(&pre.real_path, "渲染线程没能跑完", e));
+            // ⚠️ 草稿没有路径：⛔ 别让错误文案里出现一个空路径（那不是一条线索）。
+            let who = if pre.real_path.is_empty() { "未命名文档" } else { &pre.real_path };
+            return Err(Denied::worker_lost(who, "渲染线程没能跑完", e));
         }
     };
 
@@ -378,9 +465,14 @@ pub async fn render_preview(
     //    日志里"没有这一行"与"这一行全是零"必须是两件事（`INV-MATH-05`）。
     //    ⚠️ 但预览**不写** `last_render_stats`——那是"提交过的文档渲染"的观测量，
     //    让预览去覆盖它会让 `report_status` 报出一个从未上屏的数（`INV-EDIT-07`）。
+    //    ⚠️ 草稿的 `real_path` 是空串 ⇒ 日志里用 `草稿#<id>` 代替（⛔ 别打一行没有主语的日志）。
+    let log_label = match pre.draft {
+        Some(id) => format!("草稿#{id}"),
+        None => pre.real_path.clone(),
+    };
     diag!(
         "▶ render_preview {}（T2 {:.1} / T3 {:.1} / 块表 {:.1} ms，整段 {:.1} ms，{} 字节）· 公式 {}",
-        pre.real_path,
+        log_label,
         r.t2_ms,
         r.t3_ms,
         r.t_blocks_ms,
@@ -430,14 +522,18 @@ pub async fn render_preview(
         //    是同一个问题，⛔ 不能只在打开那条路上答。
         code_highlighted: r.stats.code_highlighted,
         code_unhighlighted: r.stats.code_unhighlighted(),
+        // ⭐ `design/0060`：预览这一侧同样要送（编辑态下用户盯着的就是这一栏）。
+        mermaid_rendered: r.stats.mermaid_rendered,
+        mermaid_unrendered: r.stats.mermaid_unrendered(),
         doc_seq: pre.doc_seq,
+        draft: pre.draft,
         envelope: pre.envelope,
         verify: verify_reply,
     })
 }
 
 // ─────────────────────────────────────────────────────────────────────
-// ③ 保存（⭐ 唯一的写路径）
+// ③ 保存（⭐ 两个写盘入口：③a 已授权文档 · ③b 未命名文档）
 // ─────────────────────────────────────────────────────────────────────
 
 /// [`save_document`] 的返回。
@@ -482,7 +578,7 @@ struct WriteDone {
     finger: Option<(u64, i64)>,
 }
 
-/// ⭐ **写命令** · 保存当前编辑缓冲。**本项目唯一的写盘入口**（`INV-EDIT-10`）。
+/// ⭐ **写命令** · 保存当前编辑缓冲。**已授权文档的写盘入口**（`INV-EDIT-10` ①）。
 ///
 /// # 时序就是设计本身（`design/0012` §2.4-2）
 ///
@@ -506,14 +602,17 @@ struct WriteDone {
 #[tauri::command]
 pub async fn save_document(
     state: tauri::State<'_, AppState>,
+    window: tauri::WebviewWindow,
     text: String,
     generation: u64,
     req: u64,
 ) -> Result<SaveOutcome, Denied> {
     let t_start = Instant::now();
+    // ⭐ 多窗口：保存的是**这个窗口**正在编辑的那一份（`design/0068` §2.1）。
+    let label = window.label().to_string();
 
     // —— 第一段（持锁）：判据 → 落"在途"标记 ——
-    let pre = state.with(|s| -> Result<SavePre, Denied> {
+    let pre = state.with(&label, |s| -> Result<SavePre, Denied> {
         let current = s.grants.root_generation();
         if generation != current {
             return Err(Denied::stale(generation, current));
@@ -561,7 +660,7 @@ pub async fn save_document(
 
     // —— 第三段（持锁）：登记事实 ＋ 收尾。⚠️ 成功失败都走到这里 ——
     let ms = t_start.elapsed().as_secs_f64() * 1000.0;
-    let out = state.with(move |s| -> Result<SaveOutcome, Denied> {
+    let out = state.with(&label, move |s| -> Result<SaveOutcome, Denied> {
         // ⭐ **先清在途标记**（§2.4-2 ④：成功失败都清）。
         //    ⚠️ 它不是"要不要写"的判断，是**登记事实**，所以放在所有分支之前。
         //    漏清它的后果不是丢数据（`INFLIGHT_MAX` 会给它封顶），
@@ -621,6 +720,226 @@ pub async fn save_document(
     Ok(out)
 }
 
+// ─────────────────────────────────────────────────────────────────────
+// ③b 保存未命名文档（`design/0082`）
+// ─────────────────────────────────────────────────────────────────────
+
+/// [`save_untitled`] 的返回（⭐ `Ok(None)` = 用户在面板里取消了，⛔ 不是失败）。
+#[derive(Debug, Serialize)]
+pub struct SaveAsOutcome {
+    /// 写到了哪里（规范化路径）。
+    pub path: String,
+    /// 所在目录（规范化的父目录；前端采纳后要按它解析相对图片）。
+    /// ⚠️ `design/0082` §10 的实施偏差：设计原文说"前端走既有 `openDocument(path)`"，
+    /// 落地改成**就地采纳**（不退出编辑态）⇒ 这两栏随回包一起给，⛔ 不再多一次读盘渲染。
+    pub doc_dir: String,
+    /// ⭐ **新的打开会话号**（后端 `commit_open` 那一条口径 +1）。
+    /// ⚠️ 前端必须同步它，否则读进度 / `close_document` 的身份判据全部对不上（静默无副作用）。
+    pub doc_seq: u64,
+    /// 写出的字节数。
+    pub bytes: usize,
+    /// 回显请求号（前端用它丢弃迟到的响应）。
+    pub req: u64,
+    /// 整段耗时（毫秒）。
+    pub ms: f64,
+}
+
+/// 第三段的输入：**必须穷尽**三种结局，否则某一条早退会把 `save_inflight` 留在会话里
+/// （那会让接下来的 10 s 内每一次监视事件都多走一次延迟复核）。
+enum SaveStage {
+    /// 用户取消了面板 —— 一个字节没动，草稿与内容原样保留。
+    Cancelled,
+    /// 闸门 / 写盘拒绝 —— 同样一个字节没动（闸门）或文件写了一半就被原子替换挡回（写盘）。
+    Failed(Denied),
+    /// 写成功了：记下目标、写出的字节（＝新基线）与自写指纹。
+    Written { target: PathBuf, bytes: Vec<u8>, finger: Option<(u64, i64)> },
+}
+
+/// ⭐ **写命令** · 把一份**未命名文档**存成真实文件（`design/0082` §2.1 ④）。
+///
+/// # 它是 `INV-EDIT-10` 的第二个入口，形态由"先建后存"决定
+///
+/// 正文落盘今天有两个入口（`save_document` 与本命令），**判据没有合并**：
+/// `save_document` 写的是"用户正在编辑的那一份已授权文档"（目标恒等于
+/// `current_document`，冲突检查比基线）；本命令写的是**磁盘上还不存在的一份**——
+/// 目标由**后端自己弹的系统面板**产生（前端没有 `dialog:*` 权限，⛔ 给不出路径），
+/// 写前过 [`SessionGrants::check_save_target`]（与导出同源的六步 ＋ 扩展名），
+/// 写完才 `authorize_file`（`INV-FS-04` 第六处）。
+///
+/// # 时序（与 `save_document` 同一族，但中间多了"等用户选落点"）
+///
+/// ```text
+/// ① 持锁：代次 ＋ 草稿身份（draft == edit_draft == id）＋ 单飞 → 置 save_inflight
+/// ② 放锁：pick_export_target（系统保存面板，默认「未命名.md」）→ 取消 = Ok(None)
+/// ③ 放锁：check_save_target（六步 ＋ 扩展名）        ← ⛔ 不落盘
+/// ④ 放锁：fs::atomic::replace_atomic(目标, 信封化后的正文)
+/// ⑤ 持锁：清在途 → 身份复核 → authorize_file → 会话换成**真实文档**
+/// ```
+///
+/// ⚠️ 为什么 ④ 不复用 [`write_off_lock`]：那一位的第一件事是"读目标、与基线逐字节比"，
+/// 而草稿**没有**基线（磁盘上不存在这一份）。⛔ 别为了复用给它造一个"空基线也行"的分支——
+/// 那会让"目标被外部改过"这条冲突检查在保存新文件时**静默失效**。
+///
+/// ⚠️ 已有同名文件：面板已经问过"替换？"（系统行为），闸门 ③ 把软链 / 目录 / 设备拒掉。
+/// ⛔ 不走"先建后写"：那会在失败时留下一个空文件。
+#[tauri::command]
+pub async fn save_untitled(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    window: tauri::WebviewWindow,
+    id: u64,
+    text: String,
+    generation: u64,
+    req: u64,
+) -> Result<Option<SaveAsOutcome>, Denied> {
+    let t_start = Instant::now();
+    // ⭐ 多窗口：保存的是**这个窗口**那一份草稿（`design/0068` §2.1）。
+    let label = window.label().to_string();
+
+    // —— ① 持锁：判据 → 落"在途"标记 → 克隆授权快照（③ 要在锁外做磁盘元数据检查）——
+    let (grants, current) = state.with(
+        &label,
+        |s| -> Result<(crate::fs::grants::SessionGrants, Option<PathBuf>), Denied> {
+            let cur = s.grants.root_generation();
+            if generation != cur {
+                return Err(Denied::stale(generation, cur));
+            }
+            // ⭐ **身份**：这张回包必须属于**我这一份草稿**。
+            //    ⚠️ 与 `save_document` 的 `edit_target == current_document` 对称——
+            //    草稿的身份就是 `draft` 这个号（`begin_edit` 落的 `edit_draft`）。
+            if s.draft != Some(id) || s.edit_draft != Some(id) {
+                return Err(Denied::NoDocument);
+            }
+            if s.inflight_active() {
+                // ⚠️ 草稿没有路径可回显：给空串（⛔ 编一个假路径）。
+                return Err(Denied::save_in_flight(""));
+            }
+            s.save_inflight = Some(Instant::now());
+            // ⚠️ "不许覆盖当前文档"那一条对草稿**恒不成立**（`current_document` 是 None）——
+            //    照旧把它传进闸门，让那道闸的口径**只有一份**（⛔ 不为草稿另开变体）。
+            Ok((s.grants.clone(), s.current_document.clone()))
+        },
+    )?;
+
+    // —— ②～④（放锁）：面板 → 闸门 → 原子写。⚠️ 三种结局都要带回第三段 ——
+    let stage = {
+        // ② 系统保存面板
+        let picked = super::export::pick_export_target(
+            &app,
+            "保存为 Markdown",
+            "未命名.md".to_string(),
+            "Markdown",
+            "md",
+        )
+        .await;
+        match picked {
+            // ⭐ 取消 ⇒ `Ok(None)`：⛔ 不报失败（`INV-EXP-06` 同款），草稿原样保留。
+            None => SaveStage::Cancelled,
+            Some(candidate) => {
+                // ③ 目标闸门（六步 ＋ 扩展名）。⛔ 它不落盘、不改授权。
+                match grants.check_save_target(&candidate, current.as_deref()) {
+                    Err(e) => SaveStage::Failed(e),
+                    Ok((target, mode)) => {
+                        // ④ 信封：草稿的基线恒为**空**（LF、无 BOM）⇒ `restore` 只是
+                        //    把 CRLF 归一成 LF（与 `save_document` 同一条规则）。
+                        let bytes = Envelope::detect_raw(&[]).restore(&text);
+                        // ⚠️ 交给写线程的是**一份拷贝**：写成功之后这串字节要当新基线
+                        //    落进会话（`INV-EDIT-04` ①），⛔ 不能随线程一起丢掉。
+                        let write_bytes = bytes.clone();
+                        let t = target.clone();
+                        let join = tauri::async_runtime::spawn_blocking(move || {
+                            crate::fs::atomic::replace_atomic(&t, &write_bytes, mode)
+                                .map_err(|e| write_err(&t, e))
+                        })
+                        .await;
+                        match join {
+                            Ok(Ok(())) => SaveStage::Written {
+                                // ⚠️ 指纹在**放锁段**里、紧跟写之后取（`save_document` 同一条时序）：
+                                //    事件到达比 `rename` 晚 3.4–11.6 ms，登记越早越安全（`kb/0020`）。
+                                finger: crate::fs::finger(&target),
+                                bytes,
+                                target,
+                            },
+                            Ok(Err(e)) => SaveStage::Failed(e),
+                            Err(e) => SaveStage::Failed(Denied::worker_lost(
+                                &candidate,
+                                "写盘线程没能跑完",
+                                e,
+                            )),
+                        }
+                    }
+                }
+            }
+        }
+    };
+
+    // —— ⑤ 持锁：⚠️ **无条件**清在途标记，再看结局（与 `save_document` 第三段同形）——
+    let ms = t_start.elapsed().as_secs_f64() * 1000.0;
+    let out = state.with(&label, move |s| -> Result<Option<SaveAsOutcome>, Denied> {
+        s.save_inflight = None;
+
+        let (target, bytes, finger) = match stage {
+            SaveStage::Cancelled => return Ok(None),
+            SaveStage::Failed(e) => return Err(e),
+            SaveStage::Written { target, bytes, finger } => (target, bytes, finger),
+        };
+
+        // ⚠️ `rename` 之后只剩登记——但"这份结果还算不算数"仍要判：
+        //    放锁那几秒（含用户挑目录的时间）里，用户可能已经切文档 / 又按了 `⌘N`。
+        //    ⇒ 文件**已经写出来了**，但会话不认这一份：⛔ 不记进会话，按 `Stale` 交给前端
+        //    提示"文件已保存，但当前文档已切换"（与 `save_document` 第三段同款）。
+        if s.grants.root_generation() != generation || s.draft != Some(id) {
+            return Err(Denied::stale(generation, s.grants.root_generation()));
+        }
+
+        // ⭐ `INV-FS-04` 的**第六处**授权写入点，且**只在写成功之后**：
+        //    只授权**这一个文件**（⛔ 不授权父目录子树），与 `choose_file` 同一授权面。
+        //    ⚠️ 不授权的话，紧接着的监视重挂 / 后续 `save_document` 全会撞 `check_readable`。
+        let real = s.grants.authorize_file(&target)?;
+        let bytes_len = bytes.len();
+        if let Some(f) = finger {
+            // ⭐ 与 `save_document` 同一登记点：我们自己的写不该被当成"外部修改"。
+            s.note_self_write(&real, f);
+        }
+
+        // ⭐ 身份 → **真实文档**：与 `commit_open` 同一组字段（⛔ 不走它：那一位是
+        //    "打开事务"的口径，要求 `latest_doc_req` 对得上；这里是保存的提交点）。
+        s.current_document = Some(real.clone());
+        s.doc_dir = real.parent().map(|d| d.to_path_buf());
+        s.startup_document = Some(real.clone());
+        s.draft = None;
+        // ⚠️ 先 `end_edit()` 再落新的写授权：它清 `edit_draft` / `edit_target` / 基线，
+        //    顺序反了会被它抹掉刚落的授权。
+        s.end_edit();
+        s.edit_target = Some(real.clone());
+        // ⭐ 基线 ← **本次写出的字节**（`INV-EDIT-04` ①）：用户接下来在编辑态里
+        //    再按 `⌘S`，比的是这份刚落盘的内容，⛔ 不是"空基线"导致的假冲突。
+        s.baseline_bytes = Some(bytes);
+        s.doc_seq += 1;
+
+        Ok(Some(SaveAsOutcome {
+            path: real.display().to_string(),
+            doc_dir: real.parent().map(|d| d.display().to_string()).unwrap_or_default(),
+            doc_seq: s.doc_seq,
+            bytes: bytes_len,
+            req,
+            ms,
+        }))
+    })?;
+
+    match &out {
+        Some(o) => diag!(
+            "▶ save_untitled 草稿#{id} → {}（{} 字节，整段 {:.1} ms）· ⭐ 已转成真实文档，写授权随文件",
+            o.path,
+            o.bytes,
+            o.ms
+        ),
+        // ⚠️ 取消与失败都已由各自的分支打过（或由前端报），这里只说"没保存"。
+        None => diag!("▶ save_untitled 草稿#{id}：用户取消了保存面板（⛔ 一个字节没写）"),
+    }
+    Ok(out)
+}
+
 /// 第二段：**放锁**的冲突检查 ＋ 原子写。⚠️ 这是全项目**唯一**写盘的地方。
 ///
 /// ⛔ 调用方必须保证：进了这个函数就**不再回头做检查**（见 `save_document` 的时序）。
@@ -667,64 +986,25 @@ fn write_off_lock(
         //    而不是依赖某个平台上 `rename` 恰好被拒（那个假设不成立，见 §7 步骤 0g）。
         return Err(Denied::io(real, "文件是只读的：保存已取消（去掉只读位后重试）"));
     }
+    #[cfg(unix)]
+    let mode = {
+        use std::os::unix::fs::PermissionsExt;
+        Some(perms.mode())
+    };
+    #[cfg(not(unix))]
+    let mode: Option<u32> = None;
 
-    // ── ③e 写临时文件（**同目录**，原子替换的前提）──
-    let tmp = tmp_path(real);
-    let wrote = write_tmp(&tmp, &bytes, &perms).and_then(|()| std::fs::rename(&tmp, real));
-    if let Err(e) = wrote {
-        // ⭐ `INV-EDIT-05`：⛔ **不许留下一份 `*.rmd-tmp-*` 残骸**。
-        //    原文件此刻**一个字节没变**（我们只碰过 tmp），失败是"什么都没发生"。
-        let _ = std::fs::remove_file(&tmp);
+    // ── ③e 原子替换（**同目录** tmp → rename；唯一实现见 `fs::atomic`）──
+    // ⚠️ 2026-11-15 起这段**不再就地实现**：`design/0076` 的 HTML 导出要的是
+    //    同一种写盘形态，两份各写一遍会漂。真正的那一份在 `crate::fs::atomic`，
+    //    `INV-EDIT-05`（失败不留 `*.rmd-tmp-*` 残骸、目标一个字节没变）由它保证。
+    if let Err(e) = crate::fs::atomic::replace_atomic(real, &bytes, mode) {
         return Err(write_err(real, e));
     }
 
     // ── ③f 登记指纹（§2.1 ④a：越早越好，实测"事件到达"比 rename 晚 3.4–11.6 ms）──
     let finger = crate::fs::finger(real);
     Ok(WriteDone { written: true, bytes, finger })
-}
-
-/// 建临时文件并写入 ＋ 继承权限位。
-///
-/// ⚠️ 用 `create_new(true)` 而不是 `create(true)`：后者会**悄悄截断**一个已存在的同名文件。
-/// 虽然那个名字理论上只有我们能产生（`pid` ＋ 单调计数器 ＋ 纳秒），
-/// 但"理论上不会撞"不是不检查的理由——撞上就是删掉别人的文件。
-///
-/// ⚠️ 先按 `0600` 建，**再** `set_permissions`：反过来的话，从建文件到改权限
-/// 那一瞬里，临时文件比原文件**更宽**（原文件可能是一份 `0600` 的私密笔记）。
-/// ⛔ 这个窗口只有微秒级，但它是一条**内容泄露**的窗口，而修它不要钱。
-///
-/// ⚠️ **不做 `sync_all`**（`design/0012` §6 明写接受）：`fsync` 的代价在大文件上
-/// 不可忽略，而 `.md` 不是事务日志。⚠️ 磁盘满仍然能在 `write_all` 上被抓住
-/// （`File` 是无缓冲的，`ENOSPC` 当场返回）——所以这里省掉的只是"崩溃时的持久性"。
-fn write_tmp(tmp: &Path, bytes: &[u8], perms: &std::fs::Permissions) -> std::io::Result<()> {
-    let mut opts = std::fs::OpenOptions::new();
-    opts.write(true).create_new(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        opts.mode(0o600);
-    }
-    let mut f = opts.open(tmp)?;
-    f.write_all(bytes)?;
-    drop(f);
-    std::fs::set_permissions(tmp, perms.clone())
-}
-
-/// 临时文件路径：`<同目录>/<name>.rmd-tmp-<pid>-<seq>-<ns>`。
-///
-/// ⚠️ **必须同目录**：`rename` 只在同一个文件系统内是原子的，而 `/tmp` 很可能是另一个卷。
-/// ⚠️ 三段随机化（pid ＋ 进程内单调计数 ＋ 纳秒）是为了"同一进程内两次保存"与
-/// "两个 rmd 实例同时存同一份文件"都不撞。
-/// ⚠️ 原文件名**截断到 100 字符**：文件名上限（macOS/Linux 都是 255 字节）是按**字节**算的，
-/// 一个 250 字节的中文长文件名再拼上后缀就会 `ENAMETOOLONG`——
-/// 那会表现为"这个文件莫名其妙存不了"，而真正的原因是我们的文件名拼得太长。
-fn tmp_path(real: &Path) -> PathBuf {
-    static N: AtomicU64 = AtomicU64::new(0);
-    let n = N.fetch_add(1, Ordering::Relaxed);
-    let ns = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
-    let name = real.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
-    let short: String = name.chars().take(100).collect();
-    real.with_file_name(format!("{short}.rmd-tmp-{}-{n}-{ns}", std::process::id()))
 }
 
 /// 把写盘的 `io::Error` 翻译成前端拿得到、且**说清了是哪儿**的拒绝。

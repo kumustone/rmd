@@ -85,19 +85,23 @@ pub const MAX_SVG: usize = 512 * 1024;
 /// （**画出来的图在深色主题下会露出一块刺眼的玫瑰红**，而且不报错）。
 /// ⇒ 语料里必须有 ≥8 个参与者，否则这条防线是漏的。
 ///
-/// ⚠️ **`flowmaid` 把同一个值复用在两处**（`#fcf2da`/`#d99114` 既是菱形又是注释块、
-/// `#d99114` 又是第 3 个参与者色），所以变量名只能按**色族**取
+/// ⚠️ **`flowmaid` 把同一个值复用在两处**（0.27 是 `#fcf2da`/`#d99114` 既当菱形又当注释块；
+/// 0.33 起注释块换了自己的「便签」色），所以变量名只能按**色族**取
 /// （`green`/`indigo`/`amber`/…），⛔ 不能按"它是哪种形状"取
 /// ——一个值只能映射到一个变量，这是**值替换**这条路的固有限制。
 /// ⚠️ 反过来说：表里**没有**的色值会原样留下。⚠️ 这**不是**运行时兜底能救的
 /// （见到不认识的色就整块回退，等于把"深色下某处颜色不对"换成"图没了"，更糟），
 /// 所以它由 §7.2 单测 13「渲染结果里不得残留 `#rrggbb`」当**自动化防线**——
-/// 版本已钉死（`=0.27.0`），表一旦漏项测试立刻变红。
+/// 版本已钉死（`=0.33.0`，`design/0060` W1 升版），表一旦漏项测试立刻变红。
+/// ⚠️ **升版必修这张表**：0.27 → 0.33 就多了 `#0a0e1a`（深字标签）与便签那对
+/// （`#fff8c5`/`#9c8a2c`），两条都是这条断言抓出来的。
 /// ⚠️ 反过来也成立：这张表**只许收我们真能画出来的值**（多收无害但会误导）。
-const SWATCHES: [(&str, &str); 16] = [
+const SWATCHES: [(&str, &str); 19] = [
     // —— 场景底色 / 文字 / 边 / 边标签盒（`scene.rs`）——
     ("#ffffff", "--reader-diag-surface"),
     ("#232840", "--reader-diag-text"),
+    // ⭐ 0.33.0 新增：参与者标签压在浅色底上时用**深字**（0.27 那版是白字）。
+    ("#0a0e1a", "--reader-diag-text"),
     ("#44507a", "--reader-diag-line"),
     ("#d5d9ec", "--reader-diag-line-soft"),
     // —— 形状色族（`style.rs::shape_style`）——
@@ -109,6 +113,9 @@ const SWATCHES: [(&str, &str); 16] = [
     ("#d99114", "--reader-diag-amber-line"),
     // —— sequence（`seq.rs` + `style.rs::ACCENTS`）——
     ("#aeb6d8", "--reader-diag-guide"),
+    // ⭐ 0.33.0 起注释块换成一套"便签"色（0.27 是 amber 那对）。
+    ("#fff8c5", "--reader-diag-note-bg"),
+    ("#9c8a2c", "--reader-diag-amber-line"),
     ("#c2588c", "--reader-diag-rose-line"),
     ("#199a8e", "--reader-diag-teal-line"),
     ("#8a5cd6", "--reader-diag-violet-line"),
@@ -118,10 +125,17 @@ const SWATCHES: [(&str, &str); 16] = [
 
 // ─────────────────────────── 注册进 comrak ───────────────────────────
 
-/// 围栏语言名 → 翻译器。⛔ **只认这两个**：Mermaid 本身是 `vision/0001` 的 V2 项，
-/// 语法也不同（`design/0007` §2.3 末尾那句"V2 时几乎免费"就是为此留的）。
+/// 围栏语言名 → 翻译器。⛔ **`flow`/`sequence` 只认这两个**——
+/// 这一族是本项目自创 DSL 经翻译层变成 Mermaid 源码再交给 `flowmaid`
+/// （`design/0007` §2.3 末尾那句"V2 时几乎免费"就是为此留的）。
 const FLOW: &str = "flow";
 const SEQUENCE: &str = "sequence";
+/// ⭐ `design/0060`：**真的** Mermaid 源码（⛔ 不走本文件的翻译层）。
+///
+/// ⚠️ **它不注册进 `plugins()`**：那一族由 `document::mermaid` 走 formatter
+/// （`render.rs` 的 `NodeValue::CodeBlock` 第一支），因为它要全文累计预算、
+/// 安全拒绝计数和**看得见的原因**——三样都摸不到 `CodefenceRendererAdapter`。
+pub const MERMAID: &str = "mermaid";
 
 /// ⭐ 这个围栏语言名是不是**图表**（即"它有自己那一族预算"）。
 ///
@@ -131,7 +145,16 @@ const SEQUENCE: &str = "sequence";
 /// ⛔ 这里的两个名字**必须**与上面两行、以及 `plugins()` 里注册的那两个一致——
 /// 所以判据写成本函数而**不是**在 `render.rs` 里再抄一遍字面量。
 pub fn is_diagram_fence(lang: &str) -> bool {
-    lang == FLOW || lang == SEQUENCE
+    lang == FLOW || lang == SEQUENCE || is_mermaid_fence(lang)
+}
+
+/// 这一块是不是**真的** Mermaid 源码（`render.rs` 用它在 `is_diagram_fence`
+/// 之前分流；`blocks.rs` 那边只需知道"它有自己那一族预算"，所以仍问前者）。
+///
+/// ⚠️ **大小写不敏感**（`Mermaid` / `MERMAID` 都算）。这一条只给 `mermaid`：
+/// `flow`/`sequence` 保持精确匹配，⛔ 不动既有行为（`Flow` 今天就是普通代码块）。
+pub fn is_mermaid_fence(lang: &str) -> bool {
+    lang.eq_ignore_ascii_case(MERMAID)
 }
 
 static DIAGRAM: DiagramRenderer = DiagramRenderer;
@@ -1253,8 +1276,9 @@ mod tests {
     #[test]
     fn 注释落在正确一侧() {
         let svg = render(SEQUENCE, BASE_SEQ).unwrap();
-        // 琥珀底的那条 `<rect>` 就是注释框（`seq.rs` 的 `NOTE_FILL`）。
-        let note_x = 属性数值(标签含(&svg, "var(--reader-diag-amber-bg)"), "x");
+        // 便签底的那条 `<rect>` 就是注释框（0.33.0 的 `NOTE_FILL`；
+        // ⚠️ 0.27 用的是 amber 那对，升版换成了自己的便签色）。
+        let note_x = 属性数值(标签含(&svg, "var(--reader-diag-note-bg)"), "x");
         // Bob 的显示名那个 `<text>` 的 x（`text-anchor: middle`，所以它就是生命线的中心）。
         let bob_x = 属性数值(标签含(&svg, ">Bob<"), "x");
         assert!(

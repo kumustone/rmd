@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# 跑「阅读进度恢复」的**真 DOM 离屏探针**（`design/0017` §7.4，12 条判据）
+# 跑「阅读进度恢复」的**真 DOM 离屏探针**（`design/0017` §7.4，14 条判据：
+# 12 条阅读进度 ＋ ⭐ 2 条 `bugs/0077` 的 `keepScroll` 重渲校正）
 #
 # 用法：
 #   tools/wkwebview-probe/reading-progress-probe.sh            # 只打屏幕，判据进退出码
@@ -178,15 +179,15 @@ ok12 = (抢 is False) and alpha0 and (窗口.get("调过_NSApp_activate") is Fal
            "前台应用_收工时": env.get("前台应用_收工时")},
 })
 
-# ⚠️ 防"探针半路停了还报全绿"：1..11 缺任何一条都当场记成失败。
+# ⚠️ 防"探针半路停了还报全绿"：1..11 与 13/14/15 缺任何一条都当场记成失败（12 在 Swift 侧）。
 有 = set(str(c.get("id")) for c in 检查)
-for i in range(1, 12):
+for i in list(range(1, 12)) + [13, 14, 15]:
     if str(i) not in 有:
         检查.append({
             "id": str(i),
             "名": "（探针没有产出这一条判据）",
             "结果": "失败",
-            "判据": "§7.4 的 12 条必须逐条产出",
+            "判据": "§7.4 的 12 条 ＋ bugs/0077 的 3 条必须逐条产出",
             "值": {"缺": str(i)},
         })
 

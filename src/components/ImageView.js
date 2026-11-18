@@ -239,6 +239,135 @@
   }
 
   /**
+   * ⭐ `bugs/0068`：文件名里的**密度标记** `@2x` / `@3x`（Apple 的约定）。
+   *
+   * ## 为什么需要它
+   *
+   * 位图里**没有任何东西**能表达"我是两倍图"：浏览器排版只看像素尺寸，
+   * 不看 PNG 的 `pHYs`（`NSImage` 看，所以原生 App 显示正常、WebView 不正常）。
+   * ⇒ 一张 1100 px 宽的 2 倍图在 1200 px 的正文列里会被当成 1100 CSS px 宽，
+   * **图内文字整整两倍大**；而宽于列的图被 `max-width: 100%` 顺手缩回，
+   * 看起来"只有部分图偏大"（`ARCHITECTURE.md` 五张里只有 02 掉进这个坑）。
+   *
+   * 读法：`02-read-path@2x.png` ⇒ 设计尺寸 = 像素尺寸 ÷ 2。
+   * 语义与 `srcset` 的 `2x` 描述符一致（一倍屏上也按一半显示）。
+   * ⛔ **没有标记就不换算**——普通图片的行为一个字都不变。
+   *
+   * @param {string} src 文件名或路径（查询串/片段会被忽略）
+   * @returns {number} 2 / 3 / 0（0 = 没有密度标记）
+   */
+  function densityOf(src) {
+    const base = String(src || '').split(/[?#]/)[0].split('/').pop() || '';
+    const m = /@([23])x\.[a-z0-9]+$/i.exec(base);
+    return m ? Number(m[1]) : 0;
+  }
+
+  /**
+   * 把 `<img>` 的显示宽折回设计尺寸（只在密度标记存在时调用）。
+   *
+   * ⚠️ 只设 **`width` 属性**，不碰 `style`：`typography.css` 的
+   * `.doc img { max-width: 100%; height: auto }` 仍然是最终裁决者——
+   * 设计宽超过列宽时照样被压回列宽，且比例不变。
+   * ⚠️ 解码完成才知道像素尺寸 ⇒ 一次性监听 `load`；`naturalWidth` 为 0 时⛔ 不设宽
+   * （设成 0 会把图压没，那是比"偏大"严重得多的错）。
+   * ⭐ **尺寸定下来之前它是不显示的**（`visibility: hidden`）：解码前浏览器先按像素尺寸排，
+   * 那张图会先撑满整列再缩回去——用户看到的是"图片明显放大了一下"（2026-11-05 报的）。
+   *
+   * @param {HTMLImageElement|any} img 目标节点
+   * @param {number} n 密度倍数（2 / 3）
+   */
+  function applyDensity(img, n) {
+    if (!img || !(n >= 2)) return;
+    const reveal = function () {
+      if (img.style) img.style.visibility = '';
+    };
+    const fit = function () {
+      const px = img.naturalWidth || 0;
+      if (px > 0) img.width = Math.round(px / n);
+      reveal();
+    };
+    // ⚠️ `complete` 但 `naturalWidth === 0` 是**坏图**：它不会再有 `load`/`error`
+    //    ⇒ 绝不能藏（藏了就永远隐形，比"偏大"严重得多）。
+    if (img.complete) { fit(); return; }
+    // ⭐ 2026-11-05 用户报「图片明显有放大」：`@2x` 图在**解码完成之前**是按**像素尺寸**
+    //    参与排版的（1100 CSS px），先被 `max-width:100%` 压成整列宽、解码完才缩回设计宽
+    //    ⇒ 屏幕上先是"一张撑满整列的大图"，然后才变小（重渲时尤其明显：每次重渲都重来一遍）。
+    //    ⇒ 尺寸没定下来之前**不显示**（占住的位置由 `holdBox` 给）。
+    if (img.style) img.style.visibility = 'hidden';
+    if (typeof img.addEventListener !== 'function') { reveal(); return; }
+    img.addEventListener('load', fit, { once: true });
+    // ⚠️ 读失败也要露出来：坏图会有自己的占位，⛔ 不能留一个永远隐形的节点。
+    img.addEventListener('error', reveal, { once: true });
+  }
+
+  /**
+   * 找**这张图上一次的渲染盒**。
+   * ⚠️ 两个键都要认：真路径（缓存/IPC 回来之后知道）与文档里的相对 `src`
+   * （占位那一跳只知道它）。⚠️ 相对 `src` 按**路径尾**比：真路径的尾巴正是它。
+   * @param {Object<string, {w: number, h: number}>|null} boxes
+   * @param {string} src 文档里的 `src`
+   * @param {string} [realPath] 后端解析出的真路径
+   * @returns {{w: number, h: number}|null}
+   */
+  function boxFor(boxes, src, realPath) {
+    if (!boxes) return null;
+    if (realPath && boxes[realPath]) return boxes[realPath];
+    const keys = Object.keys(boxes);
+    for (let i = 0; i < keys.length; i++) {
+      const k = keys[i];
+      if (!src || !k) continue;
+      if (k === src || k.slice(-(src.length + 1)) === '/' + src) return boxes[k];
+    }
+    return null;
+  }
+
+  /**
+   * 把上一次的渲染盒**先占在节点上**（`width` ＋ `aspect-ratio`），解码完成即撤回。
+   *
+   * ⭐ 这是 `bugs/0077` §5-4 的落点。⚠️ 必须**在算滚动位置之前**叫一次
+   * （`holdBoxes`），否则锚点仍然算在一份"图片全塌了"的布局上——
+   * 那一刻补上去的位置是对的，但图片一长出来又得补写第二次，用户看到两下。
+   *
+   * @param {HTMLElement|any} el 目标节点（`<img>` 或占位框）
+   * @param {{w: number, h: number}} box
+   * @param {boolean} [clearOnLoad] 节点是 `<img>` 时，解码完就撤回占位（占位框不用）
+   */
+  function holdBox(el, box, clearOnLoad) {
+    if (!el || !el.style || !box) return;
+    el.style.width = box.w + 'px';
+    el.style.aspectRatio = box.w + ' / ' + box.h;
+    if (!clearOnLoad || typeof el.addEventListener !== 'function') return;
+    const drop = function () {
+      el.style.width = '';
+      el.style.aspectRatio = '';
+    };
+    el.addEventListener('load', drop, { once: true });
+    el.addEventListener('error', drop, { once: true });
+  }
+
+  /**
+   * 重渲之后、**算滚动位置之前**把新树里的 `<img>` 逐个按上一次的盒子占住。
+   *
+   * ⚠️ 这一句必须紧跟在 `doc.innerHTML = …` 之后（`main.js::mountDocument`）：
+   *    后面那条 `resolveAnchor` 量的是**版面**，图片塌着就把位置算小、图片一长又偏一次。
+   * @param {HTMLElement} root 正文容器
+   * @param {Object<string, {w: number, h: number}>|null} boxes `captureImageBoxes` 的产物
+   * @returns {number} 占住的张数
+   */
+  function holdBoxes(root, boxes) {
+    if (!root || !boxes) return 0;
+    let n = 0;
+    const imgs = Array.prototype.slice.call(root.querySelectorAll('img'));
+    for (const img of imgs) {
+      const box = boxFor(boxes, img.getAttribute('src') || '', '');
+      if (!box) continue;
+      holdBox(img, box, true);
+      n += 1;
+    }
+    return n;
+  }
+
+  /**
    * 把正文里的图片按上面那套规则处理掉，并**返回处理数量**（冒烟里要用）。
    *
    * ⭐ `design/0017` §2.3 ⑤ 增加的**可选**钩子 `hooks.onSettled()`：
@@ -252,7 +381,7 @@
    * 同一个 `src` 在两份文档里是两个文件（见 [`createAssetCache`] 边界 2）。
    *
    * @param {HTMLElement} docEl 正文容器
-   * @param {{onChooseDirectory?: Function, onSettled?: Function, docKey?: string}} hooks
+   * @param {{onChooseDirectory?: Function, onSettled?: Function, docKey?: string, prevBoxes?: Object<string, {w: number, h: number}>|null}} hooks
    */
   function renderImages(docEl, hooks) {
     const imgs = Array.prototype.slice.call(docEl.querySelectorAll('img'));
@@ -294,6 +423,11 @@
       ASSETS.clear();
       cacheDocKey = docKey;
     }
+    // ⭐ `bugs/0077` §5-4：**上一次渲染**里同一张图的盒子（`realPath → {w,h}`）。
+    //    ⚠️ 只有 `keepScroll` 重渲才有（`main.js::captureImageBoxes`）——
+    //    首次打开文档是 `null`，那时也不该有"同一处"的诉求。
+    const prevBoxes = hooks && hooks.prevBoxes ? hooks.prevBoxes : null;
+    const prevBoxFor = function (src, realPath) { return boxFor(prevBoxes, src, realPath); };
 
     /**
      * 造出真正的那张 `<img>`。
@@ -307,6 +441,23 @@
       real.src = dataUrl;
       real.alt = alt;
       real.dataset.realPath = realPath;
+      // ⭐ `bugs/0068`：`@2x` / `@3x` 的图按**设计尺寸**显示（见 `densityOf`）。
+      //    ⚠️ 判据用 `realPath`（后端解析出来的真路径）而不是文档里的 `src`：
+      //    `src` 可能是相对写法，但密度标记只跟**文件名**有关，两者取谁都对；
+      //    取真路径是因为它一定带扩展名。
+      const dens = densityOf(realPath);
+      if (dens) applyDensity(real, dens);
+      // ⭐ `bugs/0077` §5-4（2026-11-05）：**先把上一次的渲染盒占住**。
+      //    ⚠️ 重渲会整棵换树，新 `<img>` 在解码完成前撑不出高度 ⇒ 上方几张图的高度
+      //    整块缺席，视口先跳一次、落定后再跳回来（用户看到的是"打勾之后页面跳了"）。
+      //    给出上一次的 `width` ＋ `aspect-ratio`，这一段空白就**提前是正确高度**。
+      //    ⚠️ `complete` 的图不需要（解码已完成 ⇒ 固有尺寸立刻生效，见 `applyDensity`）。
+      //    ⚠️ `load` 一到就撤回：真实比例万一变了（换过图），
+      //    那一刻的差异远小于"永远钉在旧盒上"。
+      if (prevBoxes && !real.complete) {
+        const box = prevBoxFor(img.getAttribute('src') || '', realPath);
+        if (box) holdBox(real, box, true);
+      }
       // ⭐ `design/0018`：**本地图**可进入缩放预览。⛔ 只在这里加——远程图与失败图不标记。
       real.classList.add('rmd-zoomable');
       real.draggable = false;
@@ -360,6 +511,11 @@
 
       // 先换成占位（"正在读"），免得渲染完到 IPC 回来之间出现破图
       const pending = makePlaceholder(img, { key: 'img.loading', vars: {} }, null);
+      // ⭐ `bugs/0077` §5-4：`read_asset` 那几百毫秒里也要**占住上一次的高度**，
+      //    否则"先塌再撑"在这一跳就发生了（锚点校正只能把位置算回来，挡不住肉眼可见的那一下）。
+      //    ⚠️ 这一跳只知道文档里的相对 `src`，所以 `prevBoxFor` 认路径尾（见它的注释）。
+      const pendBox = prevBoxFor(src, '');
+      if (pendBox) holdBox(pending, pendBox);
       img.replaceWith(pending);
       const originalSrc = src;
       pendingLocal += 1;
@@ -403,9 +559,14 @@
   //    后者给 `main.js` 在换根 / 磁盘变更时腾内存（评审第 6 条）。
   const api = {
     renderImages,
+    // ⭐ `bugs/0077` §5-4：`main.js::mountDocument` 在 `innerHTML` 之后、算滚动位置之前
+    //    先用它把图片盒占住（占位的几何只有一份，⛔ 别在 `main.js` 里再算一遍）。
+    holdBoxes,
     isRemote,
     wordingFor,
     relabel,
+    densityOf: densityOf,
+    applyDensity: applyDensity,
     createAssetCache: createAssetCache,
     clearAssetCache: clearAssetCache,
   };

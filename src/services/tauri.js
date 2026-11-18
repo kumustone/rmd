@@ -110,6 +110,11 @@
     // ⭐ `design/0043`：有界集合已满（收藏最多 N 条）。⚠️ `what` / `limit` 由后端带过来
     //    （`error.rs::Denied::LimitReached`），文案模板里有占位符——⛔ 别在前端再写一份上限。
     limit_reached: 'err.kind.limit_reached',
+    // ⭐ `design/0076`：导出的拒绝（`error.rs::Denied::Export`）。⚠️ 具体的
+    //    `reason`（没文档 / 落点不合法 / 落点是当前文档 / 打印不可用 / 派发失败）
+    //    由后端 `message` 带过来，前端这里只给一句**类别**文案——
+    //    ⛔ 不把五个 reason 拆成五个 kind：那是同一类"导出没做成"的子分类。
+    export: 'err.kind.export',
   };
 
   /** 兜底那一句的键。⚠️ 语义是"**我们不定义原因**"，⛔ 别指向任何带读盘原因的词。 */
@@ -200,8 +205,11 @@
   /**
    * 调一条后端命令。
    *
-   * ⚠️ 参数名用 Tauri 2 的约定：**由后端函数的参数名决定**（snake_case），
-   * 前端这边不转换大小写，写错就是"参数缺失"的运行时错误。
+   * ⚠️ 参数键用 Tauri 2 的约定：`#[tauri::command]` 默认 `ArgumentCase::Camel`
+   * （`tauri-macros` 的 wrapper 固定转 camelCase），后端形参 `doc_seq` ⇒ **前端必须写
+   * `docSeq`**。⛔ 不是"由后端参数名原样决定"——写成 snake_case 只会在后端变成
+   * "缺键"，`String` 参数回 `Err`、`Option` 参数静默变 `None`（`bugs/0088`）。
+   * 契约判据见 `tests/js/ipc-args.test.js`。
    */
   async function call(cmd, args) {
     const invoke = resolveInvoke();
@@ -225,6 +233,17 @@
    */
   async function listen(event, handler) {
     const g = window.__TAURI__;
+    // ⭐ 主路径：`getCurrentWebviewWindow().listen` —— 事件只投给**当前窗口**。
+    //    默认的 `event.listen` 是 Any 作用域，多窗口下会**广播到每个窗口**：
+    //    菜单按一下所有窗口一起动，而且**没有任何报错**（`design/0071` §5 / `0068` §2.6）。
+    const ww = g && g.webviewWindow;
+    let win = null;
+    if (ww && typeof ww.getCurrentWebviewWindow === 'function') {
+      try { win = ww.getCurrentWebviewWindow(); } catch (e) { win = null; }
+    }
+    if (win && typeof win.listen === 'function') return await win.listen(event, handler);
+    // ⚠️ 回退：离屏测试环境没有 Tauri 窗口对象（行为与旧版逐字一致）。
+    //    ⛔ 别把这一支当主路径——它正是多窗口下事件广播的来源。
     const ev = g && g.event;
     if (!ev || typeof ev.listen !== 'function') {
       throw new Error('拿不到 window.__TAURI__.event（withGlobalTauri 或 ACL 的问题）');

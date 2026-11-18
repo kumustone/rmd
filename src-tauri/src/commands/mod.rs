@@ -35,6 +35,10 @@
 pub mod asset;
 pub mod document;
 pub mod edit;
+// ⭐ `design/0076`：导出（保存为单文件 HTML / 打印为 PDF）。**写命令**——
+//    与 `edit::save_document` 同类：⛔ 不新增可读路径，⛔ 但会写用户磁盘。
+//    落点闸门是 `SessionGrants::check_export_target`（不动 `roots`/`files`）。
+pub mod export;
 pub mod fs;
 // ⭐ `design/0026`：文档内链接的**判定与派发**（`open_link`）。
 // ⚠️ 纯函数那半（分类 / 编码 / argv / 导航白名单）在 `crate::link`，**不门控**——
@@ -44,7 +48,8 @@ pub mod link;
 use std::collections::VecDeque;
 use crate::logging;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use serde::{Deserialize, Serialize};
@@ -115,6 +120,14 @@ pub struct Session {
     /// （与 `watch` / `edit_target` 同一条取向）。
     /// ⚠️ 多个请求**按到达顺序**排队，前端依次打开（本期不做多窗口，§4）。
     pub pending_opens: VecDeque<PathBuf>,
+    /// ⭐ **这个窗口的"打开后要干什么"**（`design/0071` §5.2 / `design/0068` §2.5）：
+    /// 导航页右键「在新窗口中打开」建出来的新窗口，启动后取走它、再走**自己**的授权路径。
+    ///
+    /// ⚠️ 它**不是授权**：里面只有一个 `kind` 与一个**原样**字符串，
+    /// 真正的校验（字面成员检查 / `canonicalize` / 授权）全部发生在
+    /// `open_recent_directory` / `open_favorite` 里（`INV-FS-04` 一个字节没放宽）。
+    /// ⛔ 一次性请求：`take` 即清空，随窗口消亡、⛔ 不落盘、⛔ 不跨窗口。
+    pub pending_navigation: Option<PendingNavigation>,
     /// ⭐ **最近一次渲染的观测量**（`design/0007` §3.1：`INV-MATH-05` 的"可观测"出口）。
     ///
     /// ⚠️ **为什么由后端存、而不是让前端回报**：这些计数**只有后端算得出来**
@@ -165,6 +178,37 @@ pub struct Session {
     /// ⛔ 两道都要，⛔ 不许合并成一道：第一道管「这条路径本来就授权过吗」，
     /// 第二道管「用户现在真的在编辑它吗」。
     pub edit_target: Option<PathBuf>,
+
+    /// ⭐ **草稿身份**（`design/0082` §2.1 ①）：`Some(id)` = 这个窗口正在编辑一份
+    /// **没有路径**的文档（`⌘N` 新建、尚未保存）。
+    ///
+    /// ⚠️ 草稿期间 [`current_document`](Self::current_document) **是 `None`**——
+    /// 这不是省事，而是**让所有既有命令按"没有文档"处理**：`save_document` /
+    /// `reload_document` / `watch_document` / 阅读进度 / 最近打开一行都不用改，
+    /// 而且它们在草稿上**结构上**做不了错事（没有路径可写、可读、可记）。
+    ///
+    /// ⚠️ 它**不是授权、不是配置**：随进程消亡、⛔ 不落盘、⛔ 不跨窗口
+    /// （与 [`edit_target`](Self::edit_target) 同一条取向）。
+    /// ⚠️ 正文明文**不在后端**：草稿的文本只活在前端编辑器缓冲里，
+    /// 后端只按 `begin_edit` / `render_preview` 的请求逐次收到它。
+    ///
+    /// ⚠️ 清除点（⛔ 别只清一处）：[`drop_watch`](Self::drop_watch)（换文档 / 关文档的
+    /// 公共收尾）、`document::commit_open`（真的打开了一份有路径的文档）、
+    /// `edit::save_untitled` 的第三段（转正）。
+    pub draft: Option<u64>,
+
+    /// ⭐ **编辑态落在哪一份草稿上**（`design/0082` §2.1 ③）：与
+    /// [`edit_target`](Self::edit_target) 在真实文档上的位置一一对应。
+    ///
+    /// ⚠️ 两个分开存是为了让"草稿存在"与"用户在编辑它"仍能分别判定：
+    /// `render_preview` / `save_untitled` 要求**两者都在**
+    /// （与真实文档那条 `edit_target == current_document` 同一条理由）。
+    pub edit_draft: Option<u64>,
+
+    /// 草稿号计数器。⛔ 只增不减（与 [`doc_seq`](Self::doc_seq) 同族：
+    /// 前端拿它丢弃"不是这一份"的回包；`doc_seq` 会被 `close_document` 归零，
+    /// 所以⛔ 不能拿它当草稿号）。
+    pub draft_seq: u64,
 
     /// ⭐ **「刚写下去的那份」的指纹** `(len, mtime_ns)`（`design/0012` §2.1 ④）。
     ///
@@ -317,9 +361,22 @@ pub enum WatchRestart {
     Started(Watch),
     /// 起好了，但本次不保留句柄——⭐ **只给单测**（⛔ 产品代码不许用：
     /// 那会留下"后端以为有监视、实际没有"的假状态）。
+    /// ⚠️ 产品代码只在 `match` 里**接**这一支，从不**造**它 ⇒ 非测试构建没有入参形态。
+    #[cfg_attr(not(test), allow(dead_code))]
     StartedWithoutHandle,
     /// 起失败 ⇒ `degraded: ["watch"]`（`current_document` 仍留在新路径）。
     Failed,
+}
+
+/// 新窗口启动后要执行的一次导航请求（`design/0068` §2.5 / `design/0071` §5.2）。
+///
+/// ⚠️ `kind` 只有 `"recent"` / `"favorite"` 两种；`value` 是**原样字符串**——
+/// 它只是 `open_recent_directory` / `open_favorite` 的入参，⛔ 不是路径真值，
+/// ⛔ 更不是授权（校验全部在**那个窗口自己的**命令里做）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PendingNavigation {
+    pub kind: String,
+    pub value: String,
 }
 
 impl Session {
@@ -331,6 +388,45 @@ impl Session {
     /// ⛔ 别把它调成 0（那等于取消 §2.1 ④a 的复核），
     /// ⛔ 也别调成一分钟以上（那才是"永久静默"的开端）。
     pub const INFLIGHT_MAX: std::time::Duration = std::time::Duration::from_secs(10);
+
+    /// ⭐ **一个全新窗口的空会话**（`design/0071` §5.2）：没有授权、没有文档、没有监视。
+    ///
+    /// ⚠️ 授权**窗口私有**（Q40）：新窗口不继承任何 `roots` / `files`，
+    /// 第一次打开目录照样要过 `choose_directory`（`INV-FS-04` 不多一个写入点）。
+    /// ⚠️ `config` 是从共享真值克隆来的**只读副本**（每次落盘后
+    /// [`AppState::commit_config`] 同步所有窗口）——⛔ 它不是第二个真值、⛔ 别在这里写盘。
+    pub fn blank(config: Config, config_path: PathBuf) -> Self {
+        Session {
+            grants: SessionGrants::new(),
+            tree: TreeCache::new(),
+            config,
+            config_path,
+            doc_dir: None,
+            startup_document: None,
+            pending_opens: VecDeque::new(),
+            pending_navigation: None,
+            last_render_stats: Default::default(),
+            current_document: None,
+            doc_seq: 0,
+            edit_target: None,
+            draft: None,
+            edit_draft: None,
+            draft_seq: 0,
+            self_write: None,
+            save_inflight: None,
+            baseline_bytes: None,
+            watch: None,
+            watch_seq: 0,
+            latest_doc_req: 0,
+            index: None,
+            index_ticket: 0,
+            index_rev: 0,
+            tree_watch: None,
+            disk: crate::disk::DiskState::new(),
+            reconcile_inflight: false,
+            last_disk_rev: u64::MAX,
+        }
+    }
 
     /// ⭐ **让文件名索引作废**（`design/0041` §2.1.2，R2）。
     ///
@@ -382,6 +478,11 @@ impl Session {
     /// 而留下一个"孤儿写授权"是纯粹的风险面（`INV-EDIT-02` 的"退出编辑态即撤销"）。
     pub fn drop_watch(&mut self) -> Option<Watch> {
         self.current_document = None;
+        // ⭐ `design/0082`：换文档 / 关文档的**公共收尾**也是草稿的清除点。
+        //    ⚠️ 放在这里（⛔ 不是各命令里各清一次）：`new_untitled` 自己先调本函数
+        //    再写新的 `draft`，而 `watch_document` / `open_document` / `close_document`
+        //    都经过这里 ⇒ "草稿与真实文档不可能同时是当前文档"是结构保证。
+        self.draft = None;
         self.end_edit();
         self.watch.take()
     }
@@ -401,6 +502,10 @@ impl Session {
     /// 它描述的是"有没有一次写盘还在飞"，与文档无关，由写盘路径自己收尾。
     pub fn end_edit(&mut self) {
         self.edit_target = None;
+        // ⭐ `design/0082`：草稿的**编辑态**与真实文档的编辑态同生共死。
+        //    ⚠️ `draft` 本身**不清**（那要等换文档 / 转正 / 关文档）——
+        //    退出编辑态之后草稿仍然"是当前文档"，只是不再可写。
+        self.edit_draft = None;
         self.self_write = None;
         self.baseline_bytes = None;
     }
@@ -496,7 +601,7 @@ impl Session {
         real: &Path,
         to: &Path,
         restart_watch: impl FnOnce(&Path, u64) -> WatchRestart,
-    ) -> (bool, u64, Vec<&'static str>) {
+    ) -> (bool, u64, Vec<&'static str>, Vec<(String, String)>) {
         let mut degraded: Vec<&'static str> = Vec::new();
         let mut watch_seq: u64 = 0;
 
@@ -540,29 +645,21 @@ impl Session {
         // ⭐ 索引作废**必须连票号一起涨**（`design/0041` R2）：在途的旧构建回来时不发布
         self.invalidate_index();
 
-        // 目录会话里的 `last_file`（§3.5）。⚠️ `set_dir_session` 是**整条覆盖**，
-        //    所以读出原 `expanded` 一并写回；失败**静默**（不影响改名结果）。
+        // ⭐ 目录会话里的 `last_file`（§3.5）：这里**只算出要改哪几条**，
+        //    ⛔ 不直接改 `self.config` —— 配置的唯一真值在 [`AppState::shared`]，
+        //    写入口只有 [`AppState::commit_config`]（多窗口之后 `self.config` 只是副本）。
+        //    调用方（`rename_entry`）拿到这份清单后走 `commit_config` 落盘。
         let old_str = real.display().to_string();
         let new_str = to.display().to_string();
-        let roots: Vec<String> = self
+        let dir_session_updates: Vec<(String, String)> = self
             .config
             .dir_sessions
             .iter()
             .filter(|(_, v)| v.last_file.as_deref() == Some(old_str.as_str()))
-            .map(|(k, _)| k.clone())
+            .map(|(k, _)| (k.clone(), new_str.clone()))
             .collect();
-        if !roots.is_empty() {
-            for root in roots {
-                let Some(mut d) = self.config.dir_session(&root).cloned() else { continue };
-                d.last_file = Some(new_str.clone());
-                self.config.set_dir_session(&root, d);
-            }
-            if let Err(e) = self.config.save(&self.config_path) {
-                diag_stderr!("⚠️ 改名后目录会话没能落盘：{e}");
-            }
-        }
 
-        (current_moved, watch_seq, degraded)
+        (current_moved, watch_seq, degraded, dir_session_updates)
     }
 
     /// 取下一个监视代号。⛔ 从 1 开始：`0` 在协议里表示"没有监视"。
@@ -589,19 +686,125 @@ impl Session {
     }
 }
 
-/// Tauri 的托管状态。
+/// ⭐ **窗口之间共享的那一份**（`design/0071` §5.2；架构细目见 `design/0068` §2.1）。
+///
+/// ⚠️ 只有 `config` 进这里：`config.json` 是**一份内存真值 ＋ 一条串行写队列**
+/// （`INV-THEME-05`），窗口数不该变成写者数。授权 / 树 / 文档 / 监视**都不在这里**——
+/// 它们按窗口各一份（Q40：新窗口不继承任何 `roots` / `files`）。
+pub struct Shared {
+    /// 配置的**唯一内存真值**（L1）。
+    pub config: Mutex<Config>,
+    /// `config.json` 的完整路径。
+    pub config_path: PathBuf,
+    /// 串行写队列：改内存（L1）→ **放锁** → 拿这把锁落盘。
+    /// ⚠️ 两把锁**不嵌套**（`design/0068` §2.1 的锁序纪律）。
+    pub config_write: Mutex<()>,
+    /// 最近一次 `Focused(true)` 的窗口 label。
+    ///
+    /// ⚠️ 菜单事件（`MenuEvent`）**不带来源窗口**，Apple Event 也是进程级的
+    /// ⇒ 这两条通道只能落到"用户此刻在看的那个窗口"。
+    pub active: Mutex<Option<String>>,
+    /// 下一个新窗口的序号（`w-1`、`w-2`…）。
+    next_window: AtomicU64,
+}
+
+impl Shared {
+    /// 最普通的做法：直接锁真值。⚠️ 锁中毒时取回内部值（理由同 [`AppState::with`]）。
+    pub fn config_guard(&self) -> std::sync::MutexGuard<'_, Config> {
+        match self.config.lock() {
+            Ok(g) => g,
+            Err(p) => p.into_inner(),
+        }
+    }
+}
+
+/// Tauri 的托管状态：**共享配置仓库 ＋ 按 label 的会话表**。
 ///
 /// ⚠️ **不 derive `Debug`**：`Session` 里装着 `Config`（含 `serde_json::Value`）、
 /// 授权路径与缓存，为了一个调试打印给它们全加 `Debug` 不划算。
-pub struct AppState(Mutex<Session>);
+pub struct AppState {
+    shared: Shared,
+    /// 键 = 窗口 label（`main` / `w-1`…）。值是**独立的一把会话锁**（L2）。
+    sessions: Mutex<std::collections::HashMap<String, Arc<Mutex<Session>>>>,
+}
 
+/// ⭐ **锁序**（`design/0068` §2.1）：L0 会话表 → L1 共享配置 → L2 单个会话，
+/// 任何两把**不许嵌套**。做法固定为：持 L0 只做一次 `get` / `insert`，
+/// **克隆 `Arc` 就放锁**，之后才锁 L2。
 impl AppState {
-    /// 包一个会话。
+    /// 包一个会话（主窗口 `main`）。
     pub fn new(session: Session) -> Self {
-        AppState(Mutex::new(session))
+        let shared = Shared {
+            config: Mutex::new(session.config.clone()),
+            config_path: session.config_path.clone(),
+            config_write: Mutex::new(()),
+            active: Mutex::new(Some("main".to_string())),
+            next_window: AtomicU64::new(1),
+        };
+        let mut sessions = std::collections::HashMap::new();
+        sessions.insert("main".to_string(), Arc::new(Mutex::new(session)));
+        AppState {
+            shared,
+            sessions: Mutex::new(sessions),
+        }
     }
 
-    /// 借用会话。
+    /// 共享那一份（配置 / 落点 / 新窗口序号）。
+    pub fn shared(&self) -> &Shared {
+        &self.shared
+    }
+
+    /// 会话表本身只给**极少数**需要遍历全部窗口的路径用（副本同步、关窗回收）。
+    fn sessions_guard(&self) -> std::sync::MutexGuard<'_, std::collections::HashMap<String, Arc<Mutex<Session>>>> {
+        match self.sessions.lock() {
+            Ok(g) => g,
+            Err(p) => p.into_inner(),
+        }
+    }
+
+    /// ⭐ 取某个窗口的会话 `Arc`。
+    ///
+    /// ⚠️ 未知 label **不 panic**：窗口已销毁与命令在途之间有一个天然的竞态
+    /// （`Destroyed` 先到、IPC 后到）。补一个**空会话**比让命令炸掉更符合
+    /// "关窗不该产生错误弹窗"的取向；它拿不到任何授权，所以不会变成越权口子。
+    pub fn session_for(&self, label: &str) -> Arc<Mutex<Session>> {
+        if let Some(found) = self.sessions_guard().get(label) {
+            return Arc::clone(found);
+        }
+        let fresh = Arc::new(Mutex::new(Session::blank(
+            self.shared.config_guard().clone(),
+            self.shared.config_path.clone(),
+        )));
+        self.sessions_guard()
+            .entry(label.to_string())
+            .or_insert_with(|| Arc::clone(&fresh))
+            .clone()
+    }
+
+    /// 建窗前**先插桶**（`design/0068` §2.1 的生命周期）：页面脚本一起来就会调
+    /// `get_session`，桶必须已经在。建窗失败时调用方要 `remove_window` 回滚。
+    pub fn insert_window(&self, label: &str, session: Session) {
+        self.sessions_guard()
+            .insert(label.to_string(), Arc::new(Mutex::new(session)));
+    }
+
+    /// 关窗回收：把桶**摘出来**交还调用方。
+    ///
+    /// ⚠️ 调用方拿到 `Arc` 之后要在**锁外** drop（里面装着 `watch` / `tree_watch` /
+    /// `index`，drop 会停线程、放句柄）。
+    pub fn remove_window(&self, label: &str) -> Option<Arc<Mutex<Session>>> {
+        self.sessions_guard().remove(label)
+    }
+
+    /// 当前有哪些窗口（label → `Arc`），同样**只克隆就放锁**。
+    pub fn windows(&self) -> Vec<(String, Arc<Mutex<Session>>)> {
+        self.sessions_guard()
+            .iter()
+            .map(|(k, v)| (k.clone(), Arc::clone(v)))
+            .collect()
+    }
+
+    /// 借用某个窗口的会话。
     ///
     /// ⚠️ 锁中毒时**取回内部值**而不是 panic：临界区里全是内存操作，
     /// 中毒只可能来自别的线程 panic，而"整棵树用不了"比"继续跑"更糟。
@@ -612,12 +815,192 @@ impl AppState {
     /// 临界区一长，整个 FSEvents 的投递就被我们堵住；而渲染（10 MB 文档要 3.4 s）
     /// 进锁的代价更直接——**界面上一次重载，全窗口卡死**。
     /// ✅ 落地形式 = 三段式：持锁取快照 → **放锁**渲染 → 持锁核对后提交。
-    pub fn with<T>(&self, f: impl FnOnce(&mut Session) -> T) -> T {
-        let mut guard = match self.0.lock() {
+    pub fn with<T>(&self, label: &str, f: impl FnOnce(&mut Session) -> T) -> T {
+        let arc = self.session_for(label);
+        let mut guard = match arc.lock() {
             Ok(g) => g,
             Err(p) => p.into_inner(),
         };
         f(&mut guard)
+    }
+
+    /// 共享配置的一份克隆（窗口快照用）。⛔ 不要持它做 I/O。
+    pub fn config(&self) -> Config {
+        self.shared.config_guard().clone()
+    }
+
+    /// ⭐ **唯一的配置写入口**：在共享真值上改一次 → 放锁 → 串行落盘 → 同步各窗口副本。
+    ///
+    /// ⚠️ 为什么以「一次闭包」为单位而不是「整份 `Config`」：整份覆盖会让
+    /// "窗口 A 改主题、窗口 B 同时改宽度"变成后者把前者抹掉
+    /// （`INV-THEME-05` 要排除的那类"我明明改过、它又回去了"）。
+    /// 闭包在**当前真值**上就地改，落盘与副本同步随后发生，两个窗口排队执行。
+    ///
+    /// 返回值 = `(闭包的结果, 落盘结果)`。⚠️ 落盘失败时**内存里已经改了**
+    /// （与 `set_sidebar_width` 一族的历史语义一致：界面上已经生效，只是下次要重来）。
+    pub fn commit<R>(&self, f: impl FnOnce(&mut Config) -> R) -> (R, std::io::Result<()>) {
+        let (out, after) = {
+            let mut g = self.shared.config_guard();
+            let out = f(&mut g);
+            (out, g.clone())
+        };
+        let written = {
+            let _serial = match self.shared.config_write.lock() {
+                Ok(g) => g,
+                Err(p) => p.into_inner(),
+            };
+            let written = after.save(&self.shared.config_path);
+            // ⚠️ 副本同步留在**串行闸内**：否则"T1 落盘 → T2 落盘 → T1 同步副本"
+            //    会让磁盘上是 B、而所有窗口的副本停在 A（`INV-OPEN-07`）。
+            self.publish_replicas(&after);
+            written
+        };
+        (out, written)
+    }
+
+    /// 把共享真值的一份快照铺到**每个窗口**的只读副本上（`Session::config`）。
+    ///
+    /// ⚠️ 调用方必须已经放开 L1（本函数只锁 L0 → L2，⛔ 不嵌套）。
+    fn publish_replicas(&self, after: &Config) {
+        for (_, arc) in self.windows() {
+            let mut s = match arc.lock() {
+                Ok(g) => g,
+                Err(p) => p.into_inner(),
+            };
+            s.config = after.clone();
+        }
+    }
+
+    /// [`commit`] 的**按需落盘版**：闭包返回 `(结果, 要不要落盘)`。
+    ///
+    /// ⚠️ `false` ⇒ 一个字节都不写、也不刷新副本——"这次什么都没发生"必须与
+    /// "发生了一次写盘"在磁盘上可区分（`design/0045` 的事务形态：清空一张本来就空的表
+    /// 不该回一句写盘失败）。
+    pub fn commit_if<R>(&self, f: impl FnOnce(&mut Config) -> (R, bool)) -> (R, std::io::Result<()>) {
+        self.commit_impl_if(f, false)
+    }
+
+    fn commit_impl_if<R>(
+        &self,
+        f: impl FnOnce(&mut Config) -> (R, bool),
+        revert_on_failure: bool,
+    ) -> (R, std::io::Result<()>) {
+        let (out, needs_save, before, after) = {
+            let mut g = self.shared.config_guard();
+            let before = g.clone();
+            let (out, needs_save) = f(&mut g);
+            (out, needs_save, before, g.clone())
+        };
+        if !needs_save {
+            return (out, Ok(()));
+        }
+        let written = {
+            let _serial = match self.shared.config_write.lock() {
+                Ok(g) => g,
+                Err(p) => p.into_inner(),
+            };
+            let written = after.save(&self.shared.config_path);
+            if written.is_err() && revert_on_failure {
+                *self.shared.config_guard() = before;
+                return (out, written);
+            }
+            // ⚠️ 副本同步必须留在**串行闸内**：否则"T1 落盘 → T2 落盘 → T1 同步副本"
+            //    会让磁盘上是 B、而所有窗口的副本停在 A。副本是只读的（下次 `commit`
+            //    或 `with_fresh` 又会拉齐），但错误方向是"旧值覆盖新值"，⛔ 不能留着。
+            self.publish_replicas(&after);
+            written
+        };
+        (out, written)
+    }
+
+    /// [`commit_atomic`] 的**按需落盘版**（`false` ⇒ 一个字节都不写）。
+    pub fn commit_atomic_if<R>(
+        &self,
+        f: impl FnOnce(&mut Config) -> (R, bool),
+    ) -> (R, std::io::Result<()>) {
+        self.commit_impl_if(f, true)
+    }
+
+    /// 读之前先把**本窗口**的配置副本对齐到共享真值。
+    ///
+    /// ⚠️ 只给"刚写完就要读回来"的命令用（收藏 / 最近 / 快照）；常规读路径
+    /// 走 [`Self::with`] 就够了——每次写盘都会把所有副本同步一遍。
+    pub fn with_fresh<T>(&self, label: &str, f: impl FnOnce(&mut Session) -> T) -> T {
+        let fresh = self.config();
+        let arc = self.session_for(label);
+        let mut guard = match arc.lock() {
+            Ok(g) => g,
+            Err(p) => p.into_inner(),
+        };
+        guard.config = fresh;
+        f(&mut guard)
+    }
+
+    /// 菜单 / Apple Event 的落点：最近聚焦的窗口；一个都没有时回 `main`。
+    pub fn active_label(&self) -> String {
+        let g = match self.shared.active.lock() {
+            Ok(g) => g,
+            Err(p) => p.into_inner(),
+        };
+        g.clone().unwrap_or_else(|| "main".to_string())
+    }
+
+    /// 记下新的落点（`WindowEvent::Focused(true)`）。
+    pub fn set_active(&self, label: &str) {
+        let mut g = match self.shared.active.lock() {
+            Ok(g) => g,
+            Err(p) => p.into_inner(),
+        };
+        *g = Some(label.to_string());
+    }
+
+    /// 关窗之后**改指**落点：落点正是被关掉的那个窗口时，换成一个还活着的。
+    ///
+    /// ⚠️ **为什么必须有**：`emit_to` 对**不存在的 label** 只返回 `Err`（调用方只打日志）
+    /// ⇒ 若落点停在已关的窗口上，`File ▸ 打开…` 与 Apple Event 就是"点了没反应"。
+    /// 这类静默失效最难自查，而且它**不依赖** AppKit 的先后顺序：
+    /// 关掉聚焦窗口时系统通常会把 `Focused(true)` 送给下一个窗口，但那是**上游行为**，
+    /// ⛔ 不作为本仓的正确性前提（`design/0071` §5.1 Q40 起"落点"就是显式状态）。
+    ///
+    /// ⚠️ 锁序（`design/0068` §2.1）：L1（`active`）→ **放锁** → L0（会话表）→ **放锁** → L1，
+    /// 两段之间**不嵌套**。第二段只在"仍为空"时才写，免得把中途到达的
+    /// `Focused(true)` 覆盖掉（关窗与切窗在 AppKit 里本来就可能交错）。
+    pub fn repoint_active(&self, closed: &str) {
+        {
+            let mut g = match self.shared.active.lock() {
+                Ok(g) => g,
+                Err(p) => p.into_inner(),
+            };
+            if g.as_deref() != Some(closed) {
+                return; // 关掉的不是落点 ⇒ 什么都不做
+            }
+            *g = None;
+        }
+        let next = {
+            let sessions = self.sessions_guard();
+            if sessions.contains_key("main") {
+                Some("main".to_string()) // 主窗口优先：它与"没有落点"时的兜底一致
+            } else {
+                sessions.keys().next().cloned()
+            }
+        };
+        if let Some(label) = next {
+            let mut g = match self.shared.active.lock() {
+                Ok(g) => g,
+                Err(p) => p.into_inner(),
+            };
+            if g.is_none() {
+                *g = Some(label);
+            }
+        }
+    }
+
+    /// 发一个**新窗口**的 label：`w-1`、`w-2`…
+    pub fn next_window_label(&self) -> String {
+        format!(
+            "w-{}",
+            self.shared.next_window.fetch_add(1, Ordering::Relaxed)
+        )
     }
 }
 
@@ -654,9 +1037,24 @@ pub struct SessionSnapshot {
     pub last_directory: Option<String>,
     /// 启动参数里的文档（有则前端要开它）。
     pub startup_document: Option<String>,
+    /// ⭐ **`open_favorite` 这一次打开的是什么**（`design/0043` §2.4；`bugs/0301`）：
+    /// `Some("file")` / `Some("directory")`；**其它命令一律 `None`**。
+    ///
+    /// ⚠️ 为什么不能由前端看 `mode`：`Session::mode()` 判 `roots` 优先——
+    /// 正开着目录时点一条**文件收藏**，`mode` 仍是 `"directory"`，前端会把它当成
+    /// 目录收藏、只换空态而不开文档（表现：点了没反应）。这个字段是那条命令的
+    /// **操作形态**，⛔ 不是第二个 `mode`（它不描述会话，只描述这一次动作）。
+    /// ⚠️ 目录分支**不清** `startup_document`（那是"上次开的文档"，不是待消费的信道）。
+    pub opened_favorite: Option<&'static str>,
     /// ⭐ **打开会话号**（`design/0017` §2.2 ①）。前端把它记在 `state.docSeq` 上，
     /// 之后每次写进度原样带回来。
     pub doc_seq: u64,
+    /// ⭐ **草稿号**（`design/0082` §2.1 ②）：`Some(id)` = 这个窗口的当前文档是一份
+    /// 还没有路径的草稿。
+    ///
+    /// ⚠️ 它**不是**第四种 `mode`（`mode` 仍是三态、草稿期 `current_document` 为 `None`）：
+    /// 前端据它跳过树高亮 / 监视 / 阅读进度 / 目录会话，并在 `⌘S` 时分流到 `save_untitled`。
+    pub draft: Option<u64>,
     /// ⭐ **阅读进度全表**（`design/0017` §2.3 ①）：键 = 规范化后的真实路径。
     ///
     /// ⚠️ 只在**启动 / 授权变化**时随快照发一次；运行期的变化由
@@ -799,7 +1197,13 @@ pub fn snapshot(s: &Session) -> SessionSnapshot {
         appearance: s.config.appearance(),
         last_directory: s.config.last_directory.clone(),
         startup_document: s.startup_document.as_ref().map(|p| p.display().to_string()),
+        // ⚠️ 默认 `None`：快照是"会话现在是什么样"，⛔ 不带任何操作语义。
+        //    `open_favorite` 自己会在返回前改写这一次的取值（`fs.rs`）。
+        opened_favorite: None,
         doc_seq: s.doc_seq,
+        // ⭐ `design/0082`：草稿号。⚠️ 派生**不**出来（`current_document` 为 `None` 也可能是
+        //    "真的没有文档"）⇒ 由会话里的那一个字段原样下发。
+        draft: s.draft,
         reading_progress: s.config.reading_progress.clone(),
         // ⚠️ 键必须与 `set_dir_session` 写入时用的**同一份规范化路径**
         //    （`roots()` 里那一份），⛔ 不用前端传来的原始串。
@@ -839,11 +1243,14 @@ pub fn snapshot(s: &Session) -> SessionSnapshot {
 
 /// 前端启动时问一次。
 #[tauri::command]
-pub fn get_session(state: tauri::State<'_, AppState>) -> SessionSnapshot {
+pub fn get_session(
+    state: tauri::State<'_, AppState>,
+    window: tauri::WebviewWindow,
+) -> SessionSnapshot {
     // ⚠️ 写成闭包而不是 `state.with(snapshot)`：`with` 收的是 `FnOnce(&mut Session)`，
     //    而 `snapshot` 是 `fn(&Session)`——函数项**不会**在泛型参数位置自动补上
     //    这个 `&mut` → `&` 的重借（`E0631`）。
-    let snap = state.with(|s| snapshot(s));
+    let snap = state.with(window.label(), |s| snapshot(s));
     // ⚠️ 这一行是**诊断的锚点**，不是装饰：前端"到底跑到哪一步"只有后端知道。
     //    实测教训（2026-10-13）：没有它时，前端在 `get_session` 之前就静默卡住，
     //    而日志里只有"会话：模式=…"一行——分不清"没跑"与"跑到这一步失败"。
@@ -867,8 +1274,11 @@ pub fn get_session(state: tauri::State<'_, AppState>) -> SessionSnapshot {
 ///
 /// ⚠️ 返回**规范化的真实路径**（`authorize_startup` 的返回值），⛔ 不是事件里那个原始串。
 #[tauri::command]
-pub fn take_pending_open(state: tauri::State<'_, AppState>) -> Vec<String> {
-    let paths = state.with(|s| s.take_pending_opens());
+pub fn take_pending_open(
+    state: tauri::State<'_, AppState>,
+    window: tauri::WebviewWindow,
+) -> Vec<String> {
+    let paths = state.with(window.label(), |s| s.take_pending_opens());
     for p in &paths {
         // ⚠️ 与 `get_session` 那行同一条理由：前端"到底取到了什么"只有后端知道，
         //    而冒烟判据要能从 stderr 上把它按标记取出来（§7.1 第 9 条）。
@@ -877,27 +1287,136 @@ pub fn take_pending_open(state: tauri::State<'_, AppState>) -> Vec<String> {
     paths.into_iter().map(|p| p.display().to_string()).collect()
 }
 
+/// ⭐ **在新窗口里打开一条最近目录 / 收藏**（`design/0071` §5.2 / `design/0068` §2.5）。
+///
+/// ⚠️ 它**不是授权命令**：这里只做"这个字符串后端到底记不记得"的**字面成员检查**，
+/// ⛔ 不 `canonicalize`、⛔ 不写 `roots`/`files`、⛔ 不判可达性。
+/// 真正的授权发生在**新窗口自己的** `open_recent_directory` / `open_favorite` 里
+/// （`INV-OPEN-02`：新窗口不继承任何授权，`Q40`）。
+///
+/// ⚠️ 为什么不在这里直接打开：那个窗口的 `SessionGrants` 与 `Config` 副本是**变量**
+/// 而不是"命令跑完就丢"的临时值，授权必须落在**执行导航的那个会话**上，
+/// 否则关掉新窗口之后授权会**原地蒸发**（桶被回收，而文档已经挂上去了）。
+/// "后端记过这一条吗"——**字面**成员检查（`design/0071` §5.2）。
+///
+/// ⚠️ 它不是授权判据（`INV-OPEN-02`）：通过它什么都读不到，只是"新窗口值得为它开一次"。
+/// ⚠️ 比较是**原串逐字**（与 `open_recent_directory` / `open_favorite` 的白名单同一口径）：
+/// ⛔ 不 `canonicalize`——两侧一起规范化会让"目录被换成外部软链"在比较两边同时生效。
+fn recorded_navigation(cfg: &Config, kind: &str, value: &str) -> bool {
+    match kind {
+        "recent" => {
+            cfg.dir_sessions.contains_key(value) || cfg.last_directory.as_deref() == Some(value)
+        }
+        "favorite" => cfg.favorites.iter().any(|f| f == value),
+        _ => false,
+    }
+}
+
+#[tauri::command]
+pub fn open_in_new_window(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    kind: String,
+    value: String,
+) -> Result<(), String> {
+    open_in_new_window_with(&state, &kind, &value, |label| {
+        // ⚠️ `create_window` 返回窗口对象；命令只关心成没成（`Result<(), String>`）。
+        crate::gui::create_window(&app, label).map(|_| ())
+    })
+}
+
+/// `open_in_new_window` 的**唯一**实现（命令只负责提供 `create_window`）。
+///
+/// ⚠️ 抽出来与 `take_navigation_for` 同一条理由：命令体在单测里跑不起来
+/// （`tauri::AppHandle` 造不出来），而「建窗失败要回滚那个桶」恰是最该钉住的分支。
+/// 建窗动作由调用方注入 ⇒ 判据跑的是**产品这一份**序列（检查 → 插桶 → 建窗 → 回滚），
+/// ⛔ 不是照着它再写一遍。
+fn open_in_new_window_with<F>(
+    state: &AppState,
+    kind: &str,
+    value: &str,
+    create: F,
+) -> Result<(), String>
+where
+    F: FnOnce(&str) -> Result<(), String>,
+{
+    // ① 字面成员检查（⛔ 不是授权，见上）。
+    let cfg = state.config();
+    if !recorded_navigation(&cfg, kind, value) {
+        return Err(format!("没有记录过这一条：{value}"));
+    }
+
+    // ② 建窗前**先插桶**（页面脚本一起来就调 `get_session`，桶必须已经在）。
+    let label = state.next_window_label();
+    let mut blank = Session::blank(cfg, state.shared().config_path.clone());
+    blank.pending_navigation = Some(PendingNavigation {
+        kind: kind.to_string(),
+        value: value.to_string(),
+    });
+    state.insert_window(&label, blank);
+    diag!("▶ 开新窗口：{} 目标={} ", label, kind);
+
+    // ③ 建窗失败 ⇒ 回滚那个桶（否则表里留着一个永远没有页面的会话）。
+    match create(&label) {
+        Ok(_) => Ok(()),
+        Err(e) => {
+            state.remove_window(&label);
+            Err(e)
+        }
+    }
+}
+
+/// ⭐ **取走"我这个窗口该打开哪一条"**（`design/0071` §5.2）。
+///
+/// ⚠️ 取走即清空：一个窗口只执行一次导航。返回 `Option`——没有待办就是 `None`，
+/// 前端启动流程因此对**主窗口**（`⌘O` 进来的、双击进来的）**零行为变化**。
+#[tauri::command]
+pub fn take_pending_navigation(
+    state: tauri::State<'_, AppState>,
+    window: tauri::WebviewWindow,
+) -> Option<PendingNavigation> {
+    take_navigation_for(&state, window.label())
+}
+
+/// `take_pending_navigation` 的**唯一**实现（命令只负责取 label）。
+///
+/// ⚠️ 抽出来是为了让单测**跑产品代码本身**：`WebviewWindow` 在单测里造不出来，
+/// 若判据自己写一遍 `pending_navigation.take()`，等于用"复制品"证明"正品会清空"——
+/// 变异实测过：把命令体改成 `clone()`（不取走），那样写的判据**照样绿**。
+fn take_navigation_for(state: &AppState, label: &str) -> Option<PendingNavigation> {
+    let nav = state.with(label, |s| s.pending_navigation.take());
+    if let Some(n) = &nav {
+        diag!("▶ 取走待导航：{}", n.kind);
+    }
+    nav
+}
+
 /// 侧边栏宽度变了（拖动结束 / 首次落默认值）。
 ///
 /// ⚠️ 这是**唯一**会写配置文件的命令，而且写的是"界面偏好"——
 /// ⛔ 它**不碰授权**（`INV-FS-04`：只有授权命令能改授权，而这条根本不是授权命令）。
 #[tauri::command]
-pub fn set_sidebar_width(state: tauri::State<'_, AppState>, width: f64) -> Result<f64, String> {
-    Ok(state.with(|s| {
-        s.config.set_sidebar_width(width);
-        let applied = s.config.sidebar_width_or_default();
-        if let Err(e) = s.config.save(&s.config_path) {
-            // ⚠️ 存不下来**不是**致命错误：宽度已经生效，只是下次要重拖。
-            //    这里只往 stderr 说一句，⛔ 不把 UI 卡在这件事上。
-            diag_stderr!("⚠️ 侧边栏宽度存不下来（本次仍然生效）：{e}");
-            diag_file!(
-                "⚠️ 侧边栏宽度存不下来 err_class={} err_len={}",
-                logging::err_class(&e),
-                e.to_string().len()
-            );
-        }
-        applied
-    }))
+pub fn set_sidebar_width(
+    state: tauri::State<'_, AppState>,
+    window: tauri::WebviewWindow,
+    width: f64,
+) -> Result<f64, String> {
+    let _ = &window; // 宽度是**全局偏好**（`config.json` 单值），与窗口无关
+    let (applied, written) = state.commit(|c| {
+        c.set_sidebar_width(width);
+        c.sidebar_width_or_default()
+    });
+    if let Err(e) = written {
+        // ⚠️ 存不下来**不是**致命错误：宽度已经生效，只是下次要重拖。
+        //    这里只往 stderr 说一句，⛔ 不把 UI 卡在这件事上。
+        diag_stderr!("⚠️ 侧边栏宽度存不下来（本次仍然生效）：{e}");
+        diag_file!(
+            "⚠️ 侧边栏宽度存不下来 err_class={} err_len={}",
+            logging::err_class(&e),
+            e.to_string().len()
+        );
+    }
+    Ok(applied)
 }
 
 /// ⭐ **侧边栏形态写盘**（`design/0041` §2.3 / R5）。
@@ -911,22 +1430,24 @@ pub fn set_sidebar_width(state: tauri::State<'_, AppState>, width: f64) -> Resul
 #[tauri::command]
 pub fn set_sidebar_file_view(
     state: tauri::State<'_, AppState>,
+    window: tauri::WebviewWindow,
     view: String,
 ) -> Result<&'static str, String> {
-    state.with(|s| {
-        s.config.set_sidebar_file_view(&view);
-        let applied = s.config.sidebar_file_view();
-        if let Err(e) = s.config.save(&s.config_path) {
-            diag_stderr!("⚠️ 侧边栏形态存不下来（本次仍然生效）：{e}");
-            diag_file!(
-                "⚠️ 侧边栏形态存不下来 err_class={} err_len={}",
-                logging::err_class(&e),
-                e.to_string().len()
-            );
-            return Err(format!("{e}"));
-        }
-        Ok(applied)
-    })
+    let _ = &window; // 形态是**全局偏好**，与窗口无关
+    let (applied, written) = state.commit(|c| {
+        c.set_sidebar_file_view(&view);
+        c.sidebar_file_view()
+    });
+    if let Err(e) = written {
+        diag_stderr!("⚠️ 侧边栏形态存不下来（本次仍然生效）：{e}");
+        diag_file!(
+            "⚠️ 侧边栏形态存不下来 err_class={} err_len={}",
+            logging::err_class(&e),
+            e.to_string().len()
+        );
+        return Err(format!("{e}"));
+    }
+    Ok(applied)
 }
 
 /// ⭐ **外观写盘**（主题 + 字号 / 行高 / 内容宽度）——`design/0004` §2.1.4.1 规则 2。
@@ -946,24 +1467,28 @@ pub fn set_sidebar_file_view(
 #[tauri::command]
 pub fn set_appearance(
     state: tauri::State<'_, AppState>,
+    window: tauri::WebviewWindow,
     appearance: Appearance,
 ) -> Result<Appearance, String> {
-    state.with(|s| {
-        s.config.set_appearance(&appearance);
+    // ⚠️ 外观是**全局偏好**（主题只有一份真值，`INV-THEME-03`），与窗口无关：
+    //    新窗口共用同一份配置，切主题时所有窗口一起变。
+    let _ = &window;
+    let (applied, written) = state.commit(|c| {
+        c.set_appearance(&appearance);
         // ⚠️ 回带**夹取之后**的值：前端的乐观更新可能比后端的合法范围更宽，
         //    不带回去就会出现"界面写着 40px、磁盘上是 28px"这种两个真值。
-        let applied = s.config.appearance();
-        if let Err(e) = s.config.save(&s.config_path) {
-            diag_stderr!("⚠️ 外观存不下来（本次仍然生效）：{e}");
-            diag_file!(
-                "⚠️ 外观存不下来 err_class={} err_len={}",
-                logging::err_class(&e),
-                e.to_string().len()
-            );
-            return Err(format!("{e}"));
-        }
-        Ok(applied)
-    })
+        c.appearance()
+    });
+    if let Err(e) = written {
+        diag_stderr!("⚠️ 外观存不下来（本次仍然生效）：{e}");
+        diag_file!(
+            "⚠️ 外观存不下来 err_class={} err_len={}",
+            logging::err_class(&e),
+            e.to_string().len()
+        );
+        return Err(format!("{e}"));
+    }
+    Ok(applied)
 }
 
 /// ⭐ **记录"用户读到哪"**（`design/0017` §2.2 ②）。
@@ -978,50 +1503,69 @@ pub fn set_appearance(
 #[tauri::command]
 pub fn set_reading_progress(
     state: tauri::State<'_, AppState>,
+    window: tauri::WebviewWindow,
     path: String,
     doc_seq: u64,
     progress: ReadingProgress,
 ) -> ProgressWriteResult {
-    state.with(|s| apply_reading_progress(s, &path, doc_seq, progress))
+    // ① 先只读地取身份判据（L2 短暂持有，**放锁之后**才碰 L1，⛔ 不嵌套）。
+    let ident = state.with(window.label(), |s| (s.current_document.clone(), s.doc_seq));
+    // ② 判定 + 写都发生在共享真值上（`config.json` 一份真值、一条写队列）。
+    let (mut result, written) = state.commit_if(|c| {
+        apply_reading_progress(ident.0.as_deref(), ident.1, c, &path, doc_seq, progress)
+    });
+    if let Err(e) = written {
+        // ⚠️ 与外观那条同族：**内存里已经写进去了**，只是没落盘。
+        //    返回 `persist_failed` 而不是 `Err`，前端据此把它并入恢复表
+        //    （下次任意配置写入会顺带把它写下去）。
+        diag_stderr!("⚠️ 阅读进度存不下来（本次仍然记住）：{e}");
+        diag_file!(
+            "⚠️ 阅读进度存不下来 err_class={} err_len={}",
+            logging::err_class(&e),
+            e.to_string().len()
+        );
+        result.status = "persist_failed";
+    }
+    result
 }
 
 /// [`set_reading_progress`] 的**全部判定**（拆出来只为可测，见 §7.2）。
 ///
-/// ⚠️ 命令体只是“取锁 + 调它”，⛔ 判定不许在两处各写一份。
+/// ⚠️ 它**只读**会话身份（`current_document` / `doc_seq`），写的是**共享配置**——
+/// 多窗口之后 `Session::config` 只是副本，唯一的写入口是 [`AppState::commit_if`]。
+/// ⛔ 判定不许在两处各写一份。
+///
+/// 返回 `(结果, 要不要落盘)`：`stale` / `ignored` 一个字节都不写。
 pub fn apply_reading_progress(
-    s: &mut Session,
-    path: &str,
+    current_document: Option<&Path>,
     doc_seq: u64,
+    cfg: &mut Config,
+    path: &str,
+    req_seq: u64,
     progress: ReadingProgress,
-) -> ProgressWriteResult {
+) -> (ProgressWriteResult, bool) {
     // ⚠️ 两条判据缺一不可：`doc_seq` 是会话号（不记路径），
     //    `current_document` 才说明"这个号对应的是哪一份"。
-    if s.current_document.as_deref() != Some(Path::new(path)) || s.doc_seq != doc_seq {
+    if current_document != Some(Path::new(path)) || doc_seq != req_seq {
         // ⚠️ 不记每一条 stale 的日志：滚动结束就写一次，切文档时必然产生若干条，
         //    逐条打会把 stderr 淹掉（而那些**都是正常的**）。
-        return ProgressWriteResult { status: "stale", entry: None, evicted: Vec::new() };
+        return (
+            ProgressWriteResult { status: "stale", entry: None, evicted: Vec::new() },
+            false,
+        );
     }
-    let out = s.config.set_reading_progress(path, progress);
+    let out = cfg.set_reading_progress(path, progress);
     let Some(entry) = out.entry else {
         // ⚠️ "这条没有任何可用信息" ⇒ 不写盘，⛔ 也不动恢复表里已有的那一条。
-        return ProgressWriteResult { status: "ignored", entry: None, evicted: Vec::new() };
+        return (
+            ProgressWriteResult { status: "ignored", entry: None, evicted: Vec::new() },
+            false,
+        );
     };
-    let status = match s.config.save(&s.config_path) {
-        Ok(()) => "ok",
-        Err(e) => {
-            // ⚠️ 与外观那条同族：**内存里已经写进去了**，只是没落盘。
-            //    返回 `persist_failed` 而不是 `Err`，前端据此把它并入恢复表
-            //    （下次任意配置写入会顺带把它写下去）。
-            diag_stderr!("⚠️ 阅读进度存不下来（本次仍然记住）：{e}");
-            diag_file!(
-                "⚠️ 阅读进度存不下来 err_class={} err_len={}",
-                logging::err_class(&e),
-                e.to_string().len()
-            );
-            "persist_failed"
-        }
-    };
-    ProgressWriteResult { status, entry: Some(entry), evicted: out.evicted }
+    (
+        ProgressWriteResult { status: "ok", entry: Some(entry), evicted: out.evicted },
+        true,
+    )
 }
 
 /// [`set_reading_progress`] 的返回值（`design/0017` §2.2 ②）。
@@ -1045,73 +1589,73 @@ pub struct ProgressWriteResult {
 #[tauri::command]
 pub fn set_dir_session(
     state: tauri::State<'_, AppState>,
+    window: tauri::WebviewWindow,
     root: String,
     generation: u64,
     last_file: Option<String>,
     expanded: Vec<String>,
 ) -> DirSessionWriteResult {
-    state.with(|s| apply_dir_session(s, &root, generation, last_file, expanded))
+    // ① 判据 1/2 是**会话的**（代次 + 授权根），在 L2 里只读地算出一个规范键。
+    let key = state.with(window.label(), |s| resolve_dir_session_key(s, &root, generation));
+    let Some(key) = key else {
+        return DirSessionWriteResult { status: "stale", entry: None, evicted: Vec::new() };
+    };
+    // ② 判据 3 与写盘发生在共享真值上（`config.json` 一份真值、一条写队列）。
+    let (mut result, written) = state.commit_if(|c| {
+        apply_dir_session(c, &key, last_file, expanded)
+    });
+    if let Err(e) = written {
+        // ⚠️ 与进度 / 外观同族：内存已记住，只是没落盘。
+        diag_stderr!("⚠️ 目录会话存不下来（本次仍然记住）：{e}");
+        diag_file!(
+            "⚠️ 目录会话存不下来 err_class={} err_len={}",
+            logging::err_class(&e),
+            e.to_string().len()
+        );
+        result.status = "persist_failed";
+    } else if result.status == "cleared" {
+        // ⚠️ 落一行日志（`design/0020` §2.1 ③ 的代价那一段）：
+        //    一个自己发空载荷的前端 bug 会把记录删掉，而症状是
+        //    "下次打开什么都没恢复"——不崩溃、不报错，只能靠这一行找回来。
+        diag!("目录会话已清空（空载荷 = 合法状态） path={key}");
+    }
+    result
 }
 
-/// [`set_dir_session`] 的**全部判定**（拆出来只为可测，见 §7.2）。
+/// [`set_dir_session`] 的**判据 1/2**：代次 + "这个根是不是当前授权的那个根"。
 ///
-/// ⚠️ 命令体只是"取锁 + 调它"，⛔ 判定不许在两处各写一份。
-pub fn apply_dir_session(
-    s: &mut Session,
-    root: &str,
-    generation: u64,
-    last_file: Option<String>,
-    expanded: Vec<String>,
-) -> DirSessionWriteResult {
+/// ⚠️ 返回规范化后的键；任何一种不满足都回 `None`（调用方统一映成 `stale`）。
+pub fn resolve_dir_session_key(s: &Session, root: &str, generation: u64) -> Option<String> {
     // 判据 1：代次。⚠️ 不记每条 stale 的日志（切目录时必然产生若干条，都是正常的）。
     if generation != s.grants.root_generation() {
-        return DirSessionWriteResult { status: "stale", entry: None, evicted: Vec::new() };
+        return None;
     }
-
     // 判据 2：`root` 规范化后**恰好等于**某个授权根。
     // ⚠️ 规范化走既有入口 `check_readable`（它自带 `canonicalize`），
     //    ⛔ 不在这里写第二份 path 比较。⚠️ 这不是授权判断——授权早就发生过了，
     //    这里只回答"你写的这个根是不是当前授权的那个根"。
-    let Ok(real) = s.grants.check_readable(Path::new(root)) else {
-        return DirSessionWriteResult { status: "stale", entry: None, evicted: Vec::new() };
-    };
+    let real = s.grants.check_readable(Path::new(root)).ok()?;
     if !s.grants.roots().iter().any(|r| *r == real) {
         // ⚠️ 子目录也落这里：子目录不是"这一代会话"的键（`INV-SESS-02`）。
-        return DirSessionWriteResult { status: "stale", entry: None, evicted: Vec::new() };
+        return None;
     }
-    let key = real.display().to_string();
+    Some(real.display().to_string())
+}
 
+/// [`set_dir_session`] 的**判据 3 + 写配置**（在共享真值上就地改）。
+///
+/// 返回 `(结果, 要不要落盘)`：`stale` 已在上一步挡掉，这里只可能 `ok` / `cleared`。
+pub fn apply_dir_session(
+    cfg: &mut Config,
+    key: &str,
+    last_file: Option<String>,
+    expanded: Vec<String>,
+) -> (DirSessionWriteResult, bool) {
     // 判据 3：清洗后为空 ⇒ 合法空状态，删掉该条（`INV-SESS-12`），⛔ 不是 ignored。
-    let out = s.config.set_dir_session(
-        &key,
-        DirSession { last_file, expanded, updated_at: 0 },
-    );
+    let out = cfg.set_dir_session(key, DirSession { last_file, expanded, updated_at: 0 });
     let cleared = out.entry.is_empty();
-
-    let status = match s.config.save(&s.config_path) {
-        Ok(()) => {
-            if cleared {
-                // ⚠️ 落一行日志（`design/0020` §2.1 ③ 的代价那一段）：
-                //    一个自己发空载荷的前端 bug 会把记录删掉，而症状是
-                //    "下次打开什么都没恢复"——不崩溃、不报错，只能靠这一行找回来。
-                diag!("目录会话已清空（空载荷 = 合法状态） path={key}");
-                "cleared"
-            } else {
-                "ok"
-            }
-        }
-        Err(e) => {
-            // ⚠️ 与进度 / 外观同族：内存已记住，只是没落盘。
-            diag_stderr!("⚠️ 目录会话存不下来（本次仍然记住）：{e}");
-            diag_file!(
-                "⚠️ 目录会话存不下来 err_class={} err_len={}",
-                logging::err_class(&e),
-                e.to_string().len()
-            );
-            "persist_failed"
-        }
-    };
-    DirSessionWriteResult { status, entry: Some(out.entry), evicted: out.evicted }
+    let status = if cleared { "cleared" } else { "ok" };
+    (DirSessionWriteResult { status, entry: Some(out.entry), evicted: out.evicted }, true)
 }
 
 /// [`set_dir_session`] 的返回值（`design/0020` §2.2 ②）。
@@ -1177,16 +1721,82 @@ pub enum RecentOp {
     Clear,
 }
 
+/// ⭐ `design/0070` §2.7：前端**每展示一条失败**就留一行诊断。
+///
+/// # 红线（`INV-FAIL-07` ＋ `INV-LOG-01/11`）
+///
+/// · `area` 走**白名单**——它说明这条失败落在哪个域/容器，⛔ 不许前端自由发明；
+/// · `key` 只接受**字典键的形状**（ASCII 小写、数字、`.`、`-`，≤64 字节）——
+///   ⚠️ 它是**结构**而不是正文，所以能进文件；⛔ 不是任意文本；
+/// · `detail` ≤200 个字符，只允许路径 / 错误码 / 后端给的一句话。
+///   ⛔ **正文、缓冲区内容、搜索词**：文件里只记长度，原文只进 stderr
+///   （与 `report_status` 的 `sample`/`summary` 同一条纪律）。
+///
+/// ⚠️ 它**不影响界面**、⛔ 不返回数据：界面已经在别处说过那句话了，
+/// 这条命令只为「下次同类问题不用再靠截图定性」。
+/// ⚠️ 三处清单同批改（`build.rs` / `capabilities/` / `invoke_handler`，`kb/0007`）。
+#[tauri::command]
+pub fn diag_note(area: String, key: String, detail: Option<String>) -> Result<(), String> {
+    // ⚠️ 白名单是**域**，不是每条文案：key 会随设计迭代增删，
+    //    在这里再抄一份就等于第二个真值（改一处忘一处的经典形态）。
+    const AREAS: &[&str] = &[
+        // ⭐ `design/0071` §3：`⌘O` 打开面板（`open-panel`）——「点开一条最近却没打开」
+        //    这一类失败要留痕，否则用户只看到面板关了、什么都没发生。
+        "open", "close", "link", "external", "edit", "favorite", "recent", "choose",
+        "session", "startup", "refresh", "start", "failbar", "config", "open-panel",
+        // ⭐ `design/0071` §4.1（阶段 3）：`⌘N` 新建——「没有目录可建」与
+        //    「输入行开不出来」这两条失败要留痕（`INV-FAIL-07`）。
+        "new",
+    ];
+    if !AREAS.contains(&area.as_str()) {
+        return Err(format!("diag_note: 未知 area「{area}」"));
+    }
+    let key_ok = !key.is_empty()
+        && key.len() <= 64
+        && key
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '.' || c == '-');
+    if !key_ok {
+        return Err(format!("diag_note: key 形状不合法「{key}」"));
+    }
+    // ⚠️ 按**字符**截断，不按字节：中文路径整句被切成半个字节会写出一行乱码。
+    let raw = detail.unwrap_or_default();
+    let mut clean = String::new();
+    for ch in raw.chars() {
+        if clean.chars().count() >= 200 {
+            break;
+        }
+        if ch == '\n' || ch == '\r' || ch == '\t' {
+            clean.push(' ');
+        } else if !ch.is_control() {
+            clean.push(ch);
+        }
+    }
+    let len = clean.chars().count();
+    diag!("📝 失败留痕：area={area} key={key} detail_len={len}");
+    if !clean.is_empty() {
+        // ⚠️ 原文只进 stderr（与 `diag_stderr!` 的信任表一致）。
+        diag_stderr!("  失败详情：{clean}");
+    }
+    Ok(())
+}
+
 /// ⭐ 最近目录的**唯一写入口**（`design/0045`）。
 #[tauri::command]
 pub fn recent_apply(
     state: tauri::State<'_, AppState>,
+    window: tauri::WebviewWindow,
     op: RecentOp,
 ) -> Result<SessionSnapshot, Denied> {
-    state.with(|s| {
-        apply_recent_op(s, op)?;
-        Ok(snapshot(s))
-    })
+    let (changed, written) = state.commit_atomic_if(|c| {
+        let changed = apply_recent_op(c, op);
+        (changed, changed)
+    });
+    let _ = changed;
+    // ⚠️ 写盘失败归 `Io`：前端要能说"没删下来"，⛔ 不能说成"未授权"。
+    //    事务语义由 `commit_atomic_if` 保证：失败 ⇒ 内存退回改前那份。
+    written.map_err(|e| Denied::io(&state.shared().config_path, e))?;
+    Ok(state.with_fresh(window.label(), |s| snapshot(s)))
 }
 
 /// [`recent_apply`] 的**全部判定**（拆出来只为可测）。
@@ -1202,53 +1812,48 @@ pub fn recent_apply(
 /// `last = true`）。所以只删 `dir_sessions` 里那一项 ⇒ 用户点「删除」之后
 /// **那一行原地复活**，看起来像没生效。⇒ 删一条时若它正是 `last_directory`，
 /// 两份一起清；`Clear` 时两份都清。
-pub fn apply_recent_op(s: &mut Session, op: RecentOp) -> Result<(), Denied> {
-    let mut candidate = s.config.clone();
-
+pub fn apply_recent_op(cfg: &mut Config, op: RecentOp) -> bool {
     let changed = match &op {
         RecentOp::Remove { path } => {
-            let removed = candidate.dir_sessions.remove(path.as_str()).is_some();
+            let removed = cfg.dir_sessions.remove(path.as_str()).is_some();
             // ⚠️ 逐字比较（与 `INV-START-02` 的白名单同口径）：记录侧⛔ 不规范化。
-            let was_last = candidate.last_directory.as_deref() == Some(path.as_str());
+            let was_last = cfg.last_directory.as_deref() == Some(path.as_str());
             if was_last {
-                candidate.last_directory = None;
+                cfg.last_directory = None;
             }
             removed || was_last
         }
         RecentOp::Clear => {
-            let changed =
-                !candidate.dir_sessions.is_empty() || candidate.last_directory.is_some();
-            candidate.dir_sessions.clear();
-            candidate.last_directory = None;
+            let changed = !cfg.dir_sessions.is_empty() || cfg.last_directory.is_some();
+            cfg.dir_sessions.clear();
+            cfg.last_directory = None;
             changed
         }
     };
-
-    // ⚠️ 没变化就不写盘：否则"清空一个本来就空的表"会回一句写盘失败（磁盘满 / 只读），
-    //    而用户手里没有任何东西可以再改。
-    if !changed {
-        return Ok(());
-    }
-
-    // ⭐ 保存成功才提交内存（候选配置）。写盘失败归 `Io`：前端要能说"没删下来"，
-    //    ⛔ 不能说成"未授权"。
-    candidate
-        .save(&s.config_path)
-        .map_err(|e| Denied::io(&s.config_path, e))?;
-    s.config = candidate;
-    Ok(())
+    changed
 }
 
 /// ⭐ 收藏的**唯一写入口**（`design/0043` §2.2、`INV-FAV-04/07`）。
 #[tauri::command]
 pub fn favorites_apply(
     state: tauri::State<'_, AppState>,
+    window: tauri::WebviewWindow,
     op: FavoriteOp,
 ) -> Result<SessionSnapshot, Denied> {
-    state.with(|s| {
-        apply_favorite_op(s, op)?;
-        Ok(snapshot(s))
-    })
+    // ⭐ `INV-FAV-07`：`Add` 先过当刻读取授权——不在已打开范围里的路径根本写不进去。
+    //    ⚠️ 这不是"第二条授权路径"：`check_readable` 只回答"能不能读"，
+    //    它**不新增**任何可读路径（`INV-FS-01/04`）。
+    //    ⚠️ 判据在 L2 里取（只读、放锁之后才碰 L1，⛔ 不嵌套）。
+    let add_checked = if let FavoriteOp::Add { path } = &op {
+        Some(state.with(window.label(), |s| s.grants.check_readable(Path::new(path))))
+    } else {
+        None
+    };
+    let (res, written) = state.commit_atomic_if(|c| apply_favorite_op(add_checked, c, op));
+    // ⚠️ 写盘失败归 `Io`：前端要能说"没存下来"，⛔ 不能说成"未授权"。
+    res?;
+    written.map_err(|e| Denied::io(&state.shared().config_path, e))?;
+    Ok(state.with_fresh(window.label(), |s| snapshot(s)))
 }
 
 /// [`favorites_apply`] 的**全部判定**（拆出来只为可测）。
@@ -1268,53 +1873,54 @@ pub fn favorites_apply(
 /// - `Remove`：逐字匹配删除；缺项 ⇒ 无操作成功（幂等）。
 /// - `Move`：逐字匹配；缺项 / `to` 越界 / `to` 已是当前位置 ⇒ 无操作成功。
 /// - ⚠️ 三者都**不规范化、不重新解析**既有项：失效项是用户的记录，⛔ 不因一次重排被清掉。
-pub fn apply_favorite_op(s: &mut Session, op: FavoriteOp) -> Result<(), Denied> {
-    let mut candidate = s.config.clone();
-
+pub fn apply_favorite_op(
+    add_checked: Option<Result<PathBuf, Denied>>,
+    cfg: &mut Config,
+    op: FavoriteOp,
+) -> (Result<(), Denied>, bool) {
     match &op {
         FavoriteOp::Add { path } => {
-            // ⭐ `INV-FAV-07`：先过当刻读取授权——不在已打开范围里的路径根本写不进去。
-            //    ⚠️ 这不是"第二条授权路径"：`check_readable` 只回答"能不能读"，
-            //    它**不新增**任何可读路径（`INV-FS-01/04`）。
-            let real = s.grants.check_readable(Path::new(path))?;
+            // ⚠️ `add_checked` 由命令体在**会话锁**里算好传进来（`INV-FAV-07` 的那次
+            //    `check_readable`），⛔ 这里不再碰 `Session`——配置闭包只许改配置。
+            let real = match add_checked {
+                Some(Ok(real)) => real,
+                Some(Err(e)) => return (Err(e), false),
+                // ⚠️ 契约上不会发生（`Add` 一定带了答复）；保守拒绝，⛔ 不当作"可以写"。
+                None => return (Err(Denied::not_authorized(Path::new(path))), false),
+            };
             if !(real.is_dir() || (real.is_file() && link::is_markdown(&real))) {
                 // ⚠️ 存在但类型不对（FIFO / 设备 / 非 Markdown 文件）⇒ 未授权，
                 //    与"不在已打开范围"同一个答复，⛔ 不差别化成目录探测。
-                return Err(Denied::not_authorized(Path::new(path)));
+                return (Err(Denied::not_authorized(Path::new(path))), false);
             }
             let real_str = real.display().to_string();
-            if candidate.favorites.iter().any(|f| f == &real_str) {
-                return Ok(());
+            if cfg.favorites.iter().any(|f| f == &real_str) {
+                return (Ok(()), false);
             }
-            if candidate.favorites.len() >= FAVORITES_LIMIT {
-                return Err(Denied::limit_reached("favorites", FAVORITES_LIMIT));
+            if cfg.favorites.len() >= FAVORITES_LIMIT {
+                return (Err(Denied::limit_reached("favorites", FAVORITES_LIMIT)), false);
             }
-            candidate.favorites.push(real_str);
+            cfg.favorites.push(real_str);
+            (Ok(()), true)
         }
         FavoriteOp::Remove { path } => {
-            candidate.favorites.retain(|f| f != path);
+            cfg.favorites.retain(|f| f != path);
+            (Ok(()), true)
         }
         FavoriteOp::Move { path, to } => {
-            let Some(from) = candidate.favorites.iter().position(|f| f == path) else {
-                return Ok(());
+            let Some(from) = cfg.favorites.iter().position(|f| f == path) else {
+                return (Ok(()), false);
             };
             // ⚠️ 越界⛔ 不夹取：那会把"点错了"变成"确实移动了"；
             //    `to == from` 同位置也一样，无操作成功。
-            if *to >= candidate.favorites.len() || *to == from {
-                return Ok(());
+            if *to >= cfg.favorites.len() || *to == from {
+                return (Ok(()), false);
             }
-            let item = candidate.favorites.remove(from);
-            candidate.favorites.insert(*to, item);
+            let item = cfg.favorites.remove(from);
+            cfg.favorites.insert(*to, item);
+            (Ok(()), true)
         }
     }
-
-    // ⭐ 保存成功才提交内存（候选配置）。
-    //    ⚠️ 写盘失败归 `Io`：前端要能说"没存下来"，而⛔ 不能说成"未授权"。
-    candidate
-        .save(&s.config_path)
-        .map_err(|e| Denied::io(&s.config_path, e))?;
-    s.config = candidate;
-    Ok(())
 }
 
 #[cfg(test)]
@@ -1325,6 +1931,81 @@ mod tests {
     ///
     /// ⚠️ `config_path` 落在临时目录里：**这些测试真的会写盘**（那正是 #6 要验的
     /// “`save` 到底有没有被调用”的一半）。用 pid 隔离，避免并行测试互相踩。
+    /// ⭐ 测试适配：把"会话 + 配置"拼回**旧签名**，判定逻辑仍是产品那一份。
+    ///
+    /// ⚠️ 产品路径已经改成"会话里只读判据 + 共享配置上就地改"（多窗口之后
+    /// `Session::config` 只是副本）；这些适配器让既有用例**逐条不变**地继续有效，
+    /// 包括"保存成功才提交内存"与"写盘失败回 persist_failed"两条语义。
+    fn apply_reading_progress_t(
+        s: &mut Session,
+        path: &str,
+        seq: u64,
+        p: ReadingProgress,
+    ) -> ProgressWriteResult {
+        let (mut r, _save) = apply_reading_progress(
+            s.current_document.as_deref(),
+            s.doc_seq,
+            &mut s.config,
+            path,
+            seq,
+            p,
+        );
+        if r.status == "ok" {
+            if s.config.save(&s.config_path).is_err() {
+                r.status = "persist_failed";
+            }
+        }
+        r
+    }
+
+    fn apply_dir_session_t(
+        s: &mut Session,
+        root: &str,
+        generation: u64,
+        last_file: Option<String>,
+        expanded: Vec<String>,
+    ) -> DirSessionWriteResult {
+        let Some(key) = resolve_dir_session_key(s, root, generation) else {
+            return DirSessionWriteResult { status: "stale", entry: None, evicted: Vec::new() };
+        };
+        let (mut r, _needs) = apply_dir_session(&mut s.config, &key, last_file, expanded);
+        if s.config.save(&s.config_path).is_err() {
+            r.status = "persist_failed";
+        }
+        r
+    }
+
+    fn apply_recent_op_t(s: &mut Session, op: RecentOp) -> Result<(), Denied> {
+        let mut candidate = s.config.clone();
+        if !apply_recent_op(&mut candidate, op) {
+            return Ok(());
+        }
+        candidate
+            .save(&s.config_path)
+            .map_err(|e| Denied::io(&s.config_path, e))?;
+        s.config = candidate;
+        Ok(())
+    }
+
+    fn apply_favorite_op_t(s: &mut Session, op: FavoriteOp) -> Result<(), Denied> {
+        let add_checked = if let FavoriteOp::Add { path } = &op {
+            Some(s.grants.check_readable(Path::new(path)))
+        } else {
+            None
+        };
+        let mut candidate = s.config.clone();
+        let (res, needs) = apply_favorite_op(add_checked, &mut candidate, op);
+        res?;
+        if !needs {
+            return Ok(());
+        }
+        candidate
+            .save(&s.config_path)
+            .map_err(|e| Denied::io(&s.config_path, e))?;
+        s.config = candidate;
+        Ok(())
+    }
+
     fn session(config_path: std::path::PathBuf) -> Session {
         Session {
             grants: SessionGrants::new(),
@@ -1334,10 +2015,14 @@ mod tests {
             doc_dir: None,
             startup_document: None,
             pending_opens: VecDeque::new(),
+            pending_navigation: None,
             last_render_stats: Default::default(),
             current_document: None,
             doc_seq: 0,
             edit_target: None,
+            draft: None,
+            edit_draft: None,
+            draft_seq: 0,
             self_write: None,
             save_inflight: None,
             baseline_bytes: None,
@@ -1371,7 +2056,7 @@ mod tests {
         let mut s = session(dir.join("config.json"));
         s.current_document = Some(PathBuf::from("/a.md"));
         s.doc_seq = 3;
-        let r = apply_reading_progress(&mut s, "/a.md", 3, prog(Some("h1"), Some(0.5)));
+        let r = apply_reading_progress_t(&mut s, "/a.md", 3, prog(Some("h1"), Some(0.5)));
         assert_eq!(r.status, "ok");
         assert!(s.config.reading_progress_of("/a.md").is_some());
         assert!(dir.join("config.json").exists(), "ok 意味着真的落盘了");
@@ -1381,7 +2066,7 @@ mod tests {
     fn 进度命令_没有当前文档时stale且不新增键() {
         let dir = tmp_dir("none");
         let mut s = session(dir.join("config.json"));
-        let r = apply_reading_progress(&mut s, "/a.md", 0, prog(Some("h1"), None));
+        let r = apply_reading_progress_t(&mut s, "/a.md", 0, prog(Some("h1"), None));
         assert_eq!(r.status, "stale");
         assert!(s.config.reading_progress.is_empty());
         assert!(!dir.join("config.json").exists(), "stale 不许有任何写盘副作用");
@@ -1395,7 +2080,7 @@ mod tests {
         s.doc_seq = 1;
         s.config.set_reading_progress_at("/b.md", prog(Some("h1"), Some(0.1)), 100);
         let before = s.config.reading_progress_of("/b.md").cloned();
-        let r = apply_reading_progress(&mut s, "/a.md", 1, prog(Some("h1"), Some(0.9)));
+        let r = apply_reading_progress_t(&mut s, "/a.md", 1, prog(Some("h1"), Some(0.9)));
         assert_eq!(r.status, "stale");
         assert_eq!(s.config.reading_progress_of("/b.md").cloned(), before);
         assert!(s.config.reading_progress_of("/a.md").is_none());
@@ -1410,7 +2095,7 @@ mod tests {
         s.doc_seq = 2; // 第二次打开 A
         s.config.set_reading_progress_at("/a.md", prog(Some("old"), Some(0.2)), 100);
         let before = s.config.reading_progress_of("/a.md").cloned();
-        let r = apply_reading_progress(&mut s, "/a.md", 1, prog(Some("late"), Some(0.8)));
+        let r = apply_reading_progress_t(&mut s, "/a.md", 1, prog(Some("late"), Some(0.8)));
         assert_eq!(r.status, "stale");
         assert_eq!(s.config.reading_progress_of("/a.md").cloned(), before, "旧值一个字不许动");
     }
@@ -1421,7 +2106,7 @@ mod tests {
         let mut s = session(dir.join("config.json"));
         s.current_document = Some(PathBuf::from("/a.md"));
         s.doc_seq = 2;
-        let r = apply_reading_progress(&mut s, "/a.md", 3, prog(Some("h1"), None));
+        let r = apply_reading_progress_t(&mut s, "/a.md", 3, prog(Some("h1"), None));
         assert_eq!(r.status, "stale", "判据是相等，⛔ 不是 ≥");
     }
 
@@ -1431,7 +2116,7 @@ mod tests {
         let mut s = session(dir.join("config.json"));
         s.current_document = Some(PathBuf::from("/a.md"));
         s.doc_seq = 1;
-        let r = apply_reading_progress(&mut s, "/a.md", 1, prog(None, None));
+        let r = apply_reading_progress_t(&mut s, "/a.md", 1, prog(None, None));
         assert_eq!(r.status, "ignored");
         assert!(!dir.join("config.json").exists(), "ignored 不许调用 save");
         assert!(s.config.reading_progress.is_empty());
@@ -1444,7 +2129,7 @@ mod tests {
         let mut s = session(std::path::PathBuf::from("/dev/null/x/config.json"));
         s.current_document = Some(PathBuf::from("/a.md"));
         s.doc_seq = 1;
-        let r = apply_reading_progress(&mut s, "/a.md", 1, prog(Some("h1"), Some(0.3)));
+        let r = apply_reading_progress_t(&mut s, "/a.md", 1, prog(Some("h1"), Some(0.3)));
         assert_eq!(r.status, "persist_failed");
         assert!(r.entry.is_some(), "条目本身是好的，只是没落盘");
         assert!(s.config.reading_progress_of("/a.md").is_some(), "内存里必须已经记住了");
@@ -1489,7 +2174,7 @@ mod tests {
         let dir = tmp_dir("dsession-no-root");
         let mut s = session(dir.join("config.json"));
         let (lf, ex) = ds(Some("/r/a.md".to_string()), &[]);
-        let r = apply_dir_session(&mut s, "/r", 0, lf, ex);
+        let r = apply_dir_session_t(&mut s, "/r", 0, lf, ex);
         assert_eq!(r.status, "stale");
         assert!(r.entry.is_none());
         assert!(s.config.dir_sessions.is_empty());
@@ -1503,11 +2188,11 @@ mod tests {
         let root = auth_root(&mut s, &dir);
         let (lf, ex) = ds(Some(format!("{root}/a.md")), &[]);
         let g = s.grants.root_generation();
-        assert_eq!(apply_dir_session(&mut s, &root, g, lf, ex).status, "ok");
+        assert_eq!(apply_dir_session_t(&mut s, &root, g, lf, ex).status, "ok");
         let before = s.config.dir_session(&root).cloned();
 
         let (lf, ex) = ds(None, &[]);
-        let r = apply_dir_session(&mut s, &root, 0, lf, ex);
+        let r = apply_dir_session_t(&mut s, &root, 0, lf, ex);
         assert_eq!(r.status, "stale", "旧代次的写必须被拒");
         assert_eq!(s.config.dir_session(&root).cloned(), before, "配置一个字都不许动");
     }
@@ -1523,7 +2208,7 @@ mod tests {
         let (lf, ex) = ds(Some(format!("{}/a.md", sub.display())), &[]);
         let g = s.grants.root_generation();
         let sub_root = sub.display().to_string();
-        let r = apply_dir_session(&mut s, &sub_root, g, lf, ex);
+        let r = apply_dir_session_t(&mut s, &sub_root, g, lf, ex);
         assert_eq!(r.status, "stale");
         assert!(s.config.dir_sessions.is_empty());
     }
@@ -1544,7 +2229,7 @@ mod tests {
             &[inside.as_str(), "/etc", &format!("{root}/nope")],
         );
         let g = s.grants.root_generation();
-        let r = apply_dir_session(&mut s, &root, g, lf, ex);
+        let r = apply_dir_session_t(&mut s, &root, g, lf, ex);
         assert_eq!(r.status, "ok");
         let e = r.entry.expect("ok 必须回带条目");
         assert_eq!(e.last_file, None, "越界的 last_file 被清成 None");
@@ -1563,7 +2248,7 @@ mod tests {
         let root = auth_root(&mut s, &dir);
         let (lf, ex) = ds(Some(format!("{root}/a.md")), &[]);
         let g = s.grants.root_generation();
-        let r = apply_dir_session(&mut s, &root, g, lf, ex);
+        let r = apply_dir_session_t(&mut s, &root, g, lf, ex);
         assert_eq!(r.status, "ok");
         assert!(r.entry.unwrap().updated_at > 0, "updated_at 由后端盖章");
         assert!(dir.join("config.json").exists(), "ok 意味着真的落盘了");
@@ -1577,9 +2262,9 @@ mod tests {
         let root = auth_root(&mut s, &dir);
         let g = s.grants.root_generation();
         let (lf, ex) = ds(Some(format!("{root}/a.md")), &[]);
-        apply_dir_session(&mut s, &root, g, lf, ex);
+        apply_dir_session_t(&mut s, &root, g, lf, ex);
         let (lf, ex) = ds(Some(format!("{root}/b.md")), &[]);
-        apply_dir_session(&mut s, &root, g, lf, ex);
+        apply_dir_session_t(&mut s, &root, g, lf, ex);
         assert_eq!(s.config.dir_sessions.len(), 1, "覆盖而不是追加");
         assert_eq!(
             s.config.dir_session(&root).unwrap().last_file.as_deref(),
@@ -1595,10 +2280,10 @@ mod tests {
         let root = auth_root(&mut s, &dir);
         let g = s.grants.root_generation();
         let (lf, ex) = ds(Some(format!("{root}/a.md")), &[]);
-        assert_eq!(apply_dir_session(&mut s, &root, g, lf, ex).status, "ok");
+        assert_eq!(apply_dir_session_t(&mut s, &root, g, lf, ex).status, "ok");
 
         let (lf, ex) = ds(None, &[]);
-        let r = apply_dir_session(&mut s, &root, g, lf, ex);
+        let r = apply_dir_session_t(&mut s, &root, g, lf, ex);
         assert_eq!(r.status, "cleared");
         assert!(r.entry.unwrap().is_empty());
         assert!(s.config.dir_session(&root).is_none(), "空会话 = 删掉该条");
@@ -1612,7 +2297,7 @@ mod tests {
         let root = auth_root(&mut s, &dir);
         let (lf, ex) = ds(None, &[]);
         let g = s.grants.root_generation();
-        let r = apply_dir_session(&mut s, &root, g, lf, ex);
+        let r = apply_dir_session_t(&mut s, &root, g, lf, ex);
         assert_eq!(r.status, "cleared");
         assert!(s.config.dir_sessions.is_empty());
     }
@@ -1625,7 +2310,7 @@ mod tests {
         let root = auth_root(&mut s, &dir);
         let (lf, ex) = ds(Some(format!("{root}/a.md")), &[]);
         let g = s.grants.root_generation();
-        apply_dir_session(&mut s, &root, g, lf, ex);
+        apply_dir_session_t(&mut s, &root, g, lf, ex);
         assert_eq!(snapshot(&s).mode, "directory");
         assert!(snapshot(&s).dir_session.is_some(), "目录模式必须带上会话");
 
@@ -1743,8 +2428,16 @@ mod tests {
             DirSession { last_file: Some(old.display().to_string()), ..Default::default() },
         );
 
-        let (current_moved, watch_seq, degraded) =
+        let (current_moved, watch_seq, degraded, updates) =
             s.commit_rename(&old, &new, |_, _| WatchRestart::StartedWithoutHandle);
+
+        // ⭐ `design/0071` §5：目录会话的 `last_file` 现在由**调用方**在锁外提交
+        //    （`commands/fs.rs::rename_entry` 走 `state.commit`），这里只验证带出来了。
+        assert_eq!(
+            updates,
+            vec![(dir.display().to_string(), new.display().to_string())],
+            "目录会话的迁移清单必须原样带出会话锁"
+        );
 
         assert!(current_moved);
         assert_eq!(watch_seq, 1, "⭐ 新监视代号必须回给前端（否则迟到事件全被丢弃）");
@@ -1755,11 +2448,14 @@ mod tests {
         assert_eq!(s.doc_seq, 7, "⚠️ 改名不是新会话（B6）");
         assert!(s.tree.hit(0, s.disk.epoch, &dir).is_none(), "B7：父层缓存必须作废");
         assert!(s.index.is_none(), "B7：搜索索引必须作废");
+        // ⚠️ 会话里的 `config` 是**只读副本**，`commit_rename` 不再就地改它
+        //    （多窗口之后 config 只有共享真值一个写者）⇒ 这里**不该**已经变成新路径。
+        //    真正落盘由调用方拿上面那份 `updates` 走 `state.commit` 完成，
+        //    那一条在 `commands/fs.rs::rename_entry` 的测试里盯。
         assert_eq!(
             s.config.dir_session(&dir.display().to_string()).and_then(|d| d.last_file.clone()),
-            Some(new.display().to_string()),
-            "目录会话要指向新路径（否则下次恢复打向旧路径）；表={:?}",
-            s.config.dir_sessions
+            Some(old.display().to_string()),
+            "⛔ `commit_rename` 不许在会话锁内改配置副本（那是第二次写盘的风险）"
         );
     }
 
@@ -1848,7 +2544,7 @@ mod tests {
         s.current_document = Some(old.clone());
         s.doc_seq = 3;
 
-        let (current_moved, watch_seq, degraded) =
+        let (current_moved, watch_seq, degraded, _updates) =
             s.commit_rename(&old, &new, |_, _| WatchRestart::Failed);
 
         assert!(current_moved);
@@ -1869,7 +2565,7 @@ mod tests {
         s.startup_document = Some(old.clone());
         s.doc_seq = 5;
 
-        let (current_moved, watch_seq, degraded) =
+        let (current_moved, watch_seq, degraded, _updates) =
             s.commit_rename(&old, &new, |_, _| panic!("不是当前文档，⛔ 不该起监视"));
 
         assert!(!current_moved);
@@ -1895,7 +2591,7 @@ mod tests {
     }
 
     fn fav_add(s: &mut Session, p: &Path) -> Result<(), Denied> {
-        apply_favorite_op(s, FavoriteOp::Add { path: p.display().to_string() })
+        apply_favorite_op_t(s, FavoriteOp::Add { path: p.display().to_string() })
     }
 
     #[test]
@@ -1961,11 +2657,11 @@ mod tests {
         s.config.favorites = vec!["/a.md".to_string(), "/b.md".to_string()];
         s.config.save(&s.config_path).unwrap();
 
-        apply_favorite_op(&mut s, FavoriteOp::Remove { path: "/nope.md".into() })
+        apply_favorite_op_t(&mut s, FavoriteOp::Remove { path: "/nope.md".into() })
             .expect("缺项移除是幂等成功");
         assert_eq!(s.config.favorites.len(), 2, "缺项不该动别的");
 
-        apply_favorite_op(&mut s, FavoriteOp::Remove { path: "/a.md".into() }).unwrap();
+        apply_favorite_op_t(&mut s, FavoriteOp::Remove { path: "/a.md".into() }).unwrap();
         assert_eq!(s.config.favorites, vec!["/b.md".to_string()]);
         let text = std::fs::read_to_string(dir.join("config.json")).unwrap();
         assert!(text.contains("/b.md") && !text.contains("/a.md"), "要真的落盘：{text}");
@@ -1979,13 +2675,13 @@ mod tests {
         std::fs::remove_file(dir.join("config.json")).unwrap();
 
         for (path, to) in [("/nope", 0usize), ("/a", 3), ("/a", 9), ("/a", 0)] {
-            apply_favorite_op(&mut s, FavoriteOp::Move { path: path.into(), to })
+            apply_favorite_op_t(&mut s, FavoriteOp::Move { path: path.into(), to })
                 .unwrap_or_else(|e| panic!("{path}→{to} 应当是无操作成功，实得 {e:?}"));
         }
         assert_eq!(s.config.favorites, vec!["/a", "/b", "/c"], "四种都不得改序");
         assert!(!dir.join("config.json").exists(), "无操作不写盘");
 
-        apply_favorite_op(&mut s, FavoriteOp::Move { path: "/c".into(), to: 0 }).unwrap();
+        apply_favorite_op_t(&mut s, FavoriteOp::Move { path: "/c".into(), to: 0 }).unwrap();
         assert_eq!(s.config.favorites, vec!["/c", "/a", "/b"]);
     }
 
@@ -1994,7 +2690,7 @@ mod tests {
     fn 收藏_重排不动失效项() {
         let (mut s, _root, _dir) = fav_session("fav-stale");
         s.config.favorites = vec!["/gone/a.md".into(), "/b".into()];
-        apply_favorite_op(&mut s, FavoriteOp::Move { path: "/b".into(), to: 0 }).unwrap();
+        apply_favorite_op_t(&mut s, FavoriteOp::Move { path: "/b".into(), to: 0 }).unwrap();
         assert_eq!(s.config.favorites, vec!["/b", "/gone/a.md"], "失效项原样留着");
     }
 
@@ -2026,8 +2722,8 @@ mod tests {
         fav_add(&mut s, &root).unwrap();
         fav_add(&mut s, &md).unwrap();
         let real_md = std::fs::canonicalize(&md).unwrap().display().to_string();
-        apply_favorite_op(&mut s, FavoriteOp::Move { path: real_md.clone(), to: 0 }).unwrap();
-        apply_favorite_op(&mut s, FavoriteOp::Add { path: root.display().to_string() })
+        apply_favorite_op_t(&mut s, FavoriteOp::Move { path: real_md.clone(), to: 0 }).unwrap();
+        apply_favorite_op_t(&mut s, FavoriteOp::Add { path: root.display().to_string() })
             .expect("重复 add 不报错");
         assert_eq!(s.config.favorites.len(), 2, "两种项的集合不变");
         assert_eq!(s.config.favorites[0], real_md, "移动的结果还在");
@@ -2052,7 +2748,7 @@ mod tests {
     #[test]
     fn 最近命令_删除一条同时清掉last_directory() {
         let (mut s, dir) = recent_session("recent-remove-last");
-        apply_recent_op(&mut s, RecentOp::Remove { path: "/a".into() }).unwrap();
+        apply_recent_op_t(&mut s, RecentOp::Remove { path: "/a".into() }).unwrap();
         assert!(!s.config.dir_sessions.contains_key("/a"), "历史里删掉了");
         assert_eq!(s.config.last_directory, None, "⭐ 两份必须一起清，否则派生表会把它补回来");
         let rows = recent_dirs(&s);
@@ -2065,7 +2761,7 @@ mod tests {
     #[test]
     fn 最近命令_删除另一条时last_directory不动() {
         let (mut s, _dir) = recent_session("recent-remove-other");
-        apply_recent_op(&mut s, RecentOp::Remove { path: "/b".into() }).unwrap();
+        apply_recent_op_t(&mut s, RecentOp::Remove { path: "/b".into() }).unwrap();
         assert!(!s.config.dir_sessions.contains_key("/b"));
         assert_eq!(
             s.config.last_directory.as_deref(),
@@ -2082,7 +2778,7 @@ mod tests {
     #[test]
     fn 最近命令_删除缺项是无操作成功且不写盘() {
         let (mut s, dir) = recent_session("recent-remove-missing");
-        apply_recent_op(&mut s, RecentOp::Remove { path: "/nope".into() }).unwrap();
+        apply_recent_op_t(&mut s, RecentOp::Remove { path: "/nope".into() }).unwrap();
         assert_eq!(s.config.dir_sessions.len(), 2, "别的项一条不少");
         assert_eq!(s.config.last_directory.as_deref(), Some("/a"));
         assert!(!dir.join("config.json").exists(), "没有变化 ⇒ 一个字节都不写");
@@ -2094,7 +2790,7 @@ mod tests {
         let (mut s, _dir) = recent_session("recent-remove-exact");
         // 尾斜杠 / 子目录 / `~` 缩写都不是同一条
         for path in ["/a/", "/a/sub", "~/a", "/A"] {
-            apply_recent_op(&mut s, RecentOp::Remove { path: path.into() }).unwrap();
+            apply_recent_op_t(&mut s, RecentOp::Remove { path: path.into() }).unwrap();
         }
         assert_eq!(s.config.dir_sessions.len(), 2, "四条都不该命中");
         assert_eq!(s.config.last_directory.as_deref(), Some("/a"));
@@ -2103,7 +2799,7 @@ mod tests {
     #[test]
     fn 最近命令_清空两份都清且派生表为空() {
         let (mut s, dir) = recent_session("recent-clear");
-        apply_recent_op(&mut s, RecentOp::Clear).unwrap();
+        apply_recent_op_t(&mut s, RecentOp::Clear).unwrap();
         assert!(s.config.dir_sessions.is_empty());
         assert_eq!(s.config.last_directory, None, "清空连「上次打开」一起清");
         assert!(recent_dirs(&s).is_empty(), "⭐ 派生表必须真的空（否则那一行会原地复活）");
@@ -2114,7 +2810,7 @@ mod tests {
     fn 最近命令_清空已空的表不写盘() {
         let dir = tmp_dir("recent-clear-empty");
         let mut s = session(dir.join("config.json"));
-        apply_recent_op(&mut s, RecentOp::Clear).unwrap();
+        apply_recent_op_t(&mut s, RecentOp::Clear).unwrap();
         assert!(!dir.join("config.json").exists(), "本来就空 ⇒ 没有变化 ⇒ 不写");
     }
 
@@ -2126,10 +2822,237 @@ mod tests {
         std::fs::write(&blocker, "x").unwrap();
         s.config_path = blocker.join("config.json");
 
-        let err = apply_recent_op(&mut s, RecentOp::Clear).expect_err("写盘失败必须报错");
+        let err = apply_recent_op_t(&mut s, RecentOp::Clear).expect_err("写盘失败必须报错");
         assert!(matches!(err, Denied::Io { .. }), "写盘失败归 Io：{err:?}");
         assert_eq!(s.config.dir_sessions.len(), 2, "⛔ 内存不许提前提交");
         assert_eq!(s.config.last_directory.as_deref(), Some("/a"));
         assert_eq!(recent_dirs(&s).len(), 2);
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // ⭐ `design/0071` §5（阶段 4）：多窗口 —— 会话表 / 待导航 / 字面成员检查
+    //    ⚠️ 这三条都**不碰 GUI**（不建窗、不碰 AppKit），只钉内存里的结构。
+    // ─────────────────────────────────────────────────────────────
+
+    #[test]
+    fn 多窗口_新窗口是空会话且没有授权() {
+        let dir = tmp_dir("windows-blank");
+        let main = session(dir.join("config.json"));
+        let state = AppState::new(main);
+
+        let label = state.next_window_label();
+        assert_eq!(label, "w-1", "⛔ 新窗口的 label 从 w-1 起（`w-*` 才匹配 capabilities）");
+        let blank = Session::blank(state.config(), dir.join("config.json"));
+        // ⭐ Q40：授权**窗口私有**，新窗口一个字节都不继承。
+        assert!(blank.grants.roots().is_empty());
+        assert!(blank.grants.files().is_empty());
+        assert!(blank.current_document.is_none());
+        assert!(blank.watch.is_none());
+        assert!(blank.pending_navigation.is_none());
+        // ⭐ `design/0081` §2.1 ②：空会话 ⇒ `Mode::Empty` ⇒ 前端启动尾段走
+        //    `showDocEmptyFn(openHint)` ⇒ 新窗口落在**导航页**（用户 2026-11-15 第 2 条）。
+        //    ⚠️ 这条断言就是"新窗口默认打开导航页"的可回归证据：⛔ 别让它被顺手改成
+        //    `Directory`（那样新窗口会去画一棵空树，导航页就不出现了）。
+        assert_eq!(blank.mode(), Mode::Empty);
+        state.insert_window(&label, blank);
+        assert_eq!(state.windows().len(), 2, "两个桶：main + w-1");
+
+        let again = state.next_window_label();
+        assert_eq!(again, "w-2", "序号只增不复用");
+        assert!(state.remove_window(&label).is_some(), "关窗要把桶交还调用方");
+        assert!(state.remove_window(&label).is_none(), "重复回收是 None，⛔ 不是 panic");
+        assert_eq!(state.windows().len(), 1);
+    }
+
+    #[test]
+    fn 多窗口_待导航取走即清空且不串窗口() {
+        let dir = tmp_dir("windows-pending");
+        let state = AppState::new(session(dir.join("config.json")));
+        let mut blank = Session::blank(state.config(), dir.join("config.json"));
+        blank.pending_navigation = Some(PendingNavigation {
+            kind: "recent".to_string(),
+            value: "/notes".to_string(),
+        });
+        state.insert_window("w-1", blank);
+        // ⭐ 主窗口也塞一条**不同的**待导航：只断言"main 是空的"等于没测跨窗口
+        //    ——它本来就空。必须让两条同时存在，才能证明取一条不动另一条。
+        state.with("main", |s| {
+            s.pending_navigation = Some(PendingNavigation {
+                kind: "favorite".to_string(),
+                value: "/a.md".to_string(),
+            })
+        });
+
+        // ⚠️ 走**命令的实现体**（`take_navigation_for`），⛔ 不自己写一遍 `take()`：
+        //    变异实测过——把命令体改成 `clone()`（不取走），自写的判据照样绿。
+        let first = take_navigation_for(&state, "w-1");
+        assert_eq!(
+            first.map(|n| (n.kind, n.value)),
+            Some(("recent".to_string(), "/notes".to_string()))
+        );
+        assert!(
+            take_navigation_for(&state, "w-1").is_none(),
+            "⚠️ 取走即清空：一个窗口只执行一次导航"
+        );
+        assert_eq!(
+            state.with("main", |s| s
+                .pending_navigation
+                .as_ref()
+                .map(|n| (n.kind.clone(), n.value.clone()))),
+            Some(("favorite".to_string(), "/a.md".to_string())),
+            "⛔ 取 w-1 的那条不许动 main 的（两个窗口各一条，互不串）"
+        );
+    }
+
+    #[test]
+    fn 新窗口打开_只认后端记过的原串() {
+        let mut c = Config::default();
+        c.set_last_directory(Path::new("/tmp/notes"));
+        c.dir_sessions.insert(
+            "/tmp/other".to_string(),
+            DirSession { last_file: None, ..Default::default() },
+        );
+        c.favorites.push("/tmp/a.md".to_string());
+
+        assert!(recorded_navigation(&c, "recent", "/tmp/notes"), "last_directory 算一条");
+        assert!(recorded_navigation(&c, "recent", "/tmp/other"), "dir_sessions 的键算一条");
+        assert!(!recorded_navigation(&c, "recent", "/tmp/notes/"), "⛔ 原串比较，去/加尾斜杠不命中");
+        assert!(!recorded_navigation(&c, "recent", "/tmp/anywhere"), "没记过的目录不命中");
+
+        assert!(recorded_navigation(&c, "favorite", "/tmp/a.md"));
+        assert!(!recorded_navigation(&c, "favorite", "/tmp/A.md"), "⛔ 大小写不是同一份记录");
+        assert!(!recorded_navigation(&c, "favorite", "a.md"), "⛔ 相对路径不命中");
+
+        assert!(!recorded_navigation(&c, "", "/tmp/a.md"), "未知 kind 一律不命中");
+        assert!(!recorded_navigation(&c, "recent", ""), "空串不命中");
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // ⭐ `design/0071` §5.2：`open_in_new_window` 的**产品序列**（检查 → 插桶 → 建窗 → 回滚）。
+    //    ⚠️ 建窗动作注入进来，因为 `create_window` 要 `AppHandle`；序列本身跑的是产品那一份。
+    //    ⛔ 这里不建真窗、不碰 AppKit。
+    // ─────────────────────────────────────────────────────────────
+
+    #[test]
+    fn 新窗口打开_建窗成功之后桶带待导航且不继承授权() {
+        let dir = tmp_dir("windows-open-ok");
+        let mut s = session(dir.join("config.json"));
+        s.config.favorites.push("/tmp/a.md".to_string());
+        // 主窗口先有一份授权，才能证明新窗口**没继承**它（`Q40` / `INV-OPEN-02`）。
+        s.grants.authorize_root(&dir).unwrap();
+        let state = AppState::new(s);
+
+        let mut asked: Option<String> = None;
+        let out = open_in_new_window_with(&state, "favorite", "/tmp/a.md", |label| {
+            asked = Some(label.to_string());
+            Ok(())
+        });
+        assert!(out.is_ok(), "建窗成功 ⇒ Ok：{out:?}");
+        let label = asked.expect("create 必须被调用一次，且拿到的就是插桶用的那个 label");
+        assert_eq!(label, "w-1");
+
+        let (kind, value, roots, files, doc) = state.with(&label, |w| {
+            (
+                w.pending_navigation.as_ref().map(|n| n.kind.clone()),
+                w.pending_navigation.as_ref().map(|n| n.value.clone()),
+                w.grants.roots().len(),
+                w.grants.files().len(),
+                w.current_document.is_some(),
+            )
+        });
+        assert_eq!(kind.as_deref(), Some("favorite"), "新窗口要知道自己该打开哪一条");
+        assert_eq!(value.as_deref(), Some("/tmp/a.md"));
+        assert_eq!((roots, files, doc), (0, 0, false), "⛔ 新窗口不继承授权/正文（`Q40`）");
+        assert_eq!(state.windows().len(), 2);
+    }
+
+    #[test]
+    fn 新窗口打开_建窗失败要把那个桶回滚掉() {
+        let dir = tmp_dir("windows-open-rollback");
+        let mut s = session(dir.join("config.json"));
+        s.config.favorites.push("/tmp/a.md".to_string());
+        let state = AppState::new(s);
+
+        let out = open_in_new_window_with(&state, "favorite", "/tmp/a.md", |_| {
+            Err("建窗失败".to_string())
+        });
+        assert_eq!(out.unwrap_err(), "建窗失败", "错误要原样交给前端");
+        assert_eq!(state.windows().len(), 1, "⛔ 失败不许留一个永远没有页面的桶");
+        assert!(
+            !state.windows().iter().any(|(l, _)| l == "w-1"),
+            "被回滚的正是刚才插进去的那个 label"
+        );
+        // ⚠️ label 计数器**不回卷**（序号只增不复用）：下一条仍然拿 `w-2`。
+        assert_eq!(state.next_window_label(), "w-2");
+    }
+
+    #[test]
+    fn 新窗口打开_没记录过的目标不建窗也不占序号() {
+        let dir = tmp_dir("windows-open-unrecorded");
+        let mut s = session(dir.join("config.json"));
+        s.config.favorites.push("/tmp/a.md".to_string());
+        let state = AppState::new(s);
+
+        let mut called = false;
+        let out = open_in_new_window_with(&state, "favorite", "/tmp/evil.md", |_| {
+            called = true;
+            Ok(())
+        });
+        assert!(out.is_err(), "没记录过的目标必须拒");
+        assert!(!called, "⛔ 检查不过就不许建窗（更不许先建后拒）");
+        assert_eq!(state.windows().len(), 1, "一个桶都不许多");
+        assert_eq!(state.next_window_label(), "w-1", "没走到插桶，序号不消耗");
+    }
+
+    #[test]
+    fn 多窗口_关掉落点窗口之后改指还活着的窗口() {
+        let dir = tmp_dir("windows-repoint");
+        let state = AppState::new(session(dir.join("config.json")));
+        state.insert_window("w-1", Session::blank(state.config(), dir.join("config.json")));
+
+        // ① 关掉的**不是**落点 ⇒ 一个字节都不动。
+        state.set_active("w-1");
+        state.repoint_active("main");
+        assert_eq!(state.active_label(), "w-1", "⛔ 关别的窗口不许改落点");
+
+        // ② 关掉的**正是**落点 ⇒ 退到还活着的主窗口。
+        assert!(state.remove_window("w-1").is_some());
+        state.repoint_active("w-1");
+        assert_eq!(
+            state.active_label(),
+            "main",
+            "⚠️ 落点停在已关的窗口上 ⇒ emit_to 一个无主 label，菜单点了没反应"
+        );
+
+        // ③ 主窗口先没、只剩 `w-2` ⇒ 退到剩下的那个（⛔ 不是硬编码 `main`）。
+        state.insert_window("w-2", Session::blank(state.config(), dir.join("config.json")));
+        state.set_active("w-2");
+        assert!(state.remove_window("main").is_some());
+        state.repoint_active("main");
+        assert_eq!(state.active_label(), "w-2");
+    }
+
+    #[test]
+    fn 多窗口_一次提交把所有窗口的副本拉齐且仍是同一个落点() {
+        let dir = tmp_dir("windows-publish");
+        let state = AppState::new(session(dir.join("config.json")));
+        state.insert_window("w-1", Session::blank(state.config(), dir.join("config.json")));
+
+        let (applied, written) = state.commit(|c| {
+            c.set_sidebar_width(321.0);
+            c.sidebar_width_or_default()
+        });
+        assert_eq!(applied, 321.0);
+        assert!(written.is_ok(), "临时目录里应当写得下去");
+        // ⭐ `INV-OPEN-07`：两个窗口读到的都是**新值**，且磁盘上只有一份。
+        for label in ["main", "w-1"] {
+            assert_eq!(
+                state.with(label, |s| s.config.sidebar_width_or_default()),
+                321.0,
+                "窗口 {label} 的副本没跟上"
+            );
+        }
+        let disk = crate::config::Config::load(&dir.join("config.json"));
+        assert_eq!(disk.sidebar_width_or_default(), 321.0);
     }
 }

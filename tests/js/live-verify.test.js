@@ -64,8 +64,10 @@ const TABLE_CELLS = [[0, [[1, 1, 3, 1], [1, 4, 6, 1], [3, 1, 2, 1], [3, 3, 4, 1]
  * @param {function} [o.mountFails] `(payload, n) -> boolean`：让某一次挂载抛错。
  * @param {function} [o.saveGate] `(第几次写盘) -> Promise|null`：手工控制"写盘在途"那段
  *   （2026-10-29 复评 P1-2：写盘期间还能提交/打字，正是丢稿的窗口）。
+ * @param {Array} [o.taskItems] 块 0 的任务项五元组（`[line, from, to, checked, writable]`），
+ *   六入口判据里"任务打勾"那条要用（`design/0051`）。
  */
-function harness(o) {
+function harness(o, controller = C) {
   const opt = o || {};
   const text0 = opt.text === undefined ? TABLE : opt.text;
   const state = {
@@ -92,12 +94,14 @@ function harness(o) {
       block_kinds: KINDS,
       blocks: opt.blocksFor ? opt.blocksFor(txt) : TABLE_BLOCKS,
       table_cells: opt.tableCells === undefined ? TABLE_CELLS : opt.tableCells,
+      // ⭐ 任务项区间表（`design/0051`）：六入口判据要用打勾那条路。
+      task_items: opt.taskItems === undefined ? [] : [[0, opt.taskItems]],
     };
   }
   state.payload = payloadFor(text0);
   state.payloadFor = payloadFor;
 
-  const ctrl = C.createController({
+  const ctrl = controller.createController({
     t: t,
     report: function (m) {
       state.reports.push(String(m));
@@ -196,6 +200,10 @@ function harness(o) {
     },
     cellNodeOf: function (blockIndex, flat) {
       return { index: blockIndex, flat: flat, gen: state.mounts.length };
+    },
+    // ⭐ `⌘↵` 新起一段的临时宿主（`design/0047`）：插入那一步失败时由控制器自己摘掉。
+    pendingHost: function (prev) {
+      return { pendingFor: prev, parentNode: null };
     },
     heightOf: function () {
       return 100;
@@ -501,7 +509,11 @@ test('⭐ 退出时校验被拒 ⇒ 视图**活着**、输入还在、授权没�
   h.type('X');
   const left = await h.ctrl.leave({});
 
-  assert.deepStrictEqual(left, { ok: false, committed: false, failed: true, why: 'table_changed' });
+  assert.deepStrictEqual(left, {
+    ok: false, committed: false, failed: true, why: 'table_changed',
+    // ⭐ `design/0058` §2.2：失败时视图里**还有没提交的字**，调用方必须读得出来。
+    pending: true,
+  });
   assert.strictEqual(h.state.views[0].destroyed, undefined, '⛔ 不许销毁视图');
   assert.deepStrictEqual(h.state.views[0].lines, ['X'], '用户那份输入还在');
   assert.strictEqual(h.ctrl.state(), 'editing', '仍在编辑态');
@@ -569,12 +581,12 @@ test('⭐ 超字节上限 ⇒ 报的是 KB，⛔ 不说「太大（1 行）」',
 //    `commitCell` 永远记得填 ⇒ 外部行为**无法**构造出"漏填"这一态（那正是缺陷的特征：
 //    只有新加一类对象时才发生）。⇒ 判据落在源码上，并靠变异证明它在承重。
 
-test('⭐⭐ `publish()`：声明了 `structure` 的对象⛔ 不许不带校验就发布', function () {
+test('⭐⭐ `runTransaction()`：声明了 `structure` 的对象⛔ 不许不带校验就发布', function () {
   const fs = require('node:fs');
   const path = require('node:path');
   const code = fs.readFileSync(path.join(__dirname, '..', '..', 'src/live/index.js'), 'utf8');
-  const at = code.indexOf('async function publish(');
-  assert.ok(at >= 0, '⛔ 找不到 `publish(`');
+  const at = code.indexOf('async function runTransaction(');
+  assert.ok(at >= 0, '⛔ 找不到 `runTransaction(`');
   const head = code.slice(at, code.indexOf('// —— ① 造候选', at));
   assert.ok(head.indexOf('LIVE.objects.policyOf(') >= 0,
     '⛔ `publish()` 里没有按策略表判"这一类对象要不要结构证据"');
@@ -706,7 +718,7 @@ test('⭐⭐ P1-3：三轮提交期间一直在打字 ⇒ `leave()` 如实失败
     rels[round]();
   }
   const left = await leaving;
-  assert.deepStrictEqual(left, { ok: false, committed: true, failed: true, why: 'rounds' },
+  assert.deepStrictEqual(left, { ok: false, committed: true, failed: true, why: 'rounds', pending: true },
     '⛔ 预算耗尽但还脏 ⇒ 必须报失败（旧写法报 `failed:false`，然后销毁唯一那份输入）');
   assert.strictEqual(h.ctrl.state(), 'editing', '仍在编辑态');
   assert.strictEqual(h.state.views[0].destroyed, undefined, '⛔ 不许销毁视图');
@@ -763,4 +775,433 @@ test('⭐⭐ P2-4：发布失败之后**重试成功** ⇒ 毒标记解除，`sa
   assert.strictEqual(await h.ctrl.save(), true);
   assert.strictEqual(h.state.saves.length, 1);
   assert.strictEqual(h.state.saves[0].text, '|h1|h2|\n|---|---|\n|X|b|');
+});
+
+// ── ⑩ 六类入口复用**同一组**失败判据（`design/0059` B 的验收）───────────────
+//
+// ⚠️ 为什么这一节要逐入口跑一遍：统一入口的收益不是"少写了几行"，而是
+//    **六条路在失败时表现一致**——全文回到发起前、撤销栈不多不少、磁盘一个字节不动、
+//    用户那份输入还在、保存拒绝。旧实现里这五条是各写各的（任务打勾那条根本什么都不做）。
+// ⚠️ 判据用**真实内容/历史/身份**比，⛔ 不比"栈深度"或"调了几次函数"。
+
+/** 让**第 n 次**挂载抛错（其余照常）。 */
+function failMountAt(n) {
+  return function (p, k) {
+    void p;
+    return k === n;
+  };
+}
+
+test('⭐⭐ 六入口·块编辑：发布挂载失败 ⇒ 全文/栈/磁盘原状，保存拒绝', async function () {
+  const h = harness({
+    text: 'A\n\nC',
+    blocksFor: function () { return [[0, 1, 1, 1], [0, 3, 3, 1]]; },
+    tableCells: [],
+    mountFails: failMountAt(1),
+  });
+  await h.ctrl.begin({ index: 0, block: h.block(0), el: {} });
+  h.type('Z');
+  const out = await h.ctrl.commit();
+  assert.strictEqual(out.failed, true);
+  assert.deepStrictEqual(h.ctrl.lines(), ['A', '', 'C'], '真值必须回到发起前');
+  assert.strictEqual(h.ctrl.stackSize(), 0, '⛔ 留下一条"没上过屏"的撤销条目');
+  assert.strictEqual(await h.ctrl.save(), false, '⛔ 保存报成功');
+  assert.strictEqual(h.state.saves.length, 0, '⛔ 磁盘一个字节都不许动');
+  assert.strictEqual(h.state.views[0].destroyed, undefined, '用户那份输入还在');
+});
+
+test('⭐⭐ 六入口·格编辑：发布挂载失败 ⇒ 全文/区间/栈原状，重试仍能落到正确位置', async function () {
+  const h = harness({ mountFails: failMountAt(1) });
+  await h.enterCell(2);
+  h.type('LONGER');
+  const out = await h.ctrl.commit();
+  assert.strictEqual(out.failed, true);
+  assert.deepStrictEqual(h.ctrl.lines(), TABLE.split('\n'), '真值回到发起前');
+  assert.strictEqual(h.ctrl.stackSize(), 0);
+  assert.strictEqual(await h.ctrl.save(), false);
+  assert.strictEqual(h.state.saves.length, 0);
+});
+
+test('⭐⭐ 六入口·撤销：发布挂载失败 ⇒ 真值与**两侧栈**原样（⛔ 半退）', async function () {
+  const h = harness({
+    text: 'A\n\nC',
+    blocksFor: function () { return [[0, 1, 1, 1], [0, 3, 3, 1]]; },
+    tableCells: [],
+    mountFails: failMountAt(2),
+  });
+  await h.ctrl.begin({ index: 0, block: h.block(0), el: {} });
+  h.type('Q');
+  await h.ctrl.leave({});
+  assert.strictEqual(h.ctrl.fullText(), 'Q\n\nC');
+
+  assert.strictEqual(await h.ctrl.undo(), false, '发布失败 ⇒ 撤销不许报成功');
+  assert.strictEqual(h.ctrl.fullText(), 'Q\n\nC', '真值必须还是提交后那份');
+  assert.strictEqual(h.ctrl.canUndo(), true, '条目必须回到撤销栈');
+  assert.strictEqual(h.ctrl.canRedo(), false, '⛔ 留在重做栈里');
+  assert.strictEqual(await h.ctrl.save(), false, '⛔ 保存报成功');
+  assert.strictEqual(h.state.saves.length, 0);
+});
+
+test('⭐⭐ 六入口·重做：发布挂载失败 ⇒ 停在撤销之后那份，两侧栈原样', async function () {
+  const h = harness({
+    text: 'A\n\nC',
+    blocksFor: function () { return [[0, 1, 1, 1], [0, 3, 3, 1]]; },
+    tableCells: [],
+    mountFails: failMountAt(3),
+  });
+  await h.ctrl.begin({ index: 0, block: h.block(0), el: {} });
+  h.type('Q');
+  await h.ctrl.leave({});
+  assert.strictEqual(await h.ctrl.undo(), true);
+
+  assert.strictEqual(await h.ctrl.redo(), false);
+  assert.strictEqual(h.ctrl.fullText(), 'A\n\nC', '仍是撤销之后那份');
+  assert.strictEqual(h.ctrl.canRedo(), true);
+  assert.strictEqual(h.ctrl.canUndo(), false, '⛔ 留在撤销栈里');
+  assert.strictEqual(h.state.saves.length, 0);
+});
+
+test('⭐⭐ 六入口·任务打勾：发布挂载失败 ⇒ 勾没翻、栈空、磁盘不动', async function () {
+  const h = harness({
+    text: '- [ ] a\n',
+    blocksFor: function () { return [[5, 1, 1, 1]]; },
+    tableCells: [],
+    taskItems: [[1, 3, 4, 0, 1]],
+    mountFails: failMountAt(1),
+  });
+  const out = await h.ctrl.toggleTask({ index: 0, flat: 0, domCount: 1, domChecked: false });
+  assert.strictEqual(out.ok, false, '挂载失败必须如实失败');
+  assert.strictEqual(h.ctrl.fullText(), '- [ ] a\n', '⛔ 真值里留下一个没上屏的勾');
+  assert.strictEqual(h.ctrl.stackSize(), 0);
+  assert.strictEqual(h.state.saves.length, 0);
+});
+
+test('⭐⭐ 六入口·插入段落：发布挂载失败 ⇒ 不多出三行、栈空、保存拒绝', async function () {
+  const h = harness({
+    text: 'A\n\nC',
+    blocksFor: function () { return [[0, 1, 1, 1], [0, 3, 3, 1]]; },
+    tableCells: [],
+    mountFails: failMountAt(1),
+  });
+  await h.ctrl.begin({ index: 0, block: h.block(0), el: {} });
+  assert.strictEqual(await h.ctrl.newParagraph(), false);
+  assert.deepStrictEqual(h.ctrl.lines(), ['A', '', 'C'], '⛔ 凭空多出空行');
+  assert.strictEqual(h.ctrl.stackSize(), 0);
+  assert.strictEqual(await h.ctrl.save(), false);
+  assert.strictEqual(h.state.saves.length, 0);
+});
+
+test('⭐⭐ 六入口·模式切换：复用提交/会话交接，⛔ 伪造文本历史', async function () {
+  const h = harness({
+    text: 'A\n\nC',
+    blocksFor: function () { return [[0, 1, 1, 1], [0, 3, 3, 1]]; },
+    tableCells: [],
+  });
+  await h.ctrl.begin({ index: 0, block: h.block(0), el: {} });
+  const left = await h.ctrl.leave({ reason: 'mode-switch' });
+  assert.deepStrictEqual(left, { ok: true, committed: false });
+  assert.deepStrictEqual(h.ctrl.lines(), ['A', '', 'C']);
+  assert.strictEqual(h.ctrl.stackSize(), 0, '没改任何字 ⇒ ⛔ 压撤销条目');
+  assert.strictEqual(h.state.renders.length, 0, '⛔ 为"切模式"渲染/提交一次');
+  assert.strictEqual(h.state.saves.length, 0);
+});
+
+// ── 历史 Bug 组合补测（0040/0047、旧回包污染新会话）─────────────────────
+
+test('历史0040：br大小写/代码span/转义管道，实际控制器无操作退出不发布不写盘', { timeout: 2000 }, async function () {
+  for (const [raw, view] of [
+    ['a<br />b', 'a\nb'], ['a<BR>b', 'a\nb'],
+    ['`<br>`', '`<br>`'], ['a\\|b', 'a|b'],
+  ]) {
+    const text = '|h1|h2|\n|---|---|\n|' + raw + '|邻😀|';
+    const from = 1;
+    const to = from + raw.length;
+    const h = harness({ text, tableCells: [[0, [
+      [1, 1, 3, 1], [1, 4, 6, 1], [3, from, to, 1], [3, to + 1, to + 4, 1],
+    ]]] });
+    assert.strictEqual((await h.enterCell(2)).ok, true, raw);
+    assert.strictEqual(h.state.views[0].lines.join('\n'), view, raw);
+    assert.strictEqual((await h.ctrl.leave({})).ok, true, raw);
+    assert.strictEqual(h.ctrl.fullText(), text, '无操作不能规范化原源码：' + raw);
+    assert.strictEqual(h.ctrl.stackSize(), 0);
+    assert.strictEqual(h.state.renders.length, 0);
+    assert.strictEqual(h.state.saves.length, 0);
+    assert.strictEqual(h.state.views[0].destroyed, true);
+    assert.strictEqual(h.ctrl.isDirty(), false);
+  }
+});
+
+test('历史0047：不可表示输入阻止退出和保存，修正输入后可恢复且邻格不变', { timeout: 2000 }, async function () {
+  const text = '|h1|h2|\n|---|---|\n|a\\|b|邻😀|';
+  const h = harness({ text, tableCells: [[0, [
+    [1, 1, 3, 1], [1, 4, 6, 1], [3, 1, 5, 1], [3, 6, 9, 1],
+  ]]] });
+  await h.enterCell(2);
+  h.type('a\\|b');
+  assert.strictEqual((await h.ctrl.leave({})).ok, false);
+  assert.strictEqual(await h.ctrl.save(), false);
+  assert.strictEqual(h.ctrl.isDirty(), true);
+  assert.strictEqual(h.state.views[0].destroyed, undefined, '拒绝后唯一输入视图必须保留');
+  assert.strictEqual(h.state.views[0].lines.join('\n'), 'a\\|b');
+  assert.strictEqual(h.ctrl.fullText(), text);
+  assert.strictEqual(h.state.saves.length, 0);
+  h.type('可保存');
+  assert.strictEqual((await h.ctrl.leave({})).ok, true);
+  assert.strictEqual(await h.ctrl.save(), true);
+  assert.strictEqual(h.state.saves.at(-1).text, '|h1|h2|\n|---|---|\n|可保存|邻😀|');
+});
+
+for (const outcome of ['resolve', 'reject']) {
+  test('异步薄弱点：换文档/reset 后旧预览 ' + outcome + ' 不得复活旧编辑状态', { timeout: 2000 }, async function () {
+    /** @type {(v?:any)=>void} */
+    let finish = function () {};
+    let started;
+    const entered = new Promise(function (r) { started = r; });
+    const gate = new Promise(function (resolve, reject) {
+      finish = outcome === 'resolve' ? resolve : function () { reject(new Error('old render failed')); };
+    });
+    const h = harness({ renderGate: function () { started(); return gate; } });
+    await h.enterCell(2);
+    h.type('旧文档输入');
+    const pending = h.ctrl.commit();
+    await entered;
+    await h.ctrl.reset();
+    const clean = { state: h.ctrl.state(), text: h.ctrl.fullText(), mounts: h.state.mounts.length };
+    assert.strictEqual(clean.state, 'viewing');
+    assert.strictEqual(clean.text, null);
+    finish();
+    await pending;
+    assert.strictEqual(h.ctrl.state(), clean.state, '旧 catch/finally 不得恢复自己的 prev=editing');
+    assert.strictEqual(h.ctrl.fullText(), clean.text);
+    assert.strictEqual(h.state.mounts.length, clean.mounts);
+    assert.strictEqual(h.state.saves.length, 0);
+    assert.strictEqual(h.state.views[0].destroyed, true);
+  });
+}
+
+// ── 根因4 的补充角度：旧回包不能把状态套到**已经换过的**文档上 ──────────────
+// ⚠️ 上面两条只证明 reset 之后状态没被复活；那里新旧两份都叫 'editing' 时看不出来。
+//    这两条把新文档放在**不同状态**上，并让旧回包与新事务同时在途。
+
+for (const outcome of ['resolve', 'reject']) {
+  test('根因4 补充：reset 后打开另一份文档，旧预览 ' + outcome + ' 不得把它切成 editing', { timeout: 2000 }, async function () {
+    /** @type {(v?:any)=>void} */
+    let finish = function () {};
+    let started;
+    const entered = new Promise(function (r) { started = r; });
+    const gate = new Promise(function (resolve, reject) {
+      finish = outcome === 'resolve' ? resolve : function () { reject(new Error('old render failed')); };
+    });
+    const h = harness({ renderGate: function () { started(); return gate; } });
+    await h.enterCell(2);
+    h.type('旧文档输入');
+    const pending = h.ctrl.commit();
+    await entered;
+    await h.ctrl.reset();
+
+    // 真实调用方换文档的顺序：`reset()` → `notePayload(新文档)` → 按需 `begin`。
+    h.state.text = '|x1|x2|\n|---|---|\n|m|n|';
+    h.ctrl.notePayload(h.state.payloadFor(h.state.text));
+    const fresh = {
+      state: h.ctrl.state(),
+      blocks: h.ctrl.blocks().map(function (b) { return b.index + ':' + b.startLine + '-' + b.endLine; }),
+      mounts: h.state.mounts.length,
+    };
+    assert.strictEqual(fresh.state, 'viewing', '前提：还没有人开始编辑新文档');
+
+    finish();
+    await pending;
+    assert.strictEqual(h.ctrl.state(), fresh.state,
+      '旧事务的 prev=editing ⛔ 不能套到还没开始编辑的新文档上');
+    assert.deepStrictEqual(
+      h.ctrl.blocks().map(function (b) { return b.index + ':' + b.startLine + '-' + b.endLine; }),
+      fresh.blocks,
+      '新文档的块表不得被旧事务改动'
+    );
+    assert.strictEqual(h.ctrl.fullText(), null, '新文档还没有会话，⛔ 凭空出现全文');
+    assert.strictEqual(h.state.mounts.length, fresh.mounts, '⛔ 旧回包再挂载一次');
+    assert.strictEqual(h.state.saves.length, 0);
+  });
+}
+
+test('根因4 补充：新文档自己有一次提交在途时，旧回包不得把它打回 editing', { timeout: 2000 }, async function () {
+  /** @returns {{promise:Promise<any>, resolve:function, reject:function}} */
+  function deferred() {
+    /** @type {any} */
+    const d = {};
+    d.promise = new Promise(function (resolve, reject) {
+      d.resolve = resolve;
+      d.reject = reject;
+    });
+    return d;
+  }
+  const gates = [deferred(), deferred()];
+  /** @type {Array<(v?:any)=>void>} */
+  const started = [];
+  const entered = gates.map(function (g, i) {
+    return new Promise(function (r) { started[i] = r; });
+  });
+  const h = harness({
+    renderGate: function (n) {
+      if (started[n - 1]) started[n - 1]();
+      return gates[n - 1] ? gates[n - 1].promise : null;
+    },
+  });
+  await h.enterCell(2);
+  h.type('旧');
+  const first = h.ctrl.commit();
+  await entered[0];
+
+  await h.ctrl.reset();
+  h.state.text = '|x1|x2|\n|---|---|\n|m|n|';
+  h.ctrl.notePayload(h.state.payloadFor(h.state.text));
+  await h.enterCell(2);
+  h.type('Q');
+  const second = h.ctrl.commit();
+  await entered[1];
+  assert.strictEqual(h.ctrl.state(), 'committing', '前提：新提交在途');
+
+  gates[0].resolve({}); // 旧回包（内容无所谓：reset 已让 renderSeq 前进 ⇒ 必判 stale）
+  await first;
+  assert.strictEqual(h.ctrl.state(), 'committing',
+    '旧事务 ⛔ 不许把新会话里在途的那一提交打回 editing');
+  assert.strictEqual(h.state.mounts.length, 0, '旧回包 ⛔ 挂载（它连发布段都进不去）');
+
+  gates[1].resolve({});
+  const out = await second;
+  assert.strictEqual(out.committed, true, '新提交必须照常发布');
+  assert.strictEqual(h.ctrl.fullText(), '|x1|x2|\n|---|---|\n|Q|n|');
+  assert.strictEqual(h.state.mounts.length, 1, '全文只该有新文档那一次挂载（⛔ 旧包额外挂一次）');
+});
+
+// 扩充：每种提交调用方都必须遵守回包身份与失败恢复协议。
+for (const [field, value] of [
+  ['real_path', '/tmp/another.md'], ['gen', 99], ['doc_seq', 99], ['line_count', 99],
+]) {
+  for (const action of ['commit', 'leave', 'save']) {
+    test('回包身份矩阵 ' + field + '/' + action, { timeout: 2000 }, async function () {
+      const h = harness();
+      const original = h.state.payloadFor;
+      h.state.payloadFor = function (text) {
+        const p = original(text);
+        p[field] = value;
+        return p;
+      };
+      await h.enterCell(2);
+      h.type('未发布😀');
+      const out = action === 'leave' ? await h.ctrl.leave({}) : await h.ctrl[action]();
+      if (action === 'save') assert.strictEqual(out, false);
+      else assert.ok(out.failed === true || out.rejected === true || out.ok === false);
+      assert.strictEqual(h.ctrl.fullText(), TABLE);
+      assert.strictEqual(h.ctrl.stackSize(), 0);
+      assert.strictEqual(h.ctrl.isDirty(), true);
+      assert.strictEqual(h.ctrl.state(), 'editing');
+      assert.strictEqual(h.state.views[0].destroyed, undefined);
+      assert.strictEqual(h.state.views[0].lines.join('\n'), '未发布😀');
+      assert.strictEqual(h.state.mounts.length, 0);
+      assert.strictEqual(h.state.saves.length, 0);
+    });
+  }
+}
+
+for (const [name, badOptions] of [
+  ['缺校验', { dropVerify: true }],
+  ['token错配', { replyToken: function () { return 'other-transaction'; } }],
+  ['结构拒绝', { verifyFn: function () { return { ok: false, reason: 'table_changed' }; } }],
+  ['渲染异常', { renderGate: function () { return Promise.reject(new Error('render failed')); } }],
+]) {
+  for (const action of ['leave', 'save']) {
+    test('拒绝后重试矩阵 ' + name + '/' + action, { timeout: 2000 }, async function () {
+      /** @type {any} */
+      const opt = { .../** @type {any} */ (badOptions) };
+      const h = harness(opt);
+      await h.enterCell(2);
+      h.type('拒绝候选');
+      const out = action === 'leave' ? await h.ctrl.leave({}) : await h.ctrl.save();
+      if (action === 'save') assert.strictEqual(out, false);
+      else assert.strictEqual(/** @type {any} */ (out).ok, false);
+      assert.strictEqual(h.ctrl.fullText(), TABLE);
+      assert.strictEqual(h.ctrl.stackSize(), 0);
+      assert.strictEqual(h.ctrl.isDirty(), true);
+      assert.strictEqual(h.state.saves.length, 0);
+      assert.strictEqual(h.state.views[0].destroyed, undefined);
+      opt.dropVerify = false;
+      opt.replyToken = null;
+      opt.verifyFn = null;
+      opt.renderGate = null;
+      h.type('恢复');
+      assert.strictEqual((await h.ctrl.leave({})).ok, true);
+      assert.strictEqual(h.ctrl.stackSize(), 1, '失败不能留下幽灵历史，成功只能压一条');
+      assert.strictEqual(await h.ctrl.save(), true);
+      assert.strictEqual(h.state.saves.length, 1);
+      assert.strictEqual(h.state.saves[0].text, '|h1|h2|\n|---|---|\n|恢复|b|');
+    });
+  }
+}
+
+for (const text of ['后续中文', '👩🏽‍💻', 'a|b']) {
+  for (const action of ['leave', 'save']) {
+    test('校验期间继续输入 ' + JSON.stringify(text) + '/' + action, { timeout: 2000 }, async function () {
+      /** @type {(v?:any)=>void} */
+      let release = function () {};
+      /** @type {(v?:any)=>void} */
+      let started = function () {};
+      const entered = new Promise(function (r) { started = r; });
+      const gate = new Promise(function (r) { release = r; });
+      const h = harness({ renderGate: function (n) {
+        if (n === 1) { started(); return gate; }
+        return null;
+      } });
+      await h.enterCell(2);
+      h.type('第一版');
+      const pending = action === 'leave' ? h.ctrl.leave({}) : h.ctrl.save();
+      await entered;
+      h.type(text);
+      release();
+      const out = await pending;
+      if (action === 'save') assert.strictEqual(out, true);
+      else assert.strictEqual(/** @type {any} */ (out).ok, true);
+      const expected = '|h1|h2|\n|---|---|\n|' + text.replace(/\|/g, '\\|') + '|b|';
+      assert.strictEqual(h.ctrl.fullText(), expected, '旧校验通过不能把后续输入标干净');
+      assert.strictEqual(h.state.views[0].lines.join('\n'), text);
+      if (action === 'save') {
+        assert.strictEqual(h.state.saves.length, 1);
+        assert.strictEqual(h.state.saves[0].text, expected);
+      } else assert.strictEqual(h.state.saves.length, 0);
+    });
+  }
+}
+
+test('控制器矩阵变异：去掉身份闸门，错误路径回包判据必红、合法回包负对照仍绿', { timeout: 2000 }, async function () {
+  const fs = require('node:fs');
+  const vm = require('node:vm');
+  const { createRequire } = require('node:module');
+  const file = require.resolve('../../src/live/index.js');
+  const src = fs.readFileSync(file, 'utf8');
+  const target = 'if (!acc.ok) {';
+  assert.strictEqual(src.split(target).length - 1, 1);
+  const box = { module: { exports: {} }, require: createRequire(file), console: console };
+  vm.runInNewContext(src.replace(target, 'if (false) {'), box);
+  const bad = /** @type {typeof C} */ (box.module.exports);
+  async function rejectsWrongPath(controller) {
+    const h = harness({}, controller);
+    const original = h.state.payloadFor;
+    h.state.payloadFor = function (text) {
+      const p = original(text);
+      p.real_path = '/tmp/wrong-document.md';
+      return p;
+    };
+    await h.enterCell(2);
+    h.type('不应发布');
+    await h.ctrl.commit();
+    assert.strictEqual(h.ctrl.fullText(), TABLE, '错误路径回包绝不能发布候选');
+    assert.strictEqual(h.state.mounts.length, 0);
+  }
+  await rejectsWrongPath(C);
+  await assert.rejects(function () { return rejectsWrongPath(bad); }, { code: 'ERR_ASSERTION' });
+  const control = harness({}, bad);
+  await control.enterCell(2);
+  control.type('合法');
+  assert.strictEqual((await control.ctrl.leave({})).ok, true);
+  assert.strictEqual(control.ctrl.fullText(), '|h1|h2|\n|---|---|\n|合法|b|');
 });

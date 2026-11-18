@@ -95,6 +95,10 @@ fn explicit(preference: &str) -> Option<Lang> {
 /// **纯函数**：`(偏好, 系统语言) → 生效语言`。
 ///
 /// ⚠️ 系统语言是**入参**（⛔ 不在里面去 spawn）⇒ 真值表可以逐格断言。
+/// ⚠️ **只给测试**：产品侧一律走 [`effective_with`]——那条路在显式档上
+/// **结构上不 spawn**（先看偏好、再去问系统），而这里要求系统语言**已经是**一个值。
+/// ⛔ 别让产品代码改用它（那会把"先问系统"变成必经步骤）。
+#[cfg(test)]
 pub fn resolve(preference: &str, system: Lang) -> Lang {
     explicit(preference).unwrap_or(system)
 }

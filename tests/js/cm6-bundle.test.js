@@ -266,6 +266,8 @@ test('historyKeymap 不吃掉任何应用快捷键（macOS 口径）', () => {
     'Cmd+=',
     'Cmd+-',
     'Cmd+0',
+    // ⭐ `design/0056`（2026-11-16）：回导航页 `⌘L` 也进转发白名单，一并查它没被 `historyKeymap` 吃掉。
+    'Cmd+L',
     'Cmd+S',
     'Cmd+E',
     'Shift+Cmd+E',
@@ -274,6 +276,8 @@ test('historyKeymap 不吃掉任何应用快捷键（macOS 口径）', () => {
     'Cmd+F',
     'Cmd+G',
     'Shift+Cmd+G',
+    // ⭐ `design/0075`：查找替换（`⌥⌘F`，`Owner::Web`）——它同样进转发白名单。
+    'Alt+Cmd+F',
   ];
   const 归一 = (s) =>
     s

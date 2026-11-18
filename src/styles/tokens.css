@@ -248,6 +248,10 @@
   /* ── 图表（`flowmaid` 色板的逐值对照，⛔ light 栏不许改）────────── */
   --reader-diag-surface:     #ffffff;
   --reader-diag-text:        #232840;
+  /* ⭐ `bugs/0073`：**强调填充上的深字**。light 下与 `text` 同值 ⇒ 观感与对比度
+     （4.51 / 5.53）一个字节都不变；dark/warm 的强调色被提亮，这个槽必须跟着换成深字，
+     否则就是「浅字压浅底」。⛔ 别把它并回 `text`。 */
+  --reader-diag-on-accent:   #0b0d12;
   --reader-diag-line:        #44507a;
   --reader-diag-line-soft:   #d5d9ec;
   --reader-diag-green-bg:    #e5f5ea;
@@ -256,6 +260,25 @@
   --reader-diag-indigo-line: #5b6dc0;
   --reader-diag-amber-bg:    #fcf2da;
   --reader-diag-amber-line:  #d99114;
+  /* ⭐ `bugs/0073` 同族：强调色**当文字色**时专用。`-line` 那批是给**填充**挑的中浅色，
+     13px 字压在白底上只有 2.6–4.4 : 1 ⇒ 每族另给一个 ≥4.6 : 1 的深一档。
+     ⚠️ 只换「文字」这一面，填充与描边仍是 `-line`（同为 `#33a35c` 的块不能因为
+     要当字就整块变深）。 */
+  --reader-diag-green-ink:   #2a854b;
+  --reader-diag-indigo-ink:  #5b6dc0;
+  --reader-diag-amber-ink:   #9f6a0f;
+  --reader-diag-rose-ink:    #b65384;
+  --reader-diag-teal-ink:    #158379;
+  --reader-diag-violet-ink:  #895cd5;
+  --reader-diag-coral-ink:   #bb564d;
+  --reader-diag-steel-ink:   #427aa3;
+  /* ⚠️ 下面四条是 `mermaid` 直传（`design/0060`）才出现的**引擎底色**：
+     0.33.0 的参与者/备注色板里还有 teal / violet / steel 三块浅底 ＋ 一块
+     便签黄。⛔ light 这一栏仍取引擎原值，与上面那三条同一条纪律。 */
+  --reader-diag-teal-bg:     #e4f5f4;
+  --reader-diag-violet-bg:   #f2ecfa;
+  --reader-diag-steel-bg:    #e7eef7;
+  --reader-diag-note-bg:     #fff8c5;
   --reader-diag-guide:       #aeb6d8;
   /* ⚠️ 下面五条是 `flowmaid` 的 **sequence 参与者盒色板**（`ACCENTS`，共 8 色、
      按参与者在图里的序号取模）。前三个已经落在上面（indigo/green/amber），
@@ -266,6 +289,19 @@
   --reader-diag-violet-line: #8a5cd6;
   --reader-diag-coral-line:  #d96459;
   --reader-diag-steel-line:  #4d8fbf;
+
+  /* ⚠️ 下面五条是 `design/0060` 实施期补齐的（2026-11-03，评审 P0-5）：
+     ① 子图/簇的**面板底与描边**（`#f7f8fd` / `#c9cfe8`）——原先没有对应槽，
+        直接落进"未知色值"⇒ 右下角是死白或死灰，深色主题下最刺眼；
+     ② 簇标题 / ER 类型栏的**次级墨色**（`#6a7086`）——它是文字，⛔ 不能借
+        引导线色（那是线，浅色主题下会淡到看不清）；
+     ③ journey 的两块**段落底**（rose / coral）——八色循环里原先缺两头。
+     ⛔ 这些值在 light 栏同样取引擎原值（与上面那几条同一条纪律）。 */
+  --reader-diag-panel:       #f7f8fd;
+  --reader-diag-panel-line:  #c9cfe8;
+  --reader-diag-ink-soft:    #6a7086;
+  --reader-diag-rose-bg:     #efd4e1;
+  --reader-diag-coral-bg:    #f5d7d4;
 
   /* ════════════════════════════════════════════════════════════════
    * 尺度层 · A. 界面外壳（`--ui-*`）
@@ -361,7 +397,14 @@
   --reader-gap-heading-after:  0.6;
 
   /* ── 5. 块级元素的内部几何（见 §2.1.7 的 A/B 两类规则）── */
-  --reader-code-padding: 1.3em 2.0em;  /* em → 天然跟随（基准：1.3em 2em）*/
+  /* ⭐ 2026-11-08（`bugs/0091`）：拆成 y / x 两个分量，供**引用块里的代码行**复用。
+     ⚠️ 引用块里的代码块在编辑态是逐行的 `.cm-line`（不是一整块 `pre`），给整行套
+        `--reader-code-padding` 会变成"每一行上下都有 1.3em" ⇒ 只能分别取上下与左右。
+     ⛔ `--reader-code-padding` 仍是**唯一**的复合写法，`typography.css` 与 `live.css`
+        都只引用变量，⛔ 不在这里或那里再写一遍 `1.3em 2.0em`。 */
+  --reader-code-pad-y: 1.3em;
+  --reader-code-pad-x: 2.0em;
+  --reader-code-padding: var(--reader-code-pad-y) var(--reader-code-pad-x);
   --reader-code-lh: 1.6;
   --reader-quote-lh: 1.45;             /* 引用块内行高比正文更紧（基准）*/
   --reader-list-indent: 2em;           /* ul/ol padding-left（基准）*/

@@ -103,7 +103,11 @@ function score(s) {
   // ④ 状态只有一个写入口；编辑态拒绝；进编辑态时复位
   const toggles = (s.js.match(/classList\.toggle\(\s*'chrome-hidden'/g) || []).length;
   if (toggles !== 1) bad.push('`chrome-hidden` 的 toggle 出现 ' + toggles + ' 次（应恰好 1 次：唯一写入口）');
-  if (!/if\s*\(on\s*&&\s*editing\)\s*return;/.test(s.js)) bad.push('setChromeHidden 没有"编辑态拒绝折叠"那条');
+  // ⚠️ 必须**落在 setChromeHidden 里**：`design/0079` 的 `setZen` 有一条同形守卫，
+  //    只按全文件 grep 的话，删掉这里这条它照样绿（两边都是"编辑态拒绝"）。
+  const chromeAt = s.js.indexOf('function setChromeHidden');
+  const chromeBlk = chromeAt >= 0 ? s.js.slice(chromeAt, chromeAt + 260) : '';
+  if (!/if\s*\(on\s*&&\s*editing\)\s*return;/.test(chromeBlk)) bad.push('setChromeHidden 没有"编辑态拒绝折叠"那条');
   if (!/document\.body\.classList\.add\('editing'\);[\s\S]{0,400}?setChromeHidden\(false\);/.test(s.js)) {
     bad.push('enterEdit 没有把顶栏收回来');
   }

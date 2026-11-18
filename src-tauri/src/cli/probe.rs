@@ -115,7 +115,7 @@ pub fn run(args: &ProbeArgs) -> i32 {
     let mut failed = 0usize;
     failed += step_1_positions(&source, args);
     failed += step_2_3_html_size(&source);
-    failed += step_4_fence_hash(&source);
+    failed += step_4_fence_hash(&source, args.file.is_none());
     failed += step_5_offset_conversion(&source, args);
     failed += step_6_heading_ids(&source, args);
 
@@ -293,28 +293,41 @@ fn step_2_3_html_size(src: &str) -> usize {
 // ───────────────────────────── 步骤 4 ─────────────────────────────
 
 /// 围栏里的 `#` 不能变成标题。
-fn step_4_fence_hash(src: &str) -> usize {
+///
+/// ⚠️ `is_sample` 区分两种输入（bugs/0292）：
+/// - **内置样例**：字面量（`这行看起来像标题` / `重复标题`）就是判据本身；
+/// - **真实文件**（`--file`）：同样的句子是**用户正文**，⛔ 不能当成"围栏漏判"，
+///   改按**结构**判断——任何标题的区间都不该落在围栏代码块的区间里。
+fn step_4_fence_hash(src: &str, is_sample: bool) -> usize {
     section("【4】代码围栏内的 `#` 不被误判为标题");
 
     let opts = ParseOpts::default();
-    let (headings, code_literals) = crate::document::parser::with_parsed(src, &opts, |root| {
-        let mut hs = Vec::new();
-        let mut codes = Vec::new();
-        for node in root.descendants() {
-            let data = node.data();
-            match &data.value {
-                comrak::nodes::NodeValue::Heading(h) => {
-                    hs.push((h.level, node.collect_text(), data.sourcepos.start.line))
+    let (headings, code_literals, code_spans) =
+        crate::document::parser::with_parsed(src, &opts, |root| {
+            let mut hs = Vec::new();
+            let mut codes = Vec::new();
+            let mut cspans = Vec::new();
+            for node in root.descendants() {
+                let data = node.data();
+                match &data.value {
+                    comrak::nodes::NodeValue::Heading(h) => hs.push((
+                        h.level,
+                        node.collect_text(),
+                        data.sourcepos.start.line,
+                        data.sourcepos,
+                    )),
+                    comrak::nodes::NodeValue::CodeBlock(cb) => {
+                        codes.push(cb.literal.clone());
+                        cspans.push(data.sourcepos);
+                    }
+                    _ => {}
                 }
-                comrak::nodes::NodeValue::CodeBlock(cb) => codes.push(cb.literal.clone()),
-                _ => {}
             }
-        }
-        (hs, codes)
-    });
+            (hs, codes, cspans)
+        });
 
     println!("  识别出的标题 {} 个：", headings.len());
-    for (lvl, text, line) in &headings {
+    for (lvl, text, line, _) in &headings {
         println!("    h{lvl}  L{line}  {text}");
     }
     println!("  识别出的围栏代码块 {} 个，其中字面量含 `#` 的有 {} 个",
@@ -322,23 +335,34 @@ fn step_4_fence_hash(src: &str) -> usize {
         code_literals.iter().filter(|c| c.contains('#')).count());
 
     let mut failures = Vec::new();
-    for (_, text, _) in &headings {
-        if text.contains("这行看起来像标题") {
-            failures.push("围栏里的 `# 这行看起来像标题` 变成了标题".to_string());
+    if is_sample {
+        for (_, text, _, _) in &headings {
+            if text.contains("这行看起来像标题") {
+                failures.push("围栏里的 `# 这行看起来像标题` 变成了标题".to_string());
+            }
         }
-    }
-    let has_fence_hash = code_literals.iter().any(|c| c.contains("# 这行看起来像标题"));
-    if !has_fence_hash && src.contains("# 这行看起来像标题") {
-        failures.push("围栏里的那行**没有**出现在 CodeBlock 字面量里（可能被别的规则吃掉了）".into());
-    }
-    // 行内代码里的 `#` 也不该造出标题
-    if headings.iter().any(|(_, t, _)| t.contains("也是井号")) {
-        failures.push("行内代码里的 `# 也是井号` 变成了标题".into());
-    }
+        let has_fence_hash = code_literals.iter().any(|c| c.contains("# 这行看起来像标题"));
+        if !has_fence_hash && src.contains("# 这行看起来像标题") {
+            failures.push("围栏里的那行**没有**出现在 CodeBlock 字面量里（可能被别的规则吃掉了）".into());
+        }
+        // 行内代码里的 `#` 也不该造出标题
+        if headings.iter().any(|(_, t, _, _)| t.contains("也是井号")) {
+            failures.push("行内代码里的 `# 也是井号` 变成了标题".into());
+        }
 
-    let has_dup = headings.iter().filter(|(_, t, _)| t == "重复标题").count() == 2;
-    if src.contains("## 重复标题") && !has_dup {
-        failures.push("两个 `## 重复标题` 没有都识别出来".into());
+        let has_dup = headings.iter().filter(|(_, t, _, _)| t == "重复标题").count() == 2;
+        if src.contains("## 重复标题") && !has_dup {
+            failures.push("两个 `## 重复标题` 没有都识别出来".into());
+        }
+    } else {
+        // 真实文件：结构判据——标题不该落在围栏代码块的行区间里。
+        for (_, _, line, hsp) in &headings {
+            if heading_inside_code(hsp, &code_spans) {
+                failures.push(format!(
+                    "L{line} 标题落在围栏代码块区间内（围栏里的 `#` 被当成了标题）"
+                ));
+            }
+        }
     }
 
     report("围栏 / 行内代码里的 `#` 均未被当作标题", &failures)
@@ -428,7 +452,12 @@ fn byte_vs_char_demo(src: &str, index: &LineIndex) -> Option<ByteCharDemo> {
             let data = node.data();
             if let comrak::nodes::NodeValue::Heading(_) = &data.value {
                 let sp = data.sourcepos;
-                return Some((sp.start.line, sp.start.column, sp.end.column));
+                // ⚠️ Setext 标题跨两行（`标题` + `====`），`end.column` 属于**第二行**；
+                //    把这个列号套到第一行行内容上必然切出 `<换算失败>`（bugs/0293）。
+                //    实例只取单行标题；文档里没有单行标题时这一步整体跳过。
+                if sp.start.line == sp.end.line {
+                    return Some((sp.start.line, sp.start.column, sp.end.column));
+                }
             }
         }
         None
@@ -517,8 +546,12 @@ fn crlf_only_check(src: &str, index: &LineIndex) -> Vec<String> {
                 let sp = data.sourcepos;
                 let _ = h;
                 if let Some(r) = index.span(src, &sp, ColUnit::Bytes) {
-                    if src[r.clone()].contains('\r') {
-                        toc.push(format!("L{} 区间含 \\r：{:?}", sp.start.line, &src[r]));
+                    // ⚠️ 判据是「区间**以 `\r` 结尾**」而不是「区间里含 `\r`」（bugs/0293）：
+                    //    Setext 标题天生跨两行，行间那个 `\r\n` 的 `\r` **本来就在**区间内。
+                    //    要抓的是"行尾 `\r` 被算进了节点"，那只会出现在**末尾**。
+                    let slice = &src[r];
+                    if slice.ends_with('\r') {
+                        toc.push(format!("L{} 区间以 \\r 结尾：{:?}", sp.start.line, slice));
                     }
                 }
             }
@@ -675,7 +708,12 @@ fn check_spans<'a>(
             let psp = p.data().sourcepos;
             if let Some(pr) = index.span(src, &psp, unit) {
                 if !(pr.start <= r.start && r.end <= pr.end) {
-                    if checks.containment_failures.len() < 5 {
+                    // ⚠️ comrak 给列表项的区间可能**多吃一个尾随空行**（bugs/0294：
+                    //    `Item 0..12` vs 父 `0..11`，多出来的是那个 `\n`）。
+                    //    只允许「超出部分的原文全是空白」，其余越界仍然报。
+                    if !overflow_is_only_whitespace(src, &pr, &r)
+                        && checks.containment_failures.len() < 5
+                    {
                         checks.containment_failures.push(format!(
                             "{} {}..{} 越出了父 {}..{}",
                             _kind, r.start, r.end, pr.start, pr.end
@@ -687,6 +725,31 @@ fn check_spans<'a>(
     }
 
     checks
+}
+
+/// 区间越界的唯一豁免：起点没跑出父区间，且子区间尾部多出来的原文**全是空白**。
+///
+/// ⚠️ comrak 的列表项会把尾随空行算进自己（`Item 0..12` vs 父 `0..11`，
+/// 多出来的是那个 `\n`，bugs/0294）。除此之外的越界一律仍然算错。
+fn overflow_is_only_whitespace(
+    src: &str,
+    parent: &std::ops::Range<usize>,
+    child: &std::ops::Range<usize>,
+) -> bool {
+    parent.start <= child.start
+        && parent.end <= child.end
+        && src
+            .get(parent.end..child.end)
+            .is_some_and(|t| !t.is_empty() && t.chars().all(|c| c.is_whitespace()))
+}
+
+/// 标题的行区间是否落在某个围栏代码块的区间里（`--file` 的结构判据，bugs/0292）。
+fn heading_inside_code(
+    heading: &comrak::nodes::Sourcepos,
+    code: &[comrak::nodes::Sourcepos],
+) -> bool {
+    code.iter()
+        .any(|csp| csp.start.line <= heading.start.line && heading.end.line <= csp.end.line)
 }
 
 /// 打印一个校验项的结果；返回失败个数（0 或 1）。
@@ -801,4 +864,41 @@ fn viz_width(s: &str) -> usize {
             if wide { 2 } else { 1 }
         })
         .sum()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use comrak::nodes::{LineColumn, Sourcepos};
+
+    fn sp(sl: usize, el: usize) -> Sourcepos {
+        Sourcepos {
+            start: LineColumn { line: sl, column: 1 },
+            end: LineColumn { line: el, column: 1 },
+        }
+    }
+
+    #[test]
+    fn 越界豁免_只放过尾随空白() {
+        let src = "- 列表项\n\n## 标题\n\n段落\n";
+        // comrak 的形态：Item 0..12，父 0..11，多出来的是 `\n`。
+        assert!(overflow_is_only_whitespace(src, &(0..11), &(0..12)));
+        // 多出正文（不是空白）⇒ 不豁免。
+        assert!(!overflow_is_only_whitespace(src, &(0..11), &(0..16)));
+        // 起点跑出父区间 ⇒ 不豁免（哪怕尾部也是空白）。
+        assert!(!overflow_is_only_whitespace(src, &(4..11), &(0..12)));
+        // 子区间没有越界 ⇒ 这条豁免函数本身不该被当作"包含"的证据。
+        assert!(!overflow_is_only_whitespace(src, &(0..11), &(0..11)));
+    }
+
+    #[test]
+    fn 标题落在围栏区间内_结构判据() {
+        let code = vec![sp(1, 3), sp(10, 12)];
+        assert!(heading_inside_code(&sp(2, 2), &code));
+        assert!(heading_inside_code(&sp(3, 3), &code)); // 边界：结束行就是围栏结束行
+        assert!(!heading_inside_code(&sp(4, 4), &code));
+        assert!(heading_inside_code(&sp(11, 11), &code)); // 完全落在第二段围栏内
+        assert!(!heading_inside_code(&sp(13, 13), &code)); // 落在两段围栏之后
+        assert!(!heading_inside_code(&sp(2, 2), &[]));
+    }
 }

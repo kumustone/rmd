@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>rmd · 排版度量的仿射性探针（design/0085 C2 步骤 0）</title>
+<!--
+  ⭐ 这份页面**只加载阅读态的三张样式表**：C2 问的是「阅读态的块度量随
+  `--reader-font-size` 变化是不是仿射的」——编辑态只是把它的值搬过去，
+  所以尺子在阅读态这边。⛔ 不引 live.css / CM6：那就变成"验编辑态"了，
+  而编辑态此刻正是被怀疑的那一方。
+-->
+<link rel="stylesheet" href="styles/tokens.css">
+<link rel="stylesheet" href="styles/themes.css">
+<link rel="stylesheet" href="styles/typography.css">
+</head>
+<body>
+<div id="doc" class="doc">
+  <h1>一级标题</h1>
+  <h2>二级标题</h2>
+  <h3>三级标题</h3>
+  <p>正文段落，用来量 p 的字号、行高与外边距。</p>
+  <blockquote><p>引用里的段落。</p></blockquote>
+  <ul><li>无序项</li><li>第二项</li></ul>
+  <ol><li>有序项</li></ol>
+  <pre><code>code line</code></pre>
+  <hr>
+  <table><thead><tr><th>表头</th></tr></thead><tbody><tr><td>单元</td></tr></tbody></table>
+</div>
+<script src="harness.js"></script>
+</body>
+</html>

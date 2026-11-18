@@ -69,16 +69,6 @@ impl LineIndex {
         self.starts.len()
     }
 
-    /// 源串总字节数。
-    pub fn len(&self) -> usize {
-        self.len
-    }
-
-    /// 源串是否为空。
-    pub fn is_empty(&self) -> bool {
-        self.len == 0
-    }
-
     /// 第 `line` 行（1-based）的起始字节偏移。越界给 `None`。
     pub fn line_start(&self, line: usize) -> Option<usize> {
         if line == 0 {

@@ -58,6 +58,10 @@ fn main() {
                 // ⭐ 快捷键表（`design/0010`）。⚠️ 漏了它 = 前端 IPC 被 ACL 拒
                 //    ⇒ 设置界面里那一列**永远是空的**（看起来像"没有快捷键"）。
                 "get_shortcuts",
+                // ⭐ `design/0083` §2.3：窗口标题（原生标签的标签名）。
+                //    ⚠️ 漏了它 = 标题**永远停在「rmd」**、标签名也不会跟着文档变，
+                //    而 stderr 一行都没有（ACL 静默拒，`kb/0007`）。
+                "set_window_title",
                 // 授权（仅这三个能改授权，另加启动 argv 与 Apple Event 那两次；
                 // ⭐ `design/0015` `INV-APP-02`：后两者走同一个 `authorize_startup`）
                 "choose_directory",
@@ -72,6 +76,16 @@ fn main() {
                 //    收紧条件 = 绝对路径 ＋ 原串逐字命中记录 ＋ `canonicalize(请求) == 记录值`
                 //    （`INV-FAV-03/08`）。⛔ 漏了它 = 点收藏行**无反应**（ACL 静默拒）。
                 "open_favorite",
+                // ⭐ `design/0071` §5（阶段 4 多窗口）：在**新窗口**里打开一条最近目录 /
+                //    收藏。⚠️ 它**不是授权命令**——只做"这个字符串是否被后端记过"的
+                //    字面成员检查，真正的授权发生在**新窗口自己的**
+                //    `open_recent_directory` / `open_favorite` 里（`INV-OPEN-02`）。
+                //    ⛔ 漏了它 = 右键「在新窗口中打开」点下去毫无反应（ACL 静默拒）。
+                "open_in_new_window",
+                // ⭐ `design/0071` §5：新窗口起来后取走"我该打开哪一条"。
+                //    ⚠️ 取走即清空（一次性）；⛔ 漏了它 = 新窗口永远停在导航页
+                //    （ACL 静默拒，`kb/0007`）。
+                "take_pending_navigation",
                 // ⭐ `design/0043`：收藏的**唯一写入口**（操作枚举）。⚠️ 它**只写 `config.json`**
                 //    （`Add` 先过当刻读取授权，⛔ 不改授权），但 ACL 静默拒 ⇒ 漏了它就是
                 //    "右键收藏毫无反应、日志里一行都没有"。
@@ -109,6 +123,12 @@ fn main() {
                 //    ⚠️ 同样⛔ 不改授权；漏了它 = 点「重试」没反应，提示永远挂着。
                 "retry_tree_watch",
                 "open_document",
+                // ⭐ `design/0082`：未命名文档。⚠️ `new_untitled` 是**读取命令**
+                //    （⛔ 零写盘、⛔ 不改授权）；`save_untitled` 是**写命令**
+                //    （落点由后端自己弹的系统面板产生，写完才 `authorize_file`）。
+                //    ⚠️ 两条都必须在这里——ACL 静默拒，漏了就是「⌘N / ⌘S 毫无反应」。
+                "new_untitled",
+                "save_untitled",
                 "read_asset",
                 // ⭐ 重载 / 监视 / 外部编辑器（`design/0006`）。
                 // ⚠️ 这四条**都是读取命令**（⛔ 不改授权，`INV-FS-04`），
@@ -118,6 +138,10 @@ fn main() {
                 "reload_document",
                 "watch_document",
                 "unwatch_document",
+                // ⭐ `design/0056`：关闭当前文档（回到导航页）。⚠️ 同样是读取命令
+                //    （⛔ 不改授权），但**每一条** IPC 都要列——漏了它 = F2 按下去
+                //    静默无反应（`kb/0007` 的 ACL 静默拒）。
+                "close_document",
                 "open_in_external_editor",
                 // ⭐ `design/0012`：窗口内编辑（`begin_edit`/`end_edit` 是**写授权的两个
                 //    写入点**，`render_preview` 是读取，`save_document` 是**唯一的写命令**）。
@@ -129,6 +153,11 @@ fn main() {
                 "end_edit",
                 "render_preview",
                 "save_document",
+                // ⭐ `design/0076`：导出（**写命令**——落点由用户在系统保存面板里当次选定，
+                //    闸门 `check_export_target` 只做结构校验，⛔ 不新增可读路径）。
+                //    ⚠️ 三处清单同批（`build.rs` / `capabilities/` / `invoke_handler`，`kb/0007`）。
+                "export_html",
+                "export_pdf",
                 // ⭐ `design/0017`：阅读进度写盘。⚠️ 它**只写 `config.json`**
                 //    （⛔ 不读文档、⛔ 不改授权），但**仍然必须列在这里**——
                 //    ACL 是静默拒的，漏了它就是"进度永远存不下来、日志里一行都没有"。
@@ -148,6 +177,10 @@ fn main() {
                 //    ACL 静默拒 ⇒ `reportMeasure` 只在 `console.warn` 里说一句
                 //    ⇒ `tools/measure-gui.sh` 收到**零个样本**，而每一次运行都"正常退出"。
                 "report_measure",
+                // ⭐ `design/0070` §2.7：前端每展示一条失败就留一行诊断
+                //    （`INV-FAIL-07`）。⚠️ 它**只写日志**、不返回值、不影响界面；
+                //    漏了它 = 界面一切正常、日志里少一行（ACL 静默拒，`kb/0007`）。
+                "diag_note",
             ]),
         );
         tauri_build::try_build(attributes).expect("tauri-build 失败（见上面的输出）");

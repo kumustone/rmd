@@ -29,7 +29,13 @@ tools/wkwebview-probe/.ln-work/
 tools/wkwebview-probe/.tm-work/
 tools/wkwebview-probe/.fr-work/
 tools/live-probe/.lb-work/
+tools/live-probe/.lb-work.lock/
+tools/live-probe/.cg-work/
+tools/live-probe/target/
 tools/native-arm/.na-work/
 tools/step0-probe/target/
 __pycache__/
 *.pyc
+/target/
+.claude/worktrees/
+/.work/

@@ -302,15 +302,34 @@ test('#20 只读 `getAttribute(\'href\')`，⛔ 不读 `a.href`（相对链接�
   const code = 去注释(readSrc('src/main.js'));
   const body = 身体(code, 'installLinkDelegation');
   assert.ok(body, '抠不到 `installLinkDelegation` 的函数体');
-  assert.strictEqual((body.match(/getAttribute\(\s*'href'\s*\)/g) || []).length, 2,
-    'click 与 keydown 各要一处 `getAttribute(\'href\')`');
+  // ⭐ `bugs/0058` 起三条激活路径（左键 / 中键 / 键盘）共用 `打开链接(a)`，
+  //    取 `href` 只剩**一处** ⇒ 数量从 2 收到 1（⛔ 不是放宽：多了反而说明又开了第二条路）。
+  assert.strictEqual((body.match(/getAttribute\(\s*'href'\s*\)/g) || []).length, 1,
+    '取 `href` 只能有**一处**（左键/中键/键盘都走 `打开链接(a)`）');
   // `.href` 是**解析后**的绝对 URL；这里出现一次就够把相对链接全带偏。
   assert.strictEqual(/\.\s*href\b/.test(body), false, '出现 `.href`（属性访问）——必须用 getAttribute');
 });
 
-test('#21 `onClick` / `onKeydown`：`defaultPrevented` 是第一句（在 preventDefault 之前）', function () {
+test('#20b 三条激活路径**都**走同一个 `打开链接(a)`（⛔ 各写一份 followLink）', function () {
+  // ⚠️ `bugs/0058` 的真教训是"每种手势各判一次、其中一种判错" ⇒ 这里钉住**唯一出口**：
+  //    `followLink(` 在委托里只许出现**一次**，三个监听器都调 `打开链接(`。
   const code = 去注释(readSrc('src/main.js'));
-  ['onClick', 'onKeydown'].forEach(function (名) {
+  const body = 身体(code, 'installLinkDelegation');
+  assert.ok(body, '抠不到 `installLinkDelegation` 的函数体');
+  assert.strictEqual((body.match(/followLink\(/g) || []).length, 1,
+    '`followLink(` 在委托里出现了不止一次——手势分支各写了一份');
+  // ⭐ `bugs/0058` 第二版再加一条来源：后端 `rmd://link-activation`（WKWebView 不把
+  //    `⌘`-点击派给页面）也调它 ⇒ 3 条 DOM 路径 ＋ 1 条后端路径 ＋ 它自己的定义。
+  assert.strictEqual((body.match(/打开链接\(/g) || []).length, 3 + 1 + 1,
+    '三条 DOM 路径与一条后端路径应当各调一次 `打开链接(`，外加它自己的定义');
+  // 中键那两条路都要有：现代 WebKit 只发 `auxclick`，老 WebKit 只发 `click`。
+  assert.ok(/addEventListener\('auxclick',\s*onAuxClick\)/.test(body), '没有监听 `auxclick`（现代 WebKit 中键走这条）');
+  assert.ok(/e\.button === MIDDLE/.test(body), '`click` 那条路没有认中键');
+});
+
+test('#21 `onClick` / `onAuxClick` / `onKeydown`：`defaultPrevented` 是第一句（在 preventDefault 之前）', function () {
+  const code = 去注释(readSrc('src/main.js'));
+  ['onClick', 'onAuxClick', 'onKeydown'].forEach(function (名) {
     const body = 身体(code, 名);
     assert.ok(body, '抠不到 `' + 名 + '` 的函数体');
     const seen = body.indexOf('defaultPrevented');
@@ -394,16 +413,69 @@ test('#26 index.html：`services/links.js` 在 `main.js` **之前**且只出现�
     '`links.js` 与其余"无依赖的纯逻辑"同群，排在 `session.js` 之后没有理由');
 });
 
-test('#27 修饰键判据**转调** `K.hasModifier`（⛔ 在调用侧写第二份）', function () {
+test('#27 手势判据**转调** `K.isOpenGesture`（⛔ 在调用侧写第二份）', function () {
   // ⚠️ 与 `components/ImageViewer.js` 同一条纪律（`design/0018` §2.3 ④ 的先例）：
-  //    "这个事件带不带修饰键"只有一个实现（`services/keymap.js`）。
+  //    "这个事件是什么手势"只有一个实现（`services/keymap.js`）。
   //    ⛔ 在 `owns()` 里再写一遍 `e.metaKey || …` 会让两份判据慢慢漂开，
   //    而 `keymap.test.js` 那条「修饰键标识符只允许出现在 keymap.js」是**同一件事**的
   //    结构闸门——这里把它钉在"这个函数"上，红了能直接指到行。
+  //
+  // ⭐ `bugs/0058`：这里原先钉的是 `!K.hasModifier(e)`，于是**带 `⌘` 的点击被整类放过**
+  //    ⇒「⌘+点击链接什么也不发生」。判据不变形（仍是转调一个函数），换的是**那个函数**：
+  //    `hasModifier` 问"带不带修饰键"，`isOpenGesture` 问"算不算打开的意思"，两个问题。
   const code = 去注释(readSrc('src/main.js'));
   const body = 身体(code, 'owns');
   assert.ok(body, '抠不到 `owns` 的函数体');
-  assert.ok(/K\s*\.\s*hasModifier\(\s*e\s*\)/.test(body), '`owns` 没有转调 `K.hasModifier(e)`');
+  assert.ok(/K\s*\.\s*isOpenGesture\(\s*e\s*\)/.test(body),
+    '`owns` 没有转调 `K.isOpenGesture(e)`');
+  // ⛔ 负判据：退回 `hasModifier` 就是把 `bugs/0058` 装回去（带 ⌘ 的点击又被放过）。
+  assert.strictEqual(/hasModifier/.test(body), false,
+    '`owns` 又用回 `K.hasModifier` —— 那是"带不带修饰键"，不是"算不算打开"（`bugs/0058`）');
   assert.strictEqual(/(metaKey|ctrlKey|altKey)/.test(body), false,
     '`owns` 自己判了修饰键——那是第二份判据');
+});
+
+test('#28 后端「想开新窗口 / 想导航走」那条通道：接住了，且只认 DOM 里指针下的链接', function () {
+  // ⚠️⚠️ 用户实测（2026-11-02，`bugs/0058` 第二版）：`owns()` 改成"`⌘` 也算打开"
+  //    **之后 ⌘-点击仍然毫无反应**。根因不在判据，而在**事件根本没到页面**：
+  //    macOS 的 WKWebView 把 `⌘`-点击 / 中键当成"用新窗口打开这条链接"，
+  //    由 UI 进程直接处理 ⇒ 页面里的 `click` 委托一次都不跑。
+  //    ⇒ 手势只能在 `on_new_window` / `on_navigation` 露出，由 Rust 交回前端。
+  //
+  // ⚠️ 下面几条守的都是**静默失效**：漏订阅 = 后端发了没人听；用事件里的 URL =
+  //    相对链接在那一层已是 `tauri://localhost/…`，倒推回文档目录会**指错文件**；
+  //    没有去重 = 一次 ⌘-点击开两次（第二跳多半回 `stale`，状态条上多一行废话）。
+  const code = 去注释(readSrc('src/main.js'));
+
+  // ① 通道订阅了。
+  assert.ok(/T\s*\.\s*listen\(\s*'rmd:\/\/link-activation'/.test(code),
+    '没有订阅 `rmd://link-activation`（后端发了没人听 ⇒ 与缺陷本身同形：静默）');
+
+  // ② 落点是**指针下的那条链接**，⛔ 不是事件载荷里的 URL。
+  const body = 身体(code, 'activateAtPointer');
+  assert.ok(body, '抠不到 `activateAtPointer` 的函数体');
+  assert.ok(body.indexOf('指针下的链接') >= 0, '没有用指针下那条 `#doc a[href]`');
+  assert.strictEqual(/payload|url/i.test(body), false,
+    '用了事件里的 URL——那一层拿不到文档目录，倒推出来的路径会指错文件');
+
+  // ③ 去重窗口：同一击可能**既**走 DOM **又**走后端。
+  assert.ok(/最近打开\s*\.\s*at/.test(body), '没有去重窗口（一次点击会开两次）');
+
+  // ④ 委托把这条入口交出来（`installLinkDelegation` 的返回值必须被接住）。
+  assert.ok(/const\s+链接委托\s*=\s*installLinkDelegation\(\s*\$\('doc'\)\s*\)/.test(code),
+    '委托的返回值没有被接住 ⇒ `activateAtPointer` 无处可取');
+  assert.ok(/链接委托\s*\.\s*activateAtPointer\(\)/.test(code),
+    '订阅回调没有调 `activateAtPointer()`');
+
+  // ⑤ hover 记账挂着、且 `passive`（只记事，⛔ 不动默认行为）。
+  assert.ok(/addEventListener\('mousemove',\s*onHover,\s*\{\s*passive:\s*true\s*\}\)/.test(code),
+    '没有记下指针停在哪条链接上');
+
+  // ⑥ Rust 侧：两条回调都转发（`on_new_window` 是 ⌘-点击真正的露面处，
+  //    `on_navigation` 是它万一走另一条路时的兜底）。
+  const rust = 去注释(readSrc('src-tauri/src/gui/mod.rs'));
+  assert.ok(rust.indexOf("rmd://link-activation") >= 0, 'Rust 侧没有发这条事件');
+  assert.strictEqual((rust.match(/bridge_link_activation\(/g) || []).length, 3,
+    '`bridge_link_activation(` 应当出现 3 次：1 次定义 ＋ `on_navigation` ＋ `on_new_window`');
+  assert.ok(/on_new_window\(\{/.test(rust), '`on_new_window` 没有接上转发的那个闭包');
 });

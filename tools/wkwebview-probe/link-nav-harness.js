@@ -81,16 +81,34 @@
       if (!target || typeof target.closest !== 'function') return null;
       return target.closest('a[href]');
     }
-    function owns(e) { return !K.hasModifier(e); }
+    // ⚠️ 手势判据**转调**产品那份 `K.isOpenGesture`（`bugs/0058`）：只有 ⌃ 不算打开
+    //    （⌘=新标签页 / ⇧=新窗口 / ⌥=下载，这三样本程序都没有 ⇒ 落点退化为"就在这儿打开"）。
+    //    ⛔ 别退回 `!K.hasModifier(e)`——那正是 `bugs/0058` 的形态。
+    function owns(e) { return K.isOpenGesture(e); }
+
+    const MIDDLE = 1;
+    let 中键已处理于 = 0;
+    function 打开链接(a) { follow(a.getAttribute('href')); }
 
     function onClick(e) {
       if (e.defaultPrevented) return;
-      if (e.button !== 0) return;
+      if (e.button !== 0 && e.button !== MIDDLE) return;
       const a = linkOf(e.target);
       if (!a) return;
       if (!owns(e)) return;
       e.preventDefault();
-      follow(a.getAttribute('href'));
+      if (e.button === MIDDLE) 中键已处理于 = Date.now();
+      打开链接(a);
+    }
+    function onAuxClick(e) {
+      if (e.button !== MIDDLE) return;
+      if (e.defaultPrevented) return;
+      if (Date.now() - 中键已处理于 < 100) return;
+      const a = linkOf(e.target);
+      if (!a) return;
+      if (!owns(e)) return;
+      e.preventDefault();
+      打开链接(a);
     }
     function onKeydown(e) {
       if (e.key !== 'Enter' && e.key !== ' ') return;
@@ -100,15 +118,20 @@
       if (!a) return;
       if (!owns(e)) return;
       e.preventDefault();
-      follow(a.getAttribute('href'));
+      打开链接(a);
     }
 
     docEl.addEventListener('click', onClick);
+    docEl.addEventListener('auxclick', onAuxClick);
     docEl.addEventListener('keydown', onKeydown);
     // ⭐ **后注册的**监听器：同一节点上它在本委托之后跑 ⇒ 读到的 `defaultPrevented`
     //    就是"我们那一层拦没拦"的**直接证据**（`stopPropagation` 拦不住同节点监听器）。
     docEl.addEventListener('click', function (e) {
       观察.点击后_defaultPrevented = e.defaultPrevented;
+    });
+    // ⭐ 中键那条路（现代 WebKit）走 `auxclick` ⇒ 它也需要一个后注册观察者。
+    docEl.addEventListener('auxclick', function (e) {
+      观察.中键后_defaultPrevented = e.defaultPrevented;
     });
   }
 
@@ -189,6 +212,69 @@
       $('rawjs').click();
       await wait(30);
       return { PWNED: typeof window.__PWNED === 'undefined' ? null : String(window.__PWNED) };
+    });
+
+    // 6 · ⭐ `bugs/0058`：**⌘+点击也必须打开**。浏览器里 ⌘-点击是"新标签页"，
+    //     而本程序没有多窗口（`on_new_window` 一律拒绝）⇒ 唯一落地是"就在这儿打开"。
+    //     ⚠️ 这里用 `dispatchEvent` 而不是 `el.click()`：后者造不出 `metaKey`。
+    await step('s6', '⌘+点击相对链接（必须也打开，⛔ 不是静默放过）', async function () {
+      观察.点击后_defaultPrevented = null;
+      $('rel').dispatchEvent(new MouseEvent('click', {
+        bubbles: true, cancelable: true, button: 0, metaKey: true,
+      }));
+      await wait(30);
+      return { 点击后_defaultPrevented: 观察.点击后_defaultPrevented };
+    });
+
+    // 7 · 反面判据：⌃-点击是**右键上下文菜单**（AppKit 的语义）⇒ ⛔ 不许被我们抢过来。
+    //     ⚠️ 它与 6 成对：只测 6 的话，"owns 恒为真"这种改法也能全绿。
+    await step('s7', '⌃+点击不接管（那是右键菜单，⛔ 不抢）', async function () {
+      观察.点击后_defaultPrevented = null;
+      $('rel').dispatchEvent(new MouseEvent('click', {
+        bubbles: true, cancelable: true, button: 0, ctrlKey: true,
+      }));
+      await wait(30);
+      return { 点击后_defaultPrevented: 观察.点击后_defaultPrevented };
+    });
+
+    // 8 · ⭐ `bugs/0058`：**⌥+点击也要打开**——浏览器里它是"下载链接目标"，
+    //     而本程序没有下载 ⇒ 落点同样是"就在这儿打开"。
+    await step('s8', '⌥+点击相对链接（没有下载功能 ⇒ 也要打开）', async function () {
+      观察.点击后_defaultPrevented = null;
+      $('rel').dispatchEvent(new MouseEvent('click', {
+        bubbles: true, cancelable: true, button: 0, altKey: true,
+      }));
+      await wait(30);
+      return { 点击后_defaultPrevented: 观察.点击后_defaultPrevented };
+    });
+
+    // 9 · ⭐ 中键（"后台新标签页打开"）：本程序没有标签页 ⇒ 就在这儿打开。
+    //     ⚠️ 老 WebKit 会为同一次中键**同时**发 `click` 与 `auxclick` ⇒ 必须**只开一次**。
+    await step('s9', '中键：老 WebKit（click + auxclick 都发）只开一次', async function () {
+      观察.点击后_defaultPrevented = null;
+      观察.中键后_defaultPrevented = null;
+      const 目标 = $('rel');
+      目标.dispatchEvent(new MouseEvent('click', {
+        bubbles: true, cancelable: true, button: 1,
+      }));
+      目标.dispatchEvent(new MouseEvent('auxclick', {
+        bubbles: true, cancelable: true, button: 1,
+      }));
+      await wait(30);
+      return {
+        点击后_defaultPrevented: 观察.点击后_defaultPrevented,
+        中键后_defaultPrevented: 观察.中键后_defaultPrevented,
+      };
+    });
+
+    // 10 · 现代 WebKit：中键**只**发 `auxclick`（`click` 只为左键发）⇒ 这条路自己也要能开。
+    await step('s10', '中键：现代 WebKit（只有 auxclick）也要打开', async function () {
+      观察.中键后_defaultPrevented = null;
+      $('rel').dispatchEvent(new MouseEvent('auxclick', {
+        bubbles: true, cancelable: true, button: 1,
+      }));
+      await wait(30);
+      return { 中键后_defaultPrevented: 观察.中键后_defaultPrevented };
     });
 
     return {

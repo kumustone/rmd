@@ -1719,3 +1719,4 @@ mod tests {
         assert_eq!(cross_check(&bad, &[], &[]).len(), 1);
     }
 }
+

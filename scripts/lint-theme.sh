@@ -103,6 +103,24 @@ fi
 #    漏给一套会**静默回落**到 light 那个冷蓝——在暖纸或深底上就是一块贴错的白纸。
 #    ⚠️ 引用条 `reader-quote-bar-color` 本来就在契约里，这次只是**换值**
 #    （半透明 → 实色），⛔ 不是新增成员。
+# ⭐ 2026-11-03 按 `design/0060`（Mermaid 直传）再扩 **4** 个
+#    （teal-bg / violet-bg / steel-bg / note-bg）：58 变 **62**。
+#    ⚠️ 0.33.0 的引擎色板比 0.27.0 多出三块浅底与一块便签黄；漏给一套会**静默回落**
+#    到 light 的浅色值 ⇒ 深色主题上露出一块白。
+# ⭐ 2026-11-03 同日、评审 P0-5 再扩 **5** 个（panel / panel-line / ink-soft /
+#    rose-bg / coral-bg）：62 变 **67**。⚠️ 全是**新增变量名**，不是换值：
+#    子图面板与簇标题原先**没有槽**（落进"未知色值"），journey 八色段落底缺两头。
+#    ⛔ 别把它们合并进 `guide` / `line-soft`——那几条是**线**，拿来当底或当字，
+#    在浅色主题下要么淡到看不见，要么与真正的线同色。
+# ⭐ 2026-11-04 按 `bugs/0073` 再扩 **1** 个（`reader-diag-on-accent`）：67 变 **68**。
+#    ⚠️ 又一个**新增变量名**：强调查色块上的**引擎深字**在 dark/warm 下必须留深，
+#    ⛔ 不能跟 `reader-diag-text` 一起变浅（那是 1.44–2.88 : 1，等于看不见）。
+#    漏给一套会**静默回落**到 light 的深字 ⇒ 深色主题上正是这个缺陷本身。
+# ⭐ 2026-11-04 同日、`bugs/0073` 再扩 **8** 个（八条强调族的 `-ink`，强调色**当文字**时用）：
+#    68 变 **76**。⚠️ 又一个**新增变量名族**：`-line` 那批是给**填充/描边**挑的，
+#    直接拿来当 13px 字，light 上只有 2.6–4.4 : 1 ⇒ 每族另给一档 ≥4.6 : 1 的深墨。
+#    ⚠️ dark 这八条与 `-line` **同值**（深色下强调色本来就亮），⛔ 别以为重复就删掉——
+#    契约管的是"每套主题各给一份"，漏给会静默回落成 light 的深墨 ⇒ 深底上看不见。
 REQUIRED="ui-bg ui-bg-elevated ui-text ui-text-muted ui-border ui-hover-bg ui-selected-bg ui-accent
 reader-text reader-bg reader-heading reader-border reader-link reader-selection-bg
 reader-inline-code-bg reader-inline-code-text reader-block-code-bg reader-block-code-text
@@ -112,11 +130,15 @@ reader-hl-comment reader-hl-keyword reader-hl-string reader-hl-number reader-hl-
 reader-hl-type reader-hl-variable reader-hl-macro reader-hl-tag reader-hl-attr
 reader-hl-operator reader-hl-punctuation reader-hl-invalid
 reader-math-source-text reader-math-source-bg reader-math-source-border reader-math-error-accent
-reader-diag-surface reader-diag-text reader-diag-line reader-diag-line-soft
+reader-diag-surface reader-diag-text reader-diag-on-accent reader-diag-line reader-diag-line-soft
 reader-diag-green-bg reader-diag-green-line reader-diag-indigo-bg reader-diag-indigo-line
 reader-diag-amber-bg reader-diag-amber-line reader-diag-guide
+reader-diag-teal-bg reader-diag-violet-bg reader-diag-steel-bg reader-diag-note-bg
 reader-diag-rose-line reader-diag-teal-line reader-diag-violet-line reader-diag-coral-line
-reader-diag-steel-line"
+reader-diag-steel-line reader-diag-panel reader-diag-panel-line reader-diag-ink-soft
+reader-diag-rose-bg reader-diag-coral-bg
+reader-diag-green-ink reader-diag-indigo-ink reader-diag-amber-ink reader-diag-rose-ink
+reader-diag-teal-ink reader-diag-violet-ink reader-diag-coral-ink reader-diag-steel-ink"
 
 say ''
 say '── 闸门 ②：最低契约（§2.1.1.1 的 20 个 ＋ `0007` 的 33 个 ＋ `0011` 的 4 个）──'

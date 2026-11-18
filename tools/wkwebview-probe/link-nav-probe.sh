@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 跑「文档内链接安全导航」的**真 DOM 离屏探针**（`design/0026` §7.2：判据 1–5 ＋ E）
+# 跑「文档内链接安全导航」的**真 DOM 离屏探针**（`design/0026` §7.2：判据 1–5 ＋ `bugs/0058` 的 6/7 ＋ E）
 #
 # 用法：
 #   tools/wkwebview-probe/link-nav-probe.sh              # 一轮，判据进退出码
@@ -14,7 +14,7 @@
 #
 # ⚠️ 它跑的是**产品那两份**，原样拷进页面：
 #    `src/services/links.js`（`href` 归一 / 结果→动作 / 存活判据）＋
-#    `src/services/keymap.js`（`K.hasModifier`——修饰键判据只有一份）。
+#    `src/services/keymap.js`（`K.isOpenGesture`——手势判据只有一份）。
 #    委托注册与 `followLink` 的流程是**镜像**自 `src/main.js` 的（根脚本进不了探针页）；
 #    那一层的**产品侧**由 `tests/js/links.test.js` 的源码级闸门 #19–#24 守。
 #
@@ -254,12 +254,68 @@ add("5", "rmd-unsupported:javascript：不导航、无脚本执行",
     "∧ 本步窗口内零导航 ∧ `window.__PWNED` 不存在",
     {"步骤": s5, "本步导航": n5, "PWNED": 观察.get("PWNED")})
 
-# ⚠️ 防"探针半路停了还报全绿"：1..5 缺任何一条都当场记成失败。
+# 6 · ⭐ `bugs/0058`：⌘+点击**也算打开**（浏览器里它是"新标签页"，本程序没有多窗口）
+s6, n6 = 窗口内("s6")
+ok6 = (s6 is not None
+       and s6.get("followLink_收到") == ["other.md#sec"]
+       and s6.get("点击后_defaultPrevented") is True
+       and len(n6) == 0)
+add("6", "⌘+点击相对链接：也必须打开（⛔ 不是静默放过）",
+    ok6,
+    "`owns` 认 ⌘ 为打开手势（`K.isOpenGesture`）⇒ followLink 收到 'other.md#sec'"
+    "∧ 后注册的监听器读到 defaultPrevented=true ∧ 本步窗口内零导航",
+    {"步骤": s6, "本步导航": n6})
+
+# 7 · 反面判据：⌃+点击是右键菜单的语义 ⇒ ⛔ 不许接管（与 6 成对，防"恒真"）
+s7, n7 = 窗口内("s7")
+ok7 = (s7 is not None
+       and s7.get("followLink_收到") == []
+       and s7.get("点击后_defaultPrevented") is False)
+add("7", "⌃+点击⛔ 不接管（那是右键上下文菜单）",
+    ok7,
+    "followLink **一次都没收到** ∧ preventDefault 没有被调用"
+    "（只测 6 的话，`owns` 恒真的改法也能全绿 ⇒ 必须有这条负对照）",
+    {"步骤": s7, "本步导航": n7})
+
+# 8 · ⭐ `bugs/0058`：⌥+点击**也要打开**（浏览器里它是"下载"，本程序没有下载）
+s8, n8 = 窗口内("s8")
+ok8 = (s8 is not None
+       and s8.get("followLink_收到") == ["other.md#sec"]
+       and s8.get("点击后_defaultPrevented") is True
+       and len(n8) == 0)
+add("8", "⌥+点击相对链接：也要打开（没有下载功能 ⇒ 落点就是打开）",
+    ok8,
+    "`owns` 认 ⌥ 为打开手势 ⇒ followLink 收到 'other.md#sec'"
+    "∧ defaultPrevented=true ∧ 本步窗口内零导航",
+    {"步骤": s8, "本步导航": n8})
+
+# 9 · 中键（老 WebKit：同一次中键既发 click 又发 auxclick）⇒ **只许开一次**
+s9, n9 = 窗口内("s9")
+ok9 = (s9 is not None
+       and s9.get("followLink_收到") == ["other.md#sec"]
+       and s9.get("点击后_defaultPrevented") is True)
+add("9", "中键（click + auxclick 都发）：只开一次，⛔ 不重复打开",
+    ok9,
+    "followLink **恰好收到一条** 'other.md#sec'（去重窗生效）∧ defaultPrevented=true"
+    "（⚠️ 两条事件各开一次的话这里是两条 ⇒ 第二跳会回 stale）",
+    {"步骤": s9, "本步导航": n9})
+
+# 10 · 现代 WebKit：中键只发 auxclick ⇒ 这条路自己也要能开
+s10, n10 = 窗口内("s10")
+ok10 = (s10 is not None
+        and s10.get("followLink_收到") == ["other.md#sec"]
+        and s10.get("中键后_defaultPrevented") is True)
+add("10", "中键（只有 auxclick）：也要打开",
+     ok10,
+     "`auxclick` 那条监听器自己就能开：followLink 收到 'other.md#sec' ∧ auxclick 被 preventDefault",
+     {"步骤": s10, "本步导航": n10})
+
+# ⚠️ 防"探针半路停了还报全绿"：1..10 缺任何一条都当场记成失败。
 有 = set(str(c.get("id")) for c in 检查)
-for i in range(1, 6):
+for i in range(1, 11):
     if str(i) not in 有:
         检查.append({"id": str(i), "名": "（探针没有产出这一条判据）", "结果": "失败",
-                     "判据": "§7.2 的 1–5 必须逐条产出", "值": {"缺": str(i)}})
+                     "判据": "§7.2 的 1–5 ＋ bugs/0058 的 6–10 必须逐条产出", "值": {"缺": str(i)}})
 
 # ⭐ 判据 E（非数字标签，⛔ 不占用 1–5 的编号）：与 `dir-session-probe` 同口径。
 抢 = env.get("前台被抢过")
@@ -300,7 +356,7 @@ doc = {
                   "同文档锚点走不走 decidePolicyFor（§7.1 0a）、闸门拒绝之后页面还在不在。",
         "被测文件": {
             "links.js": "src/services/links.js（原样拷入，⛔ 探针不抄第二份）",
-            "keymap.js": "src/services/keymap.js（K.hasModifier——修饰键判据只有一份）",
+            "keymap.js": "src/services/keymap.js（K.isOpenGesture——手势判据只有一份）",
             "镜像": "installLinkDelegation / followLink 的结构镜像自 src/main.js"
                     "（根脚本进不了探针页；产品侧由 links.test.js #19–#24 守）",
             "夹具": "tools/wkwebview-probe/link-nav-harness.js",

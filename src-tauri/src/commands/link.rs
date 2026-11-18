@@ -59,6 +59,12 @@ pub const KIND_NO_DOCUMENT: &str = "no_document";
 /// 回包陈旧（`INV-LINK-11`）：本次**什么都不做**，前端只留一行提示。
 pub const KIND_STALE: &str = "stale";
 /// 其它失败。
+///
+/// ⚠️ 当前**没有产生它的路径**：上面每一支都有更准的 kind。留着是因为
+/// `design/0026` §2.8 的清单是**封闭**的，`src/services/links.js` 的 `KINDS`
+/// 与这里一一对应——⛔ 删掉它会让"后端可能回 `failed`"这个契约在两边同时消失，
+/// 而前端那条 `link.failed` 文案就永远没人接得住。
+#[allow(dead_code)]
 pub const KIND_FAILED: &str = "failed";
 
 /// `open_link` 的返回值（`design/0026` §2.7）。
@@ -241,11 +247,13 @@ fn existence_speakable(grants: &SessionGrants, requested: &Path) -> bool {
 #[tauri::command]
 pub fn open_link(
     state: tauri::State<'_, AppState>,
+    window: tauri::WebviewWindow,
     href: String,
     doc_seq: u64,
 ) -> LinkOutcome {
     let mut spawn: fn(&[OsString]) -> std::io::Result<()> = crate::link::spawn_detached;
-    let out = state.with(|s| decide_and_execute(s, &href, doc_seq, &mut spawn));
+    // ⭐ 多窗口：只作用于**发起这次点击的窗口**的会话（`design/0068` §2.1）。
+    let out = state.with(window.label(), |s| decide_and_execute(s, &href, doc_seq, &mut spawn));
 
     // ⚠️ `INV-LOG-01`：**⛔ 不落 href 原文**（外链可能带 query token），只落种类与长度。
     //    底层错误文本按既有分流留在 stderr，文件侧只记长度。
@@ -301,9 +309,15 @@ mod tests {
             doc_dir: None,
             startup_document: None,
             pending_opens: VecDeque::new(),
+            // ⚠️ `design/0068` §2.5：待打开请求随窗口消亡，测试里恒为 None。
+            pending_navigation: None,
             last_render_stats: Default::default(),
             current_document: None,
             doc_seq: 0,
+            // ⭐ `design/0082`：本文件这批用例不涉及未命名文档。
+            draft: None,
+            edit_draft: None,
+            draft_seq: 0,
             edit_target: None,
             self_write: None,
             save_inflight: None,

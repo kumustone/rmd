@@ -174,11 +174,222 @@
     return { mode: mode, copy: copy };
   }
 
+  // ─────────────────────────────────────────────────────────────────
+  // ② 多格式复制 / 读取（`design/0077`）
+  // ─────────────────────────────────────────────────────────────────
+  //
+  // ⚠️ 上面 `copy(text)` 的语义**一个字不改**（`INV-CLIPFMT-02`）：文件树「复制绝对路径」
+  //    与它共用这个模块。下面这一组只服务编辑菜单那五个动作。
+  //
+  // ⭐「先探针、再选定一条」的纪律与 §2.3 相同：⛔ 不写一次失败就换另一条 API 的代码
+  //    （`INV-CLIPFMT-04`：失败必须可见，⛔ 不静默降级成别的格式）。
+
+  /**
+   * 读一遍**多格式写入/读取**所需的能力。⛔ 只读：不碰剪贴板内容。
+   * @param {*} [win]
+   * @param {*} [doc]
+   * @returns {{isSecureContext:boolean, hasClipboardWriteAll:boolean,
+   *            hasClipboardItem:boolean, hasBlob:boolean,
+   *            hasReadText:boolean, hasExecCommand:boolean}}
+   */
+  function probeFormats(win, doc) {
+    const w = win || (typeof window !== 'undefined' ? window : null);
+    const d = doc || (typeof document !== 'undefined' ? document : null);
+    const cb = w && w.navigator && w.navigator.clipboard;
+    return {
+      isSecureContext: !!(w && w.isSecureContext === true),
+      hasClipboardWriteAll: !!(cb && typeof cb.write === 'function'),
+      hasClipboardItem: !!(w && typeof w.ClipboardItem === 'function'),
+      hasBlob: !!((w && typeof w.Blob === 'function') ||
+        (typeof Blob !== 'undefined' && typeof Blob === 'function')),
+      hasReadText: !!(cb && typeof cb.readText === 'function'),
+      hasExecCommand: !!(d && typeof d.execCommand === 'function'),
+    };
+  }
+
+  /**
+   * 多格式写入的**开跑前**模式选择（纯函数）。
+   * @param {{isSecureContext?:boolean, hasClipboardWriteAll?:boolean,
+   *          hasClipboardItem?:boolean, hasBlob?:boolean,
+   *          hasExecCommand?:boolean}} env
+   * @returns {'clipboard'|'exec'|'none'}
+   */
+  function pickFormatMode(env) {
+    const e = env || {};
+    if (e.isSecureContext === true && e.hasClipboardWriteAll === true &&
+        e.hasClipboardItem === true && e.hasBlob === true) {
+      return MODE_CLIPBOARD;
+    }
+    if (e.hasExecCommand === true) return MODE_EXEC;
+    return MODE_NONE;
+  }
+
+  /** 条目形状的兜底校验：空数组 / 非字符串正文 ⇒ 不写。 */
+  function validEntries(entries) {
+    if (!Array.isArray(entries) || !entries.length) return false;
+    for (let i = 0; i < entries.length; i++) {
+      const e = entries[i];
+      if (!e || typeof e.mime !== 'string' || !e.mime) return false;
+      if (typeof e.text !== 'string') return false;
+    }
+    return true;
+  }
+
+  /**
+   * 造一个多格式写入器 / 读取器。
+   *
+   * ⚠️ 依赖全部注入（`win` / `doc` / `env`）⇒ 单测能用假 `ClipboardItem` / 假 `Blob` /
+   *    假 `copy` 事件验证，⛔ 不碰真剪贴板。
+   *
+   * @param {{win?:*, doc?:*, env?:object}} deps
+   * @returns {{mode:string, write:(entries:Array<{mime:string,text:string}>)=>Promise<{ok:boolean,reason?:string}>,
+   *            read:()=>Promise<{ok:boolean,text?:string,reason?:string}>}}
+   */
+  function createFormatCopier(deps) {
+    const d = deps || {};
+    const win = d.win || (typeof window !== 'undefined' ? window : null);
+    const doc = d.doc || (typeof document !== 'undefined' ? document : null);
+    const mode = pickFormatMode(d.env || probeFormats(win, doc));
+
+    /** 标准 API：一个 `ClipboardItem` 里装全部 MIME。 */
+    async function writeClipboard(entries) {
+      const CI = win && win.ClipboardItem;
+      const BlobCtor = (win && win.Blob) ||
+        (typeof Blob !== 'undefined' ? Blob : null);
+      const cb = win && win.navigator && win.navigator.clipboard;
+      if (typeof CI !== 'function' || typeof BlobCtor !== 'function' || !cb) {
+        return { ok: false, reason: FAIL_UNSUPPORTED };
+      }
+      let item = null;
+      try {
+        const parts = {};
+        for (let i = 0; i < entries.length; i++) {
+          parts[entries[i].mime] = new BlobCtor([entries[i].text], { type: entries[i].mime });
+        }
+        item = new CI(parts);
+      } catch (e) {
+        // ⚠️ 某些平台不接受某个 MIME（典型是 `text/html`）⇒ 这是**能力缺口**，
+        //    ⛔ 不许偷偷只写 `text/plain` 然后报「已复制」。
+        return { ok: false, reason: FAIL_UNSUPPORTED };
+      }
+      try {
+        await cb.write([item]);
+        return { ok: true };
+      } catch (e) {
+        return {
+          ok: false,
+          reason: (e && e.name === 'NotAllowedError') ? FAIL_DENIED : FAIL_FAILED,
+        };
+      }
+    }
+
+    /** 旧路径：一次性 `copy` 监听里把每个 MIME 塞进 `clipboardData`。 */
+    function writeExec(entries) {
+      return new Promise(function (resolve) {
+        if (!doc || typeof doc.addEventListener !== 'function' ||
+            typeof doc.execCommand !== 'function') {
+          resolve({ ok: false, reason: FAIL_UNSUPPORTED });
+          return;
+        }
+        const active = doc.activeElement;
+        let ta = null;
+        let wroteCustom = false;
+        let expectedCustom = false;
+        for (let i = 0; i < entries.length; i++) {
+          if (entries[i].mime !== 'text/plain') expectedCustom = true;
+        }
+        function onCopy(ev) {
+          // ⚠️ 没有 `clipboardData` ⇒ 只能走浏览器默认（纯文本选区）；
+          //    需要自定义 MIME 的那几种会在下面被判失败，⛔ 不冒充成功。
+          if (!ev || !ev.clipboardData ||
+              typeof ev.clipboardData.setData !== 'function') return;
+          try {
+            ev.preventDefault();
+            for (let i = 0; i < entries.length; i++) {
+              ev.clipboardData.setData(entries[i].mime, entries[i].text);
+            }
+            wroteCustom = true;
+          } catch (e) {
+            // 单个 MIME 被拒 ⇒ `wroteCustom` 保持假，最终按失败报。
+          }
+        }
+        function cleanup() {
+          try { doc.removeEventListener('copy', onCopy, true); } catch (e) { /* 无监听面 */ }
+          if (ta && ta.parentNode) ta.parentNode.removeChild(ta);
+          if (active && typeof active.focus === 'function') {
+            try { active.focus(); } catch (e) { /* 焦点还回去失败不影响结果 */ }
+          }
+        }
+        try {
+          doc.addEventListener('copy', onCopy, true);
+          ta = doc.createElement('textarea');
+          const plain = entries.filter(function (e) { return e.mime === 'text/plain'; })[0];
+          ta.value = plain ? plain.text : '';
+          ta.setAttribute('readonly', '');
+          ta.style.position = 'fixed';
+          ta.style.top = '0';
+          ta.style.left = '0';
+          ta.style.opacity = '0';
+          ta.style.pointerEvents = 'none';
+          doc.body.appendChild(ta);
+          ta.select();
+          const ok = doc.execCommand('copy');
+          const good = !!ok && (!expectedCustom || wroteCustom);
+          resolve(good ? { ok: true } : { ok: false, reason: FAIL_FAILED });
+        } catch (e) {
+          resolve({ ok: false, reason: FAIL_FAILED });
+        } finally {
+          cleanup();
+        }
+      });
+    }
+
+    /**
+     * ⭐ 等到真的写完才返回 `{ok:true}`。
+     * @param {Array<{mime:string,text:string}>} entries
+     * @returns {Promise<{ok:boolean,reason?:string}>}
+     */
+    async function write(entries) {
+      if (!validEntries(entries)) return { ok: false, reason: FAIL_FAILED };
+      if (mode === MODE_CLIPBOARD) return writeClipboard(entries);
+      if (mode === MODE_EXEC) return writeExec(entries);
+      return { ok: false, reason: FAIL_UNSUPPORTED };
+    }
+
+    /**
+     * 读取剪贴板文本。⚠️ 只读 `text/plain`；富文本格式一律忽略（`INV-CLIPFMT-08`）。
+     * @returns {Promise<{ok:boolean,text?:string,reason?:string}>}
+     */
+    async function read() {
+      const cb = win && win.navigator && win.navigator.clipboard;
+      if (!cb || typeof cb.readText !== 'function') {
+        return { ok: false, reason: FAIL_UNSUPPORTED };
+      }
+      try {
+        const text = await cb.readText();
+        return { ok: true, text: typeof text === 'string' ? text : '' };
+      } catch (e) {
+        return {
+          ok: false,
+          reason: (e && e.name === 'NotAllowedError') ? FAIL_DENIED : FAIL_FAILED,
+        };
+      }
+    }
+
+    return { mode: mode, write: write, read: read };
+  }
+
   /** 产品路径用的那一个（惰性建，只建一次）。 */
   let shared = null;
   function defaultCopier() {
     if (!shared) shared = createCopier({});
     return shared;
+  }
+
+  let sharedFormats = null;
+  function defaultFormatCopier() {
+    if (!sharedFormats) sharedFormats = createFormatCopier({});
+    return sharedFormats;
   }
 
   const api = {
@@ -193,6 +404,10 @@
     capabilities: capabilities,
     createCopier: createCopier,
     defaultCopier: defaultCopier,
+    probeFormats: probeFormats,
+    pickFormatMode: pickFormatMode,
+    createFormatCopier: createFormatCopier,
+    defaultFormatCopier: defaultFormatCopier,
   };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

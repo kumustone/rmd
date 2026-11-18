@@ -510,6 +510,14 @@
       isFilesVisible: function () { return !collapsed && tab === 'tree' && !searchActive; },
       /** ⭐ 当期形态（`"tree"` / `"list"`）。 */
       fileView: function () { return fileView; },
+      /**
+       * ⭐ `design/0071` §4.3（阶段 3）：当期是哪一页（`"tree"` / `"toc"`）。
+       *
+       * ⚠️ 只给 `⌘N` 用：`⌘N` 要把输入行放进**树**里，而大纲页上根本没有树的面板。
+       * ⛔ 别拿 `isFilesVisible()` 代替——那个还叠了"侧边栏有没有收起 / 搜索层盖没盖着"，
+       * 三种原因会混成一个 `false`，调用方就分不清"该切 tab"还是"该展开侧边栏"。
+       */
+      currentTab: function () { return tab; },
       /** ⭐ 换语言之后重贴形态按钮（`applyDom` 只会贴回出厂那句）。 */
       relabelFileView,
       showUnauthorized,

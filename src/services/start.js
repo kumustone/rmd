@@ -5,7 +5,8 @@
 // 启动页有四块判据是**可以在 `node --test` 里测的**，而它们在 DOM 里写会变成
 // "只能靠人点一遍"：① `recent` 快照 → 行（名字 / `~` 路径 / 上次读的文件名）；
 // ② 数字键 `1`–`9` 的映射；③ 键盘模型的**五种放行**（`INV-START-04`）；
-// ④ ⭐ 「清空最近的目录」的两步确认窗口（`design/0045`，`clearConfirm`）。
+// ④ ⭐ 「清空最近的目录」的两步确认窗口（`design/0045`，`clearConfirm`）；
+// ⑤ ⭐ 「开始」段要画哪几行（`design/0081`，`actionRows`）。
 // ⚠️ 本项目明令「⛔ 不能把全部正确性验证都归给人工」（根 `CLAUDE.md` §测试）——
 //    留在人手里的只该是**观感**（行好看不好看、列表长度合不合适）。
 //
@@ -98,6 +99,55 @@
   }
 
   /**
+   * ⭐ 启动页「开始」段的动作清单（`design/0081` §2.1 ③）——**顺序即版式顺序**。
+   *
+   * ⚠️ 这里只有 **id**：动作名与键位都从后端 `SHORTCUTS` 表现取
+   *    （`labelText` / `accelText`），⛔ 本文件不写任何文案或键位字面量
+   *    （`INV-SET-01` / `INV-START-08`）。执行也⛔ 不在这里：调用方走
+   *    `keymap.dispatch(id, 'menu')`，与菜单/快捷键是**同一份实现**（`INV-SET-02`）。
+   *
+   * ⚠️ 为什么固定这三条：它们就是 `design/0071` §3.2「打开入口四步」里
+   *    用户**在空导航页上想做的事**（打开目录 / 打开文件 / 快速跳文件）。
+   *    `window.new` 不列——它就是"你正待着的这个页面"。
+   */
+  const ACTIONS = ['file.open', 'file.open-file', 'file.quick-open'];
+
+  /**
+   * ⭐ 「开始」段实际要画哪几行（纯判据，⛔ 不碰 DOM、⛔ 不发 IPC）。
+   *
+   * @param {boolean} canQuickOpen 「快速打开…」此刻可用吗（QuickOpen 自己判：目录模式且有根）
+   * @returns {string[]} 动作 id 列表
+   *
+   * ⚠️ 不可用的那条**整行不画**，⛔ 不画成灰的：灰掉的按钮仍然可聚焦，
+   *    键盘用户会撞进一个"按了没反应"的位置（`INV-START-09` 的同一套逻辑）。
+   */
+  function actionRows(canQuickOpen) {
+    return ACTIONS.filter(function (id) {
+      return id !== 'file.quick-open' || canQuickOpen === true;
+    });
+  }
+
+  /**
+   *
+   * @param {object} snap `open_favorite` 的返回快照
+   * @returns {{kind:'directory'|'file'|'unknown', path:string}}
+   *
+   * ⚠️⛔ **只看 `opened_favorite`，⛔ 不看 `mode`**：`Session::mode()` 判 `roots` **优先**
+   * ——正开着目录时点一条**文件**收藏，`mode` 仍是 `"directory"`，照它分派就会把文件收藏
+   * 当成目录、只换空态而**不开文档**（表现是"点了没反应"，`bugs/0301` 的原始症状）。
+   * ⚠️ `file` 的路径**只取 `startup_document`**（后端刚写进去的那一份）——⛔ 别拿收藏表
+   * 里的原串自己拼：真值是后端授权后回显的规范化路径。
+   * ⚠️ 不认识的取值一律 `unknown`（不猜、⛔ 不回落 `mode`）：前端不替后端补语义。
+   */
+  function favoriteOpenAction(snap) {
+    if (!snap || typeof snap !== 'object') return { kind: 'unknown', path: '' };
+    const path = typeof snap.startup_document === 'string' ? snap.startup_document : '';
+    if (snap.opened_favorite === 'directory') return { kind: 'directory', path: '' };
+    if (snap.opened_favorite === 'file') return { kind: 'file', path };
+    return { kind: 'unknown', path: '' };
+  }
+
+  /**
    * ⭐ 「清空最近的目录」的两步确认窗口（`design/0045`，ms）。
    * ⚠️ 与后端**无关**：它只是"第二下点得够不够快"的本地判据；
    *    真正改配置的是 `recent_apply`（`{kind:'clear'}`）。
@@ -165,7 +215,8 @@
   }
 
   const api = {
-    MAX_ROWS, CLEAR_CONFIRM_MS, tilde, basename, rows, favoriteRows, clearConfirm, digitIndex, guard,
+    MAX_ROWS, CLEAR_CONFIRM_MS, ACTIONS, tilde, basename, rows, favoriteRows,
+    actionRows, favoriteOpenAction, clearConfirm, digitIndex, guard,
   };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

@@ -55,8 +55,14 @@ const CELLJS = fs.readFileSync(path.join(ROOT, 'src', 'live', 'cell.js'), 'utf8'
 const TASKJS = fs.readFileSync(path.join(ROOT, 'src', 'live', 'task.js'), 'utf8');
 // ⭐ `bugs/0042`–`0046`（2026-10-29 鼠标拖选五条）：选区的**接线**要能单独打红
 const SELECTION = fs.readFileSync(path.join(ROOT, 'src', 'live', 'selection.js'), 'utf8');
+// ⭐ `bugs/0060` 第二版（2026-11-02）：IME 组合串的行内 widget 住在 `live/preedit.js`
+//    ——装饰的**构造**在 live 层（`keymap.test.js` 的活性自测禁止 `main.js` 的代码里出现那个符号）。
+const PREEDIT = fs.readFileSync(path.join(ROOT, 'src', 'live', 'preedit.js'), 'utf8');
+// ⭐ 样式面同一条纪律（2026-11-02「举一反三」）：组合串⛔ 不是"自绘的一层覆盖物"。
+//    几何行为由探针 `D3`/`D3b` 承重，但那条要跑十几分钟 ⇒ 这里再钉一道**源码级**的快闸门。
+const LIVE_CSS = fs.readFileSync(path.join(ROOT, 'src', 'styles', 'live.css'), 'utf8');
 
-const LIVE_FILES = ['model', 'blocks', 'objects', 'cell', 'task', 'selection', 'decorations', 'a11y', 'input', 'box', 'index'];
+const LIVE_FILES = ['txn', 'model', 'blocks', 'objects', 'cell', 'task', 'blockcmd', 'table', 'selection', 'decorations', 'a11y', 'input', 'box', 'formatbar', 'index', 'preedit'];
 
 /** `src/live/**` 全部源码拼一份（字典键的收集面：控制器那边用的键 main.js 完全看不见）。 */
 const LIVE_SRC = LIVE_FILES.map(function (name) {
@@ -90,6 +96,8 @@ const OBJECTS_CODE = stripLineComments(stripBlockComments(OBJECTS));
 const CELL_CODE = stripLineComments(stripBlockComments(CELLJS));
 const TASK_CODE = stripLineComments(stripBlockComments(TASKJS));
 const SEL_CODE = stripLineComments(stripBlockComments(SELECTION));
+const PREEDIT_CODE = stripLineComments(stripBlockComments(PREEDIT));
+const LIVE_CSS_CODE = stripBlockComments(LIVE_CSS);
 
 /** 从 `function name(` 起截一段（判据只看函数头部附近，⛔ 不解析作用域）。 */
 function sliceAfter(src, needle, len) {
@@ -108,10 +116,22 @@ function countOf(src, needle) {
   return n;
 }
 
+/** 取一条 CSS 规则体（`.sel {` 到配对的第一个 `}`）；找不到返回 `''`。
+ *  ⚠️ 调用方先经 `stripBlockComments`，所以函数体里不会混进注释。 */
+function cssRule(src, sel) {
+  const head = sel + ' {';
+  const at = src.indexOf(head);
+  if (at < 0) return '';
+  const open = at + head.length - 1;
+  const close = src.indexOf('}', open);
+  if (close < 0) return '';
+  return src.slice(open + 1, close);
+}
+
 /**
  * @param {{html:string, js:string, liveSrc:string, session:string, configRs:string,
  *          cmdsRs:string, dict:object, harness:string, objects:string, cellSrc:string,
- *          taskSrc:string, selSrc:string}} s
+ *          taskSrc:string, selSrc:string, preedit:string, css:string}} s
  * @returns {string[]} 失败项（空 = 全过）
  */
 function score(s) {
@@ -133,6 +153,21 @@ function score(s) {
   if (!links.length) bad.push('index.html 里没扫到样式表，正则写错了？');
   else if (links[links.length - 1].indexOf('styles/live.css') < 0) {
     bad.push('styles/live.css 不是最后一张样式表（最后一张是 ' + links[links.length - 1] + '）');
+  }
+
+  // ⭐ `design/0061` L4：格式栏必须排在 `live/index.js` **之前**（本层接线要求），
+  //    且它**加载期不取 `window.rmd.*`**（全部是事件里的惰性查找）——
+  //    这两条一起由加载顺序闸门与 `keymap.test.js` 的「依赖先于取值」共同看着。
+  const fbTag = '<script src="live/formatbar.js"></script>';
+  const fbAt = s.html.indexOf(fbTag);
+  const idxAt = s.html.indexOf('<script src="live/index.js"></script>');
+  if (fbAt < 0) bad.push('index.html 少了 ' + fbTag);
+  else if (idxAt >= 0 && fbAt > idxAt) {
+    bad.push('live/formatbar.js 排在 live/index.js **之后** —— 设计要求它在前（design/0061 L4）');
+  }
+  // ⭐ 最小暴露：格式栏靠 `activeView()` 取活动块，⛔ 别让它直接摸 `active` 或 CM6 实例。
+  if (s.liveSrc.indexOf('activeView: function') < 0) {
+    bad.push('live/index.js 没有 activeView —— 浮动格式栏拿不到活动视图');
   }
 
   // ── ② 开关链：出厂关、快照带出来、前端**严格**读 ───────────────────────
@@ -177,6 +212,14 @@ function score(s) {
   }
 
   // ── ⑤ 五条"会弄丢未写盘提交"的路都必须过闸 ────────────────────────────
+  // ⭐ `design/0082`：切换文档那道闸被抽成了 `gateSwitchDoc`（`⌘N` 与 `openDocument`
+  //    共用同一份，`INV-EDIT-06` 禁止写第二份）⇒ 判据认"这条路走到了闸"，
+  //    但闸本体**必须**仍含 live 那两条（否则抽出去的时候顺手把一半丢了）。
+  const switchGate = sliceAfter(s.js, 'function gateSwitchDoc(', 3000);
+  if (!switchGate) bad.push('main.js 找不到 gateSwitchDoc（切换文档的唯一脏闸）');
+  else if (!/live\.(isDirty|isEditing)\(\)/.test(switchGate)) {
+    bad.push('gateSwitchDoc 里没有 live 脏闸 —— 未写盘的提交会无声消失');
+  }
   [
     ['async function openDocument(', '切换文档'],
     ['async function reloadCurrentDocument(', '重载'],
@@ -186,9 +229,10 @@ function score(s) {
   ].forEach(function (pair) {
     const body = sliceAfter(s.js, pair[0], 3000);
     if (!body) { bad.push('main.js 找不到 ' + pair[0]); return; }
-    if (!/live\.(isDirty|isEditing)\(\)/.test(body)) {
-      bad.push(pair[1] + '（' + pair[0] + '）没有 live 脏闸 —— 未写盘的提交会无声消失');
-    }
+    if (/live\.(isDirty|isEditing)\(\)/.test(body)) return;
+    // ⭐ 抽出去的那一份：只要它**真的走到了** `gateSwitchDoc` 就算过。
+    if (body.indexOf('gateSwitchDoc(') >= 0 && switchGate) return;
+    bad.push(pair[1] + '（' + pair[0] + '）没有 live 脏闸 —— 未写盘的提交会无声消失');
   });
 
   // ── ⑥ CM6 视图**只建一处**，且扩展清单就是 §5.1 那一份 ────────────────────
@@ -229,8 +273,15 @@ function score(s) {
   }
 
   // ── ⑧ 串行链的链尾必须吞拒绝（否则一次失败之后整条链永久 rejected）────────
-  if (!/liveChain = run\.then\(function \(\) \{\}, function \(\) \{\}\);/.test(s.js)) {
+  //    ⚠️⚠️ 2026-11-05：**吞掉 ≠ 不报**。`leave()` 曾在任务列表块里抛出，
+  //    被这里的空处理器吃干净 ⇒ 页内一个未捕获异常都没有，探针只看到 `end_edit +0`。
+  //    ⇒ 链尾仍是 `then(_, handler)`，但那个 handler 必须**留下证据**（`console.error`）。
+  const 链尾 = /liveChain = run\.then\(function \(\) \{\}, function \([^)]*\) \{([\s\S]*?)\n    \}\);/
+    .exec(s.js);
+  if (!链尾) {
     bad.push('liveSerial 的链尾没有吞拒绝 —— 一次失败会让后续每一次动作静默不执行');
+  } else if (链尾[1].indexOf('console.error') < 0) {
+    bad.push('liveSerial 把失败吞得一个字都不留 —— 排查时看不出是哪一步抛出');
   }
 
   // ── ⑧b 状态条的**错误等级由调用点给**（评审第 19 条）────────────────────
@@ -268,7 +319,13 @@ function score(s) {
   }
 
   // ── ⑩ 结构块⛔ 不进覆盖层，但要给一条可执行的路 ──────────────────────────
-  const structBody = sliceAfter(s.js, 'function onLiveDocDown(', 2500);
+  // ⚠️ 窗口 **3200**（2026-11-04 由 2500 放大）：`bugs/0069` 在表格分支里加了一段
+  //    「点的就是正在编辑的那一格 ⇒ 只挪光标、⛔ 不重进」的守卫，把 `block.editable !== true`
+  //    推到了源码（去注释后）第 **2526** 字——刚好越过旧窗口 ⇒ 这条闸门会**假红**，
+  //    而它报的文案（"不判 block.editable"）看起来像产品缺陷。⛔ 别再调回 2500。
+  //    （实测：去注释后各靶子的偏移——`leaveAway('link')` 535、`cm-rmd-liveHost` 699、
+  //    `block.kind === 'Table'` 1083、`cell: { flat: flat }` 2449、`block.editable !== true` 2526。）
+  const structBody = sliceAfter(s.js, 'function onLiveDocDown(', 3200);
   if (!structBody) bad.push('main.js 找不到 onLiveDocDown');
   else {
     if (structBody.indexOf('block.editable !== true') < 0) bad.push('onLiveDocDown 不判 block.editable');
@@ -278,7 +335,30 @@ function score(s) {
     if (structBody.indexOf("classList.contains('cm-rmd-liveHost')") < 0) {
       bad.push('onLiveDocDown 不跳过正在编辑的那一块（点它会被当成"点另一块"）');
     }
+    // ⭐ `design/0047` §4.2：阅读态**链接可点、图片可缩放** ⇒ 点 `<a href>` / `<img>`
+    //    **不进编辑**（`bugs/0059`：曾经没有这一条，点一下链接就进编辑）。
+    //    ⚠️ 必须排在**所有** `live.begin` 与**表格**那一支之前——表格格子里也有链接
+    //    （§4.2 末句：「表格内单击不进编辑，但表格内链接仍可点」）。
+    const linkSkip = structBody.indexOf("leaveAway('link')");
+    if (linkSkip < 0) {
+      bad.push('onLiveDocDown 不跳过链接/图片 —— 点一下链接就进编辑（0047 §4.2）');
+    } else {
+      if (structBody.indexOf('linkOf(') < 0) {
+        bad.push('onLiveDocDown 判链接不转调 linkOf(...) —— 第二条判据早晚与链接委托漂移');
+      }
+      const firstBegin = structBody.indexOf('live.begin(');
+      if (firstBegin >= 0 && linkSkip > firstBegin) {
+        bad.push('链接/图片的跳过排在 live.begin 之后 —— 那时已经进编辑了');
+      }
+      const tableBranch = structBody.indexOf("block.kind === 'Table'");
+      if (tableBranch >= 0 && linkSkip > tableBranch) {
+        bad.push('链接的跳过排在表格分支之后 —— 表格里的链接仍会进编辑（0047 §4.2）');
+      }
+    }
   }
+  // ⚠️ `linkOf` **只能有一份**：链接委托与"点链接不进编辑"共用同一条判据。
+  const linkOfDefs = countOf(s.js, 'function linkOf(');
+  if (linkOfDefs !== 1) bad.push('`main.js` 里 `function linkOf(` 出现 ' + linkOfDefs + ' 次（应恰好 1 次）');
   const downHooks = countOf(s.js, "addEventListener('mousedown', onLiveDocDown)");
   if (downHooks !== 1) bad.push('文档级 mousedown 委托出现 ' + downHooks + ' 次（应恰好 1 次）');
 
@@ -350,7 +430,10 @@ function score(s) {
   //    ① `⌘↵` 写在裸 `Enter` 之后 ⇒ **永远到不了**（`⌘↵` 的 `key` 就是 `'Enter'`）；
   //    ② 覆盖层的键盘全挂在离屏 textarea 上 ⇒ 焦点一旦不在它身上，`Esc` 一个字节都收不到，
   //       界面上就**没有任何一条退路**了。
-  const keyBody = sliceAfter(s.js, 'function onKeyDown(ev)', 6000);
+  // ⚠️ 窗口是**定位用**的字节数，不是判据本身：`onKeyDown` 2026-11-14 加了"行首退格的
+  //    升一级"分支（`bugs/0116` §10）⇒ 后方分支整体后移约 160 字节，窗口从 6000 放到 6500。
+  //    判据仍是"这些分支**真的在 onKeyDown 里**"，⛔ 放宽窗口不等于放宽语义。
+  const keyBody = sliceAfter(s.js, 'function onKeyDown(ev)', 6500);
   if (!keyBody) bad.push('main.js 找不到 onKeyDown');
   else {
     const modEnterAt = keyBody.indexOf('mods.cmd && (ev.key === \'Enter\'');
@@ -360,6 +443,11 @@ function score(s) {
       bad.push('`⌘↵` 排在裸 `Enter` 之后 —— 它的第一个条件就是 key === "Enter"，永远到不了');
     }
     if (keyBody.indexOf("if (ev.key === 'Escape')") < 0) bad.push('onKeyDown 没有 `Esc` 分支');
+    // ⭐ `bugs/0308`：行尾"不劈开闭合标记"的判据必须**真的接在裸 Enter 分支里**——
+    //    纯函数单测全绿也可能没有任何调用方（`bugs/0105` 的行尾镜像缺口正是这样漏过去的）。
+    if (keyBody.indexOf('LSel.lineEndInsertPoint') < 0) {
+      bad.push('裸 Enter 分支没调用 `LSel.lineEndInsertPoint` —— 行尾回车仍会把闭合 `**` 劈到下一行（bugs/0308）');
+    }
   }
   const globalKeyHook = countOf(s.js, "addEventListener('keydown', onLiveGlobalKey, true)");
   if (globalKeyHook !== 1) {
@@ -376,6 +464,33 @@ function score(s) {
     if (globalBody.indexOf('document.activeElement') < 0) {
       bad.push('onLiveGlobalKey 不判"焦点落在有用的地方没有" —— 会抢掉覆盖层自己的 Esc');
     }
+    // ⭐ `bugs/0306`：焦点一离开离屏 textarea，`⌫` / 打字**一个字节都收不到**
+    //    （选区还画着 ⇒ 用户看到的是"选中了却删不掉"）。兜底必须有"接住再交回"的那一条。
+    //    ⚠️ 判据只判**有没有接住并交回**，⛔ 不在这里列键名——列键名等于又写一份键位表（`INV-SET-01`）。
+    // ⚠️ 判带分号的**调用形态**：函数声明 `function refocusAndReplay(ev) {` 不含分号，
+    //    否则"删掉调用"的变异会被旁边的声明串顶成假绿。
+    if (globalBody.indexOf('refocusAndReplay(ev);') < 0) {
+      bad.push('onLiveGlobalKey 丢了焦点就不管编辑键 —— 选区还亮着但 ⌫ 删不掉（bugs/0306）');
+    }
+  }
+  // ⭐ `bugs/0306` 的那一半：**交回哪儿**。⛔ 不许在兜底里另写映射（`INV-SET-01`）。
+  const replayBody = sliceAfter(s.js, 'function refocusAndReplay(', 2400);
+  if (!replayBody) bad.push('main.js 找不到 refocusAndReplay');
+  else {
+    if (replayBody.indexOf('K.modifiers') < 0) {
+      bad.push('refocusAndReplay 不判修饰键 —— 应用快捷键会被重放成两次');
+    }
+    if (replayBody.indexOf('sink(ev);') < 0) {
+      bad.push('refocusAndReplay 不把按键交回 onKeyDown —— 那是第二份键位表');
+    }
+    if (replayBody.indexOf('preventDefault') < 0) {
+      bad.push('refocusAndReplay 不吞这一下 —— 同一次按键会走两条路');
+    }
+  }
+  // ⚠️ 反向：`onKeyDown` 那条 sink 真被赋值了吗？漏了 ⇒ `liveKeySink` 恒 `null`，
+  //    整条修复**静默失效**（表现与修前完全一样，任何行为判据都看不出来）。
+  if (countOf(s.js, 'liveKeySink = onKeyDown') !== 1) {
+    bad.push('makeLiveView 没把 onKeyDown 挂到 liveKeySink（焦点回来的路是死的）');
   }
   // ⭐ 点了但**没进得去**必须等于退出：四类落空（点空白 / 块间隙 / 不在对齐表 / 结构块）原来全是裸 return。
   //    ⚠️ 判**调用点**（带引号的 `leaveAway('`），⛔ 别判 `leaveAway(`——那会连函数声明一起算进去，
@@ -410,15 +525,24 @@ function score(s) {
   if (liveSrc.indexOf('function commitCell(') < 0) {
     bad.push('live/index.js 没有 commitCell —— 单元格提交仍会走整块提交（会写坏同排其余格子）');
   } else {
-    const cellBody = sliceAfter(liveSrc, 'function commitCell(', 2200);
-    if (cellBody.indexOf('cellMod.splice(') < 0) {
-      bad.push('commitCell 不用 cell.js::splice —— 两侧填充会被重拼掉（INV-CELL-01）');
+    const cellBody = sliceAfter(liveSrc, 'function commitCell(', 2600);
+    // ⭐ `design/0058` §2.1：`unchanged` / `valid` / `rejected` 只有**一处**判据。
+    //    ⚠️ 旧形态是 `isUnchanged` 判"没改"、`needsWrite` 判"要写"——两条各算一遍，
+    //    口径靠人记得对齐（`bugs/0047` 就是那么长出来的）。⇒ 现在守"必须过 `judge`"。
+    if (cellBody.indexOf('cellMod.judge(') < 0) {
+      bad.push('commitCell 不经 cell.js::judge —— 三个结果又会长出第二套判据（INV-MUT-02）');
     }
-    if (cellBody.indexOf('cellMod.encode(') < 0) {
+    // ⚠️ INV-CELL-01/02 的落点从 `commitCell` **下沉**进了 `judge`：判据守的仍是
+    //    "提交必须过 encode ＋ 两侧填充走 splice"，只是位置换了（⛔ 别删——它守的是同一件事）。
+    const judgeBody = sliceAfter(String(s.cellSrc || ''), 'function judge(', 2200);
+    if (judgeBody.indexOf('splice(') < 0 || judgeBody.indexOf('padFor(') < 0) {
+      bad.push('cell.js::judge 不用 padFor/splice —— 两侧填充会被重拼掉（INV-CELL-01）');
+    }
+    if (judgeBody.indexOf('encode(view)') < 0) {
       // ⚠️ `2026-10-28`（`bugs/0035`）起 `encode` 不再"折换行"，而是把它写成 `<br>`：
       //    判据仍然是"提交必须过 `encode`"，只是**失效形态**换了 ——
       //    `|` 不转义会把表格撑坏，换行不写 `<br>` 会在写盘那一步**静默丢掉**用户刚敲的那一行。
-      bad.push('commitCell 没过 `cell.js::encode` —— `|` 不转义会撑坏表格，'
+      bad.push('cell.js::judge 没过 `encode` —— `|` 不转义会撑坏表格，'
         + '换行不写成 `<br>` 会静默丢行（INV-CELL-02）');
     }
     // ⭐ 提交区间必须**恰好一行**：这是"撤销栈 / 身份复核 / mount 全都不用改"的全部理由。
@@ -458,11 +582,26 @@ function score(s) {
       bad.push('有策略声明了 `enter: \'walk\'`，但 navigateCell 不用 cell.js 的 flatBelow');
     }
   }
+  // ⭐ `bugs/0104`：只要某个对象声明了 `arrows: 'cross'`（表格格子），方向键跨格就必须走
+  //    `cell.js` 的下标函数（左右 ＋ 上下），⛔ 别在 `main.js` 里自己再算一套行列。
+  {
+    const anyCross = /arrows:\s*\/\*\* @type \{const\} \*\/ \('cross'\)/.test(OBJECTS);
+    if (anyCross) {
+      ['flatAfter', 'flatBelow', 'flatAbove'].forEach(function (f) {
+        if (navBody.indexOf(f) < 0) {
+          bad.push('有策略声明了 `arrows: \'cross\'`，但 navigateCell 不用 cell.js 的 ' + f);
+        }
+      });
+      if (s.js.indexOf('function crossCellVertical(') < 0) {
+        bad.push('main.js 没有 crossCellVertical —— 上下方向键到格子边界仍停在原地（bugs/0104）');
+      }
+    }
+  }
   // ⭐ **每个对象都要把契约**（`design/0054` §2.1 的六个字段）**表全**（评审第 18 条 ①）：
   //    两张表里 `text` / `enter` 如今取值相同是**事实**，⛔ 不是冗余——它们是逐对象的
   //    声明面（将来加一个对象时，"它答了没有"必须看得见）。所以判据钉的是"都表了态"。
   {
-    const fields = ['id', 'inlineOnly', 'box', 'tab', 'enter', 'text', 'verify'];
+    const fields = ['id', 'inlineOnly', 'box', 'tab', 'enter', 'arrows', 'text', 'verify'];
     const objs = ['BLOCK', 'CELL'];
     objs.forEach(function (name) {
       const at = OBJECTS.indexOf('const ' + name + ' = Object.freeze({');
@@ -501,7 +640,10 @@ function score(s) {
     if (tableAt < 0) {
       bad.push('onLiveDocDown 没有表格分支 —— 点格子走的是"结构块不能改"那条路');
     } else {
-      const tableBody = structBody.slice(tableAt, tableAt + 1600);
+      // ⚠️ 窗口放宽到 3200（2026-11-14）：表格分支中间加了一段"点的就是正在编辑的
+      //    这一格"的注释（`bugs/0069`），`cell: { flat }` 被推到约 2.5k 字符处；
+      //    ⛔ 别把窗口继续放大到"整函数"——那就退化成"函数里出现过"。
+      const tableBody = structBody.slice(tableAt, tableAt + 3200);
       if (tableBody.indexOf('cell: { flat: flat }') < 0) {
         bad.push('onLiveDocDown 进入单元格时不带 `cell.flat` —— 控制器会按整块进入');
       }
@@ -597,11 +739,15 @@ function score(s) {
     if (tBody.indexOf('taskMod.toggleLine(') < 0) {
       bad.push('doToggleTask 不用 task.js::toggleLine —— 整行重写会丢掉行尾与两侧内容的原样');
     }
-    if (!/session\.commit\(\s*\{\s*from:\s*idx,\s*to:\s*idx \+ 1\s*\}/.test(tBody)) {
+    // ⚠️ `design/0058` 起打勾也走**同一条事务链**：区间写在计划里，⛔ 不再直接 `session.commit`。
+    if (!/range:\s*\{\s*from:\s*idx,\s*to:\s*idx \+ 1\s*\}/.test(tBody)) {
       bad.push('doToggleTask 的提交区间不是"一行换一行"（`INV-TASK-01`）');
     }
+    if (tBody.indexOf('runTransaction(') < 0) {
+      bad.push('doToggleTask 绕过统一事务入口 —— 打勾失败时没有成对回滚（`design/0058` §2.2）');
+    }
     const snapAt = tBody.indexOf('const wasDirty = dirty();');
-    const commitAt = tBody.indexOf('const res = session.commit(');
+    const commitAt = tBody.indexOf('runTransaction(');
     if (snapAt < 0) {
       bad.push('doToggleTask 不取进入前的脏快照 —— 打勾会替用户偷偷保存别的改动（`INV-TASK-06`）');
     } else if (commitAt >= 0 && snapAt > commitAt) {
@@ -614,10 +760,14 @@ function score(s) {
   // "等不到宿主"那一条，其余几条**根本不会出现**（它只在"进得去之后"才量几何）
   // ⇒ "探针全绿"与"用户点不进去"可以同时成立（`docs/bugs/0025` 就是这么活下来的）。
   // ⚠️ `s.liveSrc` 是**原样拼接**的（没剥注释）⇒ 这里自己剥一遍，⛔ 别让注释里的旧口径把人骗红。
+  // ⛔⛔ **2026-11-09 收口**：本节守的是"**不许因为几何而拒收**"（用户点了必须有反应），
+  //    ⛔ 不是"几何差可以放行"。`INV-LIVE-04` ① 要求进入瞬间逐像素不动 ⇒
+  //    `status.live-short` 那条报的是**缺陷**，它不能当"合规"的信号；
+  //    锚定（`anchorAt`）是**兜底**，不是合规手段（进入瞬间本来就不许滚，见探针 `B{i}-6`）。
   const liveCode = stripLineComments(stripBlockComments(String(s.liveSrc || '')));
   if (liveCode.indexOf("why: 'geometry'") >= 0 || liveCode.indexOf('why: "geometry"') >= 0) {
-    bad.push('`src/live/**` 里还有按几何**拒收**整块的出口（`INV-KERNEL-05`：块永远进得去，'
-      + '几何差只许告警、只许补滚动）');
+    bad.push('`src/live/**` 里还有按几何**拒收**整块的出口（`INV-KERNEL-05` ①：块永远进得去；'
+      + '⛔ 但放行不等于合规，几何差要为 0，见 `INV-LIVE-04` ①）');
   }
   if (liveCode.indexOf("t('status.live-short'") < 0) {
     bad.push('`src/live/**` 不再报「这一块进来之后比原来矮」——变矮意味着字号/行高/内边距搬丢了，'
@@ -625,11 +775,12 @@ function score(s) {
   }
 
   // ⚠️ 允许量**不许回到 `main.js`**：`bugs/0025` 的病根是"同一个算式有两份"。
-  //    U6 之后产品**没有**允许量（拒收已删）⇒ 这里守的是"别把它偷偷加回来"。
+  //    U6 之后产品**没有**允许量，`layoutSlack` 作为"允许量"已经整条作废
+  //    （`design/0047` §10 尾注）⇒ 这里守的是"别把它偷偷加回来"。
   const mainCode = String(s.js || '');
   if (mainCode.indexOf('layoutSlack') >= 0) {
-    bad.push('main.js 又出现 `layoutSlack` —— 允许量回到了产品侧，几何又会拦人'
-      + '（`INV-KERNEL-05`：块永远进得去）');
+    bad.push('main.js 又出现 `layoutSlack` —— 允许量回到了产品侧（已作废；'
+      + '几何差不是"允许多少"的问题，是 "必须为 0"，见 `INV-LIVE-04` ①）');
   }
 
   // ⭐ U6 的锚定接线，三件事各有一个**顺序/落点**要求：
@@ -724,10 +875,18 @@ function score(s) {
     bad.push('live/index.js 没有 newParagraph —— 控制器那条路不存在');
   } else {
     const npBody = sliceAfter(liveSrc, 'async function newParagraph(', 3000);
-    // ⚠️⚠️ **必须插三行**：comrak 把相邻非空行并进同一段 ⇒ 只插一行时用户敲的第一个字
-    //    会跟上面那一块或下面的正文**合并**（屏幕上表现为"新写的字跑进了引用块里"）。
-    if (!/\['[^']*',\s*'[^']*',\s*'[^']*'\]/.test(npBody)) {
-      bad.push('newParagraph 插入的不是三行空行 —— 相邻非空行会被并进同一段，新写的字会跑进上一块');
+    // ⚠️⚠️ **至少插两行**（上分隔 ＋ 新段落）：comrak 把相邻非空行并进同一段 ⇒ 只插一行时用户
+    //    敲的第一个字会跟上面那一块（或下面的正文）**合并**（"新写的字跑进了引用块里"）。
+    //    ⭐ 而**下分隔**要看块后有没有现成的空行（`bugs/0079`）：标准 Markdown 里 `b.to` 那一行
+    //    本来就是块间空行，再插三行会让新段落下方留 2 个空行、每按一次多一个。
+    //    ⇒ 判据改成两条：① 有「块后已有一行空行 ⇒ 只插 2 行」的**条件**；② 插入的行全是空串。
+    const 有条件下分隔 = /后面已有分隔行[\s\S]{0,80}\?\s*2\s*:\s*3/.test(npBody);
+    if (!有条件下分隔) {
+      bad.push('newParagraph 不看块后有没有现成的空行就决定插几行 —— `bugs/0079`：'
+        + '每按一次 ⌘↵ 会在文件里多留一个空行');
+    }
+    if (!/插入行\.push\(\s*''\s*\)/.test(npBody)) {
+      bad.push('newParagraph 插入的不是空串行 —— 相邻非空行会被并进同一段，新写的字会跑进上一块');
     }
     if (npBody.indexOf("caretPos: 0") < 0) {
       bad.push('newParagraph 没把光标放到段首 —— 用户还得自己找光标（这正是 `bugs/0024` 要修的）');
@@ -890,36 +1049,106 @@ function score(s) {
       + '允许的操作又回到键处理里各判一半');
   }
 
-  // ── ⑲ 组合串覆盖层的**排版跟光标那一行走**（2026-10-29 用户实测）──────────────
-  //    用户原话：「在标题下面一行输入的时候，拼音落地的字体虽然是正文，正常，
-  //    但是拼音的字很大。」根因：`.cm-rmd-preedit` 挂在 host 上，而 host 身上是
-  //    `live/box.js` 搬来的**块级**文字层（标题块量出来就是标题尺度）⇒ 标题块第二行
-  //    （`cm-rmd-line` 上的 `cm-rmd-body`，正文尺度）上，拼音按标题字号画、上屏却是正文。
-  //    ⚠️ 纯 DOM 层的 `D3` 只判"覆盖层有文本"，字号错了照样绿；真机判据在
-  //    `probe-live-block` 的 `N1b`/`N3b`（要醒屏才跑得动）⇒ 这一条是**源码级**的第二道闸。
-  const preeditBody = sliceAfter(s.js, 'function paintPreedit(', 1200);
-  if (!preeditBody) bad.push('main.js 找不到 paintPreedit —— 组合串覆盖层不存在');
-  else if (preeditBody.indexOf('syncPreeditMetrics(preeditEl);') < 0) {
-    bad.push('`paintPreedit` 没给组合串对齐**光标那一行**的排版 —— 标题块第二行的拼音会按标题字号画'
-      + '（用户 2026-10-29 实测："拼音的字很大"）');
+  // ── ⑲ 组合串是**行内 widget**，⛔ 不进文档（`bugs/0060` 第二版，2026-11-02）─────
+  //    用户原话「按照 mardo 来修改」：拼音要**占版面**（把右边的字推开、行满折行），
+  //    ⛔ 不是画在文字上面、不占版面的覆盖层。三条接线任一丢了都会退回旧形态：
+  //      ① 组合串必须是 `Decoration.widget`（行内），⛔ 不是 `position:absolute` 的 span；
+  //      ② 它必须经 `Compartment` 装进 extensions（装饰不接 facet 就**静默无效**——
+  //         `live/decorations.js` 文件头记的是同一个坑）；
+  //      ③ 它只动装饰层，⛔ 一个 `changes` 都不许有（`F6`：组合期文档零事务）。
+  //    ⚠️ 真 DOM 那半在 `probe-live-block` 的 `D3`（行内 ∧ ⛔ 进文档）/ `D3b`（占版面）/
+  //    `D3c`（落在插入点上）——这一条是**源码级**的第二道闸。
+  //    ⚠️ 窗口要**刚好盖住这个函数**（实测 748 B）：开太大会把后面 `onTransaction` 的
+  //       `changes:` 扫进来（2026-11-02 真踩过，基线当场红），开太小又会把函数尾部截掉。
+  //    ⭐ 装饰的**构造**2026-11-02 搬进了 `src/live/preedit.js`（`keymap.test.js` 的活性自测
+  //       禁止 `main.js` 的代码里出现那个 CM6 符号）⇒ 判据**各查各的**：
+  //       构造面查 preedit 源码，接线面查 `main.js` 的两个调用点。
+  const pre = s.preedit || '';
+  if (pre.indexOf('CM6.Decoration.widget(') < 0 || pre.indexOf('new PreeditWidget(') < 0) {
+    bad.push('组合串不是**行内 widget**（`live/preedit.js` 里没有 `Decoration.widget` ＋ '
+      + '`PreeditWidget`）—— 它不占版面，右边的字不会被推开'
+      + '（用户 2026-11-02「按照 mardo 来修改」）');
   }
-  //    ⚠️ 量的那个基准住在 `caretLineEl()` 里（`syncPreeditMetrics` 只是调用它）——
-  //       所以这两条**必须各查各的函数体**，⛔ 别用一个 900 字符窗口去跨两个函数查。
-  const caretLineBody = sliceAfter(s.js, 'function caretLineEl(', 700);
-  if (!caretLineBody) bad.push('main.js 找不到 caretLineEl —— 组合串的排版基准没有来源');
-  else if (caretLineBody.indexOf('view.domAtPos(sel.head)') < 0) {
-    bad.push('`caretLineEl` 不是从 `view.domAtPos(sel.head)` 取那一行的 —— '
-      + '基准变成了 host（块级文字层），标题块里第二行的拼音会按标题尺度画');
+  if (pre.indexOf('view.dispatch({ effects: slot.reconfigure(deco) });') < 0) {
+    bad.push('`live/preedit.js` 没有把组合串派发进装饰层（`slot.reconfigure(deco)`）—— '
+      + '拼音要么一个像素都不出现，要么只能退回绝对定位的覆盖层');
   }
-  const metricsBody = sliceAfter(s.js, 'function syncPreeditMetrics(', 900);
-  if (!metricsBody) bad.push('main.js 找不到 syncPreeditMetrics —— 组合串的排版权重没有来源');
+  if (pre.indexOf('new CM6.Compartment()') < 0) {
+    bad.push('组合串没有 `Compartment` —— 不给装饰层留一个可替换的槽，每敲一个拼音字就'
+      + '只能重建整个 `EditorState`');
+  }
+  if (/\bchanges\s*:/.test(pre)) {
+    bad.push('`live/preedit.js` 里出现了 `changes:` —— 组合串进文档了（`F6`：组合期零事务）');
+  }
+  //    ⭐⭐ 2026-11-14（用户报告「内容在光标的后面，等按了 Enter 真正输入之后，光标变成在内容的
+  //       后面，产生跳动」）：`side` 必须是 **-1**。`@codemirror/view` 的 `WidgetDecorationSpec.side`
+  //       原文：正的 side ⇒ widget 画在**光标之后**（自绘光标落在串的左缘，上屏后跳到串右缘）；
+  //       负的 side ⇒ 画在光标**之前**，光标全程贴在串的右缘。与 `bugs/0300` 任务框同一条规律。
+  //       ⚠️ 只判"是不是 `Decoration.widget`"抓不到它——两种 side 的 DOM 形态相同，差别只在插入符
+  //       画在哪一侧（探针 `D3d` 用真实几何承重，这条是源码级的第二道闸）。
+  //       ⚠️ 只在**有** `Decoration.widget` 时判 side：整个 widget 被摘掉的那种写坏由上面那条
+  //       判据负责，⛔ 别让一条缺陷同时打红两条（M37 的"只该红一条"就是为此）。
+  const preSide = pre.indexOf('CM6.Decoration.widget(') < 0 ? null
+    : /CM6\.Decoration\.widget\([\s\S]{0,160}?side\s*:\s*(-?\d+)/.exec(pre);
+  if (pre.indexOf('CM6.Decoration.widget(') >= 0 && !preSide) {
+    bad.push('`live/preedit.js` 的 `Decoration.widget` 没写 `side` —— 缺省值会让组合串与光标'
+      + '落在同一点上，插入符画在串的哪一侧变成偶然（用户 2026-11-14 报告的跳动）');
+  } else if (preSide && preSide[1] !== '-1') {
+    bad.push('`live/preedit.js` 的 `Decoration.widget` 用了 `side: ' + preSide[1] + '`，必须是 `-1` —— '
+      + '正的 side 把组合串画在光标**右边**，自绘光标落在串的左缘，上屏后跳到串右缘'
+      + '（用户 2026-11-14「内容在光标的后面…产生跳动」；`bugs/0300` 同族）');
+  }
+  //    ⚠️ widget 的 DOM 那一半在**自己的类**里（`PreeditWidget.toDOM`）——
+  //       所以必须**各查各的函数体**，⛔ 别用一个窗口跨两个类/函数查。
+  const widgetBody = sliceAfter(pre, 'class PreeditWidget extends CM6.WidgetType', 700);
+  if (!widgetBody) bad.push('`live/preedit.js` 找不到 PreeditWidget —— 组合串的 DOM 没有来源');
+  else if (widgetBody.indexOf("'cm-rmd-preedit'") < 0) {
+    bad.push('`PreeditWidget` 没给 `cm-rmd-preedit` 类名 —— 下划线（"还没进文档"）挂在这个类上');
+  }
+  // 接线面（`main.js`）：① 扩展装进视图；② 每次 `compositionupdate` 都真的画出去。
+  if (s.js.indexOf('extensions.push(preedit.extension);') < 0) {
+    bad.push('`preedit.extension` 没装进 extensions —— 装饰层不接 facet 就是**静默无效**'
+      + '（拼音一个像素都不出现，而任何逻辑判据都看不见）');
+  }
+  const preeditBody = sliceAfter(s.js, 'function paintPreedit(', 800);
+  if (!preeditBody) bad.push('main.js 找不到 paintPreedit —— 组合串不存在');
   else {
-    if (metricsBody.indexOf('caretLineEl()') < 0) {
-      bad.push('`syncPreeditMetrics` 不是从 `caretLineEl()` 量的 —— '
-        + '基准变成了 host（块级文字层），标题块里第二行的拼音会按标题尺度画');
+    if (preeditBody.indexOf('preedit.paint(view, s, preeditPos);') < 0) {
+      bad.push('`paintPreedit` 没有把组合串交给 `live/preedit.js` 画（`preedit.paint(...)`）—— '
+        + '拼音一个像素都不出现');
     }
-    if (!/el\.style\.fontSize\s*=/.test(metricsBody) || !/el\.style\.fontWeight\s*=/.test(metricsBody)) {
-      bad.push('`syncPreeditMetrics` 没有写 `font-size` / `font-weight` —— 覆盖层仍继承 host 的块级文字层');
+    //    ⭐ 2026-11-14（同一条用户报告的另一半）：组合串只动装饰层 ⇒ `updateListener` 的
+    //       `docChanged || selectionSet` 闸门不放行 `afterUpdate()`，自绘插入符会停在组合
+    //       开始时那一格（串的左缘），上屏才跳一次。⇒ 画完必须自己刷一次。
+    if (preeditBody.indexOf('layer.refresh();') < 0) {
+      bad.push('`paintPreedit` 画完组合串没有刷新自绘插入符（`layer.refresh()`）—— '
+        + '插入符会停在组合串的左缘、上屏后跳到右缘（用户 2026-11-14「产生跳动」）');
+    }
+    if (/\bchanges\s*:/.test(preeditBody)) {
+      bad.push('`paintPreedit` 里出现了 `changes:` —— 组合串进文档了（`F6`：组合期零事务）');
+    }
+  }
+  //    ⭐ 样式面同一条纪律（2026-11-02「举一反三」）：上面钉的是"构造的是行内 widget"，
+  //       但**几何行为有一半写在样式里**——只要给 `.cm-rmd-preedit` 补一条 `position: absolute`，
+  //       widget 立刻退回覆盖层，而这里所有**源码判据照样全绿**（探针 `D3` 会红，但它要跑十几分钟）。
+  //       ⇒ 再钉一道**源码级**的快闸门：规则体里 ⛔ 不许有定位/底色/字体族大小行高。
+  const preCss = cssRule(s.css || '', '.cm-rmd-preedit');
+  if (!preCss) {
+    bad.push('`live.css` 里没有 `.cm-rmd-preedit` 规则 —— 组合串没有样式来源'
+      + '（下划线与弱化提示都挂在这个类上）');
+  } else {
+    ['position', 'background', 'font-size', 'line-height', 'font-family', 'font-weight']
+      .forEach(function (prop) {
+        if (new RegExp('(^|[;{\\s])' + prop + '\\s*:').test(preCss)) {
+          bad.push('`.cm-rmd-preedit` 写了 `' + prop + '` —— '
+            + (prop === 'position' || prop === 'background'
+              ? '它会把行内 widget 退回"自绘覆盖层"（`bugs/0060` 第一版的形态）'
+              : '字号/行高/字体必须**继承那一行**；钉死会让代码块与标题第二行的拼音变样'));
+        }
+      });
+    if (!/(^|[;{\s])opacity\s*:/.test(preCss)) {
+      bad.push('`.cm-rmd-preedit` 没有 `opacity` —— "还没进文档"的弱化提示丢了'
+        + '（Mardo `inputtingAlpha`，`docs/research/notes/0038`）');
     }
   }
 
@@ -937,6 +1166,36 @@ function score(s) {
   else if (installCall.indexOf('gesture:') < 0) {
     bad.push('`main.js` 调 `installMouse` 时没有把记下的手势传进去（`gesture:` 缺席）'
       + '⇒ 新视图永远不知道用户已经按下了，`bugs/0042` 原样复活');
+  }
+  // ⭐ `bugs/0333`：一次双击派**两对**鼠标事件 ⇒ 两个 `live.begin` 入口都必须挡住
+  //    "同一目标还在路上"的第二次（少了它，第二次走 `leave('switch')`：提交 ＋ 整篇重渲，
+  //    把第一个视图刚落下的词选冲掉）。
+  if (countOf(s.js, 'beginBusy(key)') < 2) {
+    bad.push('`main.js` 的两个 `live.begin` 入口没有同目标去重（`beginBusy(key)`）'
+      + '⇒ 双击第二下会再排一次 begin，整篇重渲把词选冲掉（`bugs/0333`）');
+  }
+  // ⚠️ 去重必须**有期限**：一次 `live.begin` 卡住（IPC 不回来）时，⛔ 不许把那一块永久锁死。
+  if (countOf(s.js, 'Date.now() - liveBeginAt < 2000') < 1) {
+    bad.push('`main.js::beginBusy` 的同目标去重没有时限 —— 一次 begin 卡住之后'
+      + '同一块再也点不进去（`bugs/0333` 的失败模式反过来）');
+  }
+
+  // ── ⭐ 删除保护 / 再次点击的接线（`bugs/0087`、`bugs/0094`）──────────────────
+  //    纯逻辑在 `selection.js`，但"产品到底传没传"只有源码级断言碰得到。
+  const delBody = sliceAfter(s.js, 'function deleteRange(doc, forward, byWord, byLine)', 900);
+  if (!delBody) bad.push('`main.js` 找不到 `deleteRange(doc, forward, byWord, byLine)`');
+  else if (delBody.indexOf('LSel.protectedRanges(view, hiddenHook)') < 0) {
+    bad.push('`main.js::deleteRange` 没有把 `protectedRanges` 递进去 —— 只保护标记时，'
+      + '围栏行自己的换行会被删掉，可见代码被并进 0 高的隐形行（`bugs/0087`）');
+  }
+  if (sel.indexOf('protectedRanges: protectedRanges') < 0) {
+    bad.push('`selection.js` 没有导出 `protectedRanges` —— `main.js` 拿不到围栏伪区间（`bugs/0087`）');
+  }
+  const posAtBody = sliceAfter(sel, 'function posAt(ev)', 700);
+  if (!posAtBody) bad.push('`selection.js` 找不到 `posAt(ev)`');
+  else if (posAtBody.indexOf('snapHiddenTail(view,') < 0) {
+    bad.push('`selection.js::posAt` 没有过 `snapHiddenTail` —— 编辑态内再次点击行末尾的零宽标记'
+      + '会落到闭合标记之前，与首次进入（`focusAt`）不一致（`bugs/0094`）');
   }
 
   const moveBody = sliceAfter(sel, 'function moveHandler(', 1800);
@@ -958,14 +1217,24 @@ function score(s) {
   const startBody = sliceAfter(sel, 'function startDrag(', 700);
   if (!startBody) bad.push('`selection.js` 找不到 `startDrag`');
   else {
-    if (startBody.indexOf('wordAt(doc, p0)') < 0) {
-      bad.push('`startDrag` 的双击分支没用 `wordAt` ⇒ 在词的起点双击会多吞前一个词（`bugs/0045`）');
-    }
-    if (startBody.indexOf('wordStop(') >= 0) {
-      bad.push('`startDrag` 里又出现了 `wordStop(` —— 按词**移动**与点击**命中词**是两套语义（`bugs/0045`）');
+    if (startBody.indexOf('clickRange(') < 0) {
+      bad.push('`startDrag` 没走 `clickRange` —— 「点击次数 → 区间」只有那一份表，'
+        + '两份表的后果是"双击选中什么取决于点从哪条路进来的"（`bugs/0333`）');
     }
     if (startBody.indexOf('dragBase = { from:') < 0) {
       bad.push('`startDrag` 的词/行分支没记 `dragBase` —— 反向拖动会把刚选中的那段吐出去（`bugs/0044`）');
+    }
+  }
+
+  // ⭐ 单位表本体（`bugs/0333` 起从 `startDrag` 抽出来，`落多击` 与它共用）。
+  const clickBody = sliceAfter(sel, 'function clickRange(', 700);
+  if (!clickBody) bad.push('`selection.js` 找不到 `clickRange`');
+  else {
+    if (clickBody.indexOf('wordAt(doc, p0)') < 0) {
+      bad.push('`clickRange` 的双击分支没用 `wordAt` ⇒ 在词的起点双击会多吞前一个词（`bugs/0045`）');
+    }
+    if (clickBody.indexOf('wordStop(') >= 0) {
+      bad.push('`clickRange` 里又出现了 `wordStop(` —— 按词**移动**与点击**命中词**是两套语义（`bugs/0045`）');
     }
   }
 
@@ -1005,6 +1274,8 @@ const BASE = {
   cellSrc: CELL_CODE,
   taskSrc: TASK_CODE,
   selSrc: SEL_CODE,
+  preedit: PREEDIT_CODE,
+  css: LIVE_CSS_CODE,
 };
 
 test('⭐ 就地编辑的接线满足 `design/0047` 的结构判据', function () {
@@ -1016,7 +1287,7 @@ test('⭐ 就地编辑的接线满足 `design/0047` 的结构判据', function (
 // 变异自测（⚠️ 没有这一步，"全绿"不说明判据真的在看）
 // ────────────────────────────────────────────────────────────────
 
-test('⭐ 变异自测：三十六条写坏各必须让**对应**判据变红', function () {
+test('⭐ 变异自测：五十一条写坏各必须让**对应**判据变红', function () {
   assert.deepStrictEqual(score(BASE), [], '基线必须先全绿，否则下面分不清是谁的红');
 
   // M1：`setupLive()` 挪到配置快照之前（整条能力不接线，且界面上毫无痕迹）
@@ -1031,10 +1302,18 @@ test('⭐ 变异自测：三十六条写坏各必须让**对应**判据变红', 
   assert.ok(m2.some(function (x) { return x.indexOf('noteLive(payload) 的调用出现 0 次') >= 0; }), m2.join('\n'));
 
   // M3：`openDocument` 的脏闸被删（切文档丢未写盘的提交）
-  const openBody = sliceAfter(BASE.js, 'async function openDocument(', 3000);
-  const stripped = openBody.replace(/live\.(isDirty|isEditing)\(\)/g, 'void 0');
-  const m3 = score(Object.assign({}, BASE, { js: BASE.js.replace(openBody, stripped) }));
+  //    ⭐ `design/0082`：判据本体搬进了 `gateSwitchDoc`（⌘N 与打开共用一份）
+  //    ⇒ 拆成两个变异：① 路线不再走闸；② 闸本体里 live 那半被删。
+  const openCall = 'if (!(await gateSwitchDoc(baseName(path), function () { return openDocument(path, opts); }))) {';
+  assert.strictEqual(countOf(BASE.js, openCall), 1, 'M3 的靶子必须**恰好命中 1 处**');
+  const m3 = score(Object.assign({}, BASE, { js: BASE.js.replace(openCall, 'if (false) {') }));
   assert.ok(m3.some(function (x) { return x.indexOf('切换文档') >= 0; }), m3.join('\n'));
+
+  const gateBody = sliceAfter(BASE.js, 'async function gateSwitchDoc(', 3000);
+  assert.ok(gateBody.indexOf('live.isDirty()') >= 0, 'M3b 的目标串与 main.js 漂开了（变异会假绿）');
+  const gateStripped = gateBody.replace(/live\.(isDirty|isEditing)\(\)/g, 'void 0');
+  const m3b = score(Object.assign({}, BASE, { js: BASE.js.replace(gateBody, gateStripped) }));
+  assert.ok(m3b.some(function (x) { return x.indexOf('gateSwitchDoc 里没有 live 脏闸') >= 0; }), m3b.join('\n'));
 
   // M4：白名单里多装一个带键位的扩展（⚠️ 目标必须与现在的写法一致——扩展是逐个 `push` 的）
   //    ⚠️ 目标串一旦与 `main.js` 漂开，`.replace` 就**什么都没改**，这条变异自测会假绿。
@@ -1045,10 +1324,24 @@ test('⭐ 变异自测：三十六条写坏各必须让**对应**判据变红', 
   assert.ok(m4.some(function (x) { return x.indexOf('historyKeymap') >= 0; }), m4.join('\n'));
 
   // M5：串行链的链尾不再吞拒绝
+  //    ⚠️ 2026-11-05：目标串随链尾改成"带日志的处理器"一起改；⛔ 留在旧字面串上
+  //    会让 `.replace` 什么都没改，这条变异自测**假绿**。
   const m5 = score(Object.assign({}, BASE, {
-    js: BASE.js.replace('liveChain = run.then(function () {}, function () {});', 'liveChain = run;'),
+    js: BASE.js.replace(
+      /liveChain = run\.then\(function \(\) \{\}, function \(\w+\) \{[\s\S]*?\n    \}\);/,
+      'liveChain = run;'
+    ),
   }));
   assert.ok(m5.some(function (x) { return x.indexOf('链尾没有吞拒绝') >= 0; }), m5.join('\n'));
+
+  // M5b：链尾吞了但**一个字都不留**（回到 2026-11-05 之前那种"静默吞"）
+  const m5b = score(Object.assign({}, BASE, {
+    js: BASE.js.replace(
+      /liveChain = run\.then\(function \(\) \{\}, function \(\w+\) \{[\s\S]*?\n    \}\);/,
+      'liveChain = run.then(function () {}, function () {});'
+    ),
+  }));
+  assert.ok(m5b.some(function (x) { return x.indexOf('吞得一个字都不留') >= 0; }), m5b.join('\n'));
 
   // M6：字典里删掉一个键（状态条上会出现键名）
   const dict = { zh: Object.assign({}, I18N.DICT.zh), en: Object.assign({}, I18N.DICT.en) };
@@ -1112,6 +1405,22 @@ test('⭐ 变异自测：三十六条写坏各必须让**对应**判据变红', 
   }));
   assert.ok(m11.some(function (x) { return x.indexOf('onLiveGlobalKey` 出现 0 次') >= 0; }), m11.join('\n'));
 
+  // M58（`bugs/0306`）：兜底里**删掉"接住编辑键"那一条** ⇒ 焦点一离开离屏 textarea，
+  //   选区还亮着而 ⌫ / 打字全部静默丢弃（用户 2026-11-10 的截图形态）。
+  assert.ok(BASE.js.indexOf('refocusAndReplay(ev);') >= 0, 'M58 的目标串与 main.js 漂开了（变异会假绿）');
+  const m58 = score(Object.assign({}, BASE, {
+    js: BASE.js.replace('refocusAndReplay(ev);', 'void 0;'),
+  }));
+  assert.ok(m58.some(function (x) { return x.indexOf('丢了焦点就不管编辑键') >= 0; }), m58.join('\n'));
+
+  // M59（`bugs/0306`）：把"交回 onKeyDown"换成自己吞掉 ⇒ 编辑键又回到"谁都不处理"，
+  //   而断言必须看得见"这是第二份键位表的苗头"。
+  assert.ok(BASE.js.indexOf('sink(ev);') >= 0, 'M59 的目标串与 main.js 漂开了（变异会假绿）');
+  const m59 = score(Object.assign({}, BASE, {
+    js: BASE.js.replace('sink(ev);', 'void ev;'),
+  }));
+  assert.ok(m59.some(function (x) { return x.indexOf('第二份键位表') >= 0; }), m59.join('\n'));
+
   // M12：`onLiveDocDown` 的落空分支退回裸 `return`（点空白 / 结构块 / 块间隙 / 表格的三种落空全都不退出）
   //    ⚠️ `design/0049` 起 `leaveAway(` 多出两个单元格理由（`cell-structural` / `cell-pairing`），
   //    不一起打掉的话计数还剩 3 ⇒ 这条变异**不再变红**，而"全绿"看起来毫无异常。
@@ -1172,12 +1481,13 @@ test('⭐ 变异自测：三十六条写坏各必须让**对应**判据变红', 
   assert.ok(m18.some(function (x) { return x.indexOf('noteLive 不武装任务项方框') >= 0; }), m18.join('\n'));
 
   // M19：脏快照挪到提交之后（那时一定为真 ⇒ 打勾永远不写盘，屏幕上勾了、磁盘上没变）
+  //    ⚠️ `design/0058` **换靶**：打勾不再直接 `session.commit`，靶子搬到 `runTransaction` 之后。
   const m19 = score(Object.assign({}, BASE, {
     liveSrc: LIVE_SRC.replace(
       '      const wasDirty = dirty();\n',
       '').replace(
-      '      const res = session.commit({ from: idx, to: idx + 1 }, [nextLine]);',
-      '      const res = session.commit({ from: idx, to: idx + 1 }, [nextLine]);\n      const wasDirty = dirty();'),
+      "        group: 'toggle-task',\n      });",
+      "        group: 'toggle-task',\n      });\n      const wasDirty = dirty();"),
   }));
   assert.ok(m19.some(function (x) { return x.indexOf('wasDirty 在提交之后才取') >= 0; }), m19.join('\n'));
 
@@ -1212,13 +1522,16 @@ test('⭐ 变异自测：三十六条写坏各必须让**对应**判据变红', 
     m22.join('\n')
   );
 
-  // M23：只插**一行**空行（comrak 把相邻非空行并进同一段 ⇒ 用户敲的第一个字会并进上一块，
-  //    屏幕上表现为"新写的字跑进了引用块里"，而任何一条纯逻辑判据都看不见）
+  // M23：**无条件插 3 行**（`bugs/0079` 的原形）—— 标准 Markdown 里块后本来就有一行空行，
+  //    再插下分隔会让新段落下方留 2 个空行，每按一次 ⌘↵ 多一个。
   const m23 = score(Object.assign({}, BASE, {
-    liveSrc: BASE.liveSrc.replace("['', '', '']", "['']"),
+    liveSrc: BASE.liveSrc.replace(
+      'const 空行数 = 后面已有分隔行 ? 2 : 3;',
+      'const 空行数 = 3;'
+    ),
   }));
   assert.ok(
-    m23.some(function (x) { return x.indexOf('三行空行') >= 0; }),
+    m23.some(function (x) { return x.indexOf('多留一个空行') >= 0; }),
     m23.join('\n')
   );
 
@@ -1308,25 +1621,30 @@ test('⭐ 变异自测：三十六条写坏各必须让**对应**判据变红', 
     m29.join('\n')
   );
 
-  // M30：组合串覆盖层不再对齐光标那一行（2026-10-29 用户实测：标题块第二行的拼音按标题字号画）
-  //    ⇒ 覆盖层只剩"继承 host"，而 host 是**块级**文字层。⚠️ 两件事必须同时打红才对得上
-  //    产品那句 `syncPreeditMetrics(preeditEl);` 的两半：① 没调用；② 量的不是那一行。
-  const preeditCall = 'syncPreeditMetrics(preeditEl);';
-  assert.ok(BASE.js.indexOf(preeditCall) >= 0, 'M30 的目标串与 main.js 漂开了（变异会假绿）');
-  const m30 = score(Object.assign({}, BASE, { js: BASE.js.replace(preeditCall, 'void 0;') }));
-  assert.ok(
-    m30.some(function (x) { return x.indexOf('没给组合串对齐**光标那一行**的排版') >= 0; }),
-    m30.join('\n')
-  );
-  const m30b = score(Object.assign({}, BASE, {
-    js: BASE.js.replace('view.domAtPos(sel.head)', 'view.domAtPos(0)'),
+  // M30：组合串不再派发进装饰层（`bugs/0060` 第二版：行内 widget 的**唯一**出口）
+  //    ⇒ 拼音一个像素都不出现；更坏的是"退回绝对定位的覆盖层"也需要它，所以这条
+  //    是 `D3`/`D3b` 那一族真 DOM 判据的**前置接线**。
+  //    ⚠️ 靶子在 `src/live/preedit.js`（2026-11-02 装饰构造搬进 live 层）。
+  const preeditPush = 'view.dispatch({ effects: slot.reconfigure(deco) });';
+  assert.ok((BASE.preedit || '').indexOf(preeditPush) >= 0, 'M30 的目标串与 preedit.js 漂开了（变异会假绿）');
+  const m30 = score(Object.assign({}, BASE, {
+    preedit: BASE.preedit.replace(preeditPush, 'void deco;'),
   }));
   assert.ok(
-    m30b.some(function (x) { return x.indexOf('`caretLineEl` 不是从 `view.domAtPos(sel.head)` 取那一行的') >= 0; }),
+    m30.some(function (x) { return x.indexOf('没有把组合串派发进装饰层') >= 0; }),
+    m30.join('\n')
+  );
+  // M30b：`preedit.extension` 没装进 extensions（＝装饰层不接 facet ⇒ **静默无效**，
+  //    计算得出、屏幕上什么都没有——`live/decorations.js` 文件头记的同一个坑）
+  const slotPush = 'extensions.push(preedit.extension);';
+  assert.ok(BASE.js.indexOf(slotPush) >= 0, 'M30b 的目标串与 main.js 漂开了（变异会假绿）');
+  const m30b = score(Object.assign({}, BASE, { js: BASE.js.replace(slotPush, '') }));
+  assert.ok(
+    m30b.some(function (x) { return x.indexOf('没装进 extensions') >= 0; }),
     m30b.join('\n')
   );
   assert.strictEqual(m30b.length, 1,
-    'M30b 只该打红"量的不是那一行"，⛔ 别把"没调用"一起判红\n' + m30b.join('\n'));
+    'M30b 只该打红"没装进 extensions"，⛔ 别把"没派发"一起判红\n' + m30b.join('\n'));
 
   // ── `bugs/0042`–`0046`（2026-10-29 鼠标拖选五条）的六条同族变异 ────────────
   //    ⚠️ 这六处的失效形态**全都不报错**：拖选丢一段、多选一个词、高亮少画几行。
@@ -1349,9 +1667,26 @@ test('⭐ 变异自测：三十六条写坏各必须让**对应**判据变红', 
     m32.join('\n')
   );
 
+  // M49（`bugs/0333`）：不挡同目标的第二次 begin ⇒ 双击第二下整篇重渲，词选被冲掉
+  const dedupe = 'if (beginBusy(key)) return;';
+  assert.strictEqual(countOf(BASE.js, dedupe), 2, 'M49 的靶子必须**恰好命中 2 处**');
+  const m49 = score(Object.assign({}, BASE, { js: BASE.js.split(dedupe).join('void 0;') }));
+  assert.ok(
+    m49.some(function (x) { return x.indexOf('同目标去重') >= 0; }),
+    m49.join('\n')
+  );
+
+  // M50（`bugs/0333` 的另一面）：去重**没有期限** ⇒ 一次 begin 卡住之后同一块永久点不进去
+  const expire = 'Date.now() - liveBeginAt < 2000';
+  assert.strictEqual(countOf(BASE.js, expire), 1, 'M50 的靶子必须**恰好命中 1 处**');
+  const m50 = score(Object.assign({}, BASE, { js: BASE.js.replace(expire, 'true') }));
+  assert.ok(
+    m50.some(function (x) { return x.indexOf('没有时限') >= 0; }),
+    m50.join('\n')
+  );
+
   // M33：`moveHandler` 不再接手（`!dragging` 那个分支消失）
-  const dragGuard = 'if (!dragging) {';
-  assert.strictEqual(countOf(BASE.selSrc, dragGuard), 1, 'M33 的靶子必须**恰好命中 1 处**');
+  const dragGuard = 'if (!dragging) {';  assert.strictEqual(countOf(BASE.selSrc, dragGuard), 1, 'M33 的靶子必须**恰好命中 1 处**');
   const m33 = score(Object.assign({}, BASE, {
     selSrc: BASE.selSrc.replace(dragGuard, 'if (false) {'),
   }));
@@ -1396,4 +1731,140 @@ test('⭐ 变异自测：三十六条写坏各必须让**对应**判据变红', 
     m36.some(function (x) { return x.indexOf('`currentDrag` 没走 `dragRange`') >= 0; }),
     m36.join('\n')
   );
+
+  // M37：组合串不再是**行内 widget**（`Decoration.widget` 摘掉，只留一个空 span 的类名）
+  //    ⇒ 它不占版面，右边的字不会被推开（2026-11-02「按照 mardo 来修改」之前正是这个形态）。
+  const widgetDeco = 'CM6.Decoration.widget({ widget: new PreeditWidget(s), side: -1 })';
+  assert.strictEqual(countOf(BASE.preedit, widgetDeco), 1, 'M37 的靶子必须**恰好命中 1 处**');
+  const m37 = score(Object.assign({}, BASE, {
+    preedit: BASE.preedit.replace(widgetDeco, 'CM6.Decoration.mark({ class: \'cm-rmd-preedit\' })'),
+  }));
+  assert.ok(
+    m37.some(function (x) { return x.indexOf('组合串不是**行内 widget**') >= 0; }),
+    m37.join('\n')
+  );
+  assert.strictEqual(m37.length, 1,
+    'M37 只该打红"不是行内 widget"，⛔ 别把"没派发"一起判红\n' + m37.join('\n'));
+
+  // M37b：组合串**进文档了**（`paint` 里多出一条 `changes:`）⇒ 违反 `F6`
+  //    "组合期零事务"——这正是 `probe-live-block` 的 `D1b`（组合期块内文本不变）盯的那件事。
+  const preeditIf = 'view.dispatch({ effects: slot.reconfigure(deco) });';
+  assert.strictEqual(countOf(BASE.preedit, preeditIf), 1, 'M37b 的靶子必须**恰好命中 1 处**');
+  const m37b = score(Object.assign({}, BASE, {
+    preedit: BASE.preedit.replace(preeditIf,
+      'view.dispatch({ changes: { from: pos, insert: s }, effects: slot.reconfigure(deco) });'),
+  }));
+  assert.ok(
+    m37b.some(function (x) { return x.indexOf('出现了 `changes:`') >= 0; }),
+    m37b.join('\n')
+  );
+
+  // M38：样式退回"绝对定位覆盖层"（`position: absolute` 补进 `.cm-rmd-preedit`）
+  //    ⇒ 构造面**一个字都没动**，所有源码判据原本全绿，只有探针 `D3`/`D3b` 会红。
+  //    这正是「举一反三」要堵的形态：**几何真相有一半写在 CSS 里**。
+  const cssAnchor = '.cm-rmd-preedit {';
+  assert.strictEqual(countOf(BASE.css, cssAnchor), 1, 'M38 的靶子必须**恰好命中 1 处**');
+  const m38 = score(Object.assign({}, BASE, {
+    css: BASE.css.replace(cssAnchor, cssAnchor + '\n  position: absolute;'),
+  }));
+  assert.ok(
+    m38.some(function (x) { return x.indexOf('`.cm-rmd-preedit` 写了 `position`') >= 0; }),
+    m38.join('\n')
+  );
+  assert.strictEqual(m38.length, 1,
+    'M38 只该打红"写了 position"，⛔ 别把别的判据一起带红\n' + m38.join('\n'));
+
+  // M39：`index.html` 少了 `live/txn.js`（`design/0059` 阶段 B：唯一事务入口）
+  //    ⇒ `live/index.js` 加载期取到的 `window.rmd.liveTxn` 是 `undefined`，
+  //    第一次提交才炸（"点一下没反应"，启动路径上没有任何症状）。
+  const txnTag = '<script src="live/txn.js"></script>';
+  assert.strictEqual(countOf(BASE.html, txnTag), 1, 'M39 的靶子必须**恰好命中 1 处**');
+  const m39 = score(Object.assign({}, BASE, { html: BASE.html.replace(txnTag, '') }));
+  assert.ok(
+    m39.some(function (x) { return x.indexOf('live/txn.js') >= 0; }),
+    m39.join('\n')
+  );
+
+  // M40：`live/formatbar.js` 挪到 `live/index.js` **之后**（`design/0061` L4 的接线顺序）
+  //    ⇒ 脚本能跑、按钮也建得出来，但设计要求的"格式栏先于控制器加载"这条结构事实丢了；
+  //    真正会咬人的是将来有人在加载期取 `window.rmd.liveController`（那时必是 undefined）。
+  const idxTag = '<script src="live/index.js"></script>';
+  const fbTag40 = '<script src="live/formatbar.js"></script>';
+  assert.strictEqual(countOf(BASE.html, fbTag40), 1, 'M40 的靶子必须**恰好命中 1 处**');
+  const m40 = score(Object.assign({}, BASE, {
+    html: BASE.html.replace(fbTag40, '').replace(idxTag, idxTag + '\n  ' + fbTag40),
+  }));
+  assert.ok(
+    m40.some(function (x) { return x.indexOf('live/formatbar.js 排在 live/index.js') >= 0; }),
+    m40.join('\n')
+  );
+
+  // M43：`deleteRange` 退回只传标记（`bugs/0087` 的原形态）⇒ 围栏行的换行重新可删，
+  //    可见代码会被并进 0 高、恒藏的围栏行，屏幕上凭空消失。
+  const protectCall = 'LSel.protectedRanges(view, hiddenHook)';
+  assert.strictEqual(countOf(BASE.js, protectCall), 1, 'M43 的靶子必须**恰好命中 1 处**');
+  const m43 = score(Object.assign({}, BASE, {
+    js: BASE.js.replace(protectCall, 'LSel.hiddenRanges(view, hiddenHook)'),
+  }));
+  assert.ok(
+    m43.some(function (x) { return x.indexOf('没有把 `protectedRanges` 递进去') >= 0; }),
+    m43.join('\n')
+  );
+
+  // M44：`posAt` 退回"不过 `snapHiddenTail`"（`bugs/0094` 的原形态）⇒ 编辑态内再次点击
+  //    `**b**` 行末会落 3，首次进入落 5；同一格点两次得到两个落点。
+  const posAtTail = 'const t = snapHiddenTail(view, p);';
+  assert.strictEqual(countOf(BASE.selSrc, posAtTail), 1, 'M44 的靶子必须**恰好命中 1 处**');
+  const m44 = score(Object.assign({}, BASE, {
+    selSrc: BASE.selSrc.replace(posAtTail, 'const t = p;'),
+  }));
+  assert.ok(
+    m44.some(function (x) { return x.indexOf('没有过 `snapHiddenTail`') >= 0; }),
+    m44.join('\n')
+  );
+
+  // M45：裸 `Enter` 分支不调 `lineEndInsertPoint`（`bugs/0308` 的原形态）⇒ 行尾回车
+  //    又把闭合 `**` 劈到下一行；⚠️ `lineEndInsertPoint` 的纯函数单测全绿也拦不住——没人调用。
+  const endCall = 'const q = LSel.lineEndInsertPoint(hidden, view.state.doc, from);';
+  assert.strictEqual(countOf(BASE.js, endCall), 1, 'M45 的靶子必须**恰好命中 1 处**');
+  const m45 = score(Object.assign({}, BASE, { js: BASE.js.replace(endCall, 'const q = -1;') }));
+  assert.ok(
+    m45.some(function (x) { return x.indexOf('LSel.lineEndInsertPoint') >= 0; }),
+    m45.join('\n')
+  );
+
+  // M46：组合串的 `side` 翻回 `1`（`bugs/0060` 到 2026-11-14 之间的形态）⇒ 组合串画在光标
+  //    **右边**，自绘光标落在串的左缘，上屏后跳到串右缘（用户 2026-11-14 原话「内容在光标的
+  //    后面，等按了 Enter 真正输入之后，光标变成在内容的后面，产生跳动」）。
+  //    ⚠️ 这条变异**只该**打红 side 那一条：widget 仍是行内的、仍经 Compartment 派发、
+  //    仍然零 `changes` ⇒ 其余判据（含探针同款的"是行内 widget"）在缺陷上必须照旧全绿。
+  const sideDeco = 'side: -1';
+  assert.strictEqual(countOf(BASE.preedit, sideDeco), 1, 'M46 的靶子必须**恰好命中 1 处**');
+  const m46 = score(Object.assign({}, BASE, {
+    preedit: BASE.preedit.replace(sideDeco, 'side: 1'),
+  }));
+  assert.ok(
+    m46.some(function (x) { return x.indexOf('必须是 `-1`') >= 0; }),
+    m46.join('\n')
+  );
+  assert.strictEqual(m46.length, 1,
+    'M46 只该打红"side 必须是 -1"，⛔ 别把"是行内 widget"一起判红（两种 side 的 DOM 形态相同）\n'
+    + m46.join('\n'));
+
+  // M47：`paintPreedit` 画完组合串**不刷插入符**（2026-11-14 用户报告的前一半）⇒
+  //    组合串越长越宽，而自绘插入符停在组合开始时那一格（串的左缘），上屏时才跳一次。
+  //    ⚠️ 这条变异**只该**打红"没有 layer.refresh()"：`preedit.paint(...)` 还在、
+  //    `changes:` 仍然没有 ⇒ 其余接线判据在缺陷上必须照旧全绿。
+  const preeditRefresh = 'preedit.paint(view, s, preeditPos);\n      layer.refresh();';
+  assert.strictEqual(countOf(BASE.js, preeditRefresh), 1, 'M47 的靶子必须**恰好命中 1 处**');
+  const m47 = score(Object.assign({}, BASE, {
+    js: BASE.js.replace(preeditRefresh, 'preedit.paint(view, s, preeditPos);'),
+  }));
+  assert.ok(
+    m47.some(function (x) { return x.indexOf('没有刷新自绘插入符') >= 0; }),
+    m47.join('\n')
+  );
+  assert.strictEqual(m47.length, 1,
+    'M47 只该打红"没有 layer.refresh()"，⛔ 别把"没把组合串交给 preedit"一起判红\n'
+    + m47.join('\n'));
 });

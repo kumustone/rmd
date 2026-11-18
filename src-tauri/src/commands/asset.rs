@@ -38,7 +38,10 @@ use crate::error::Denied;
 /// 而整张图要在内存里过两遍（原始 + base64）。没有上限时，
 /// 一份"不小心拖进来一张 500 MB 的扫描件"的文档会把进程顶爆。
 /// 超限时给出**明确文案**，⛔ 不是静默裂图。
-pub const MAX_ASSET_BYTES: u64 = 32 * 1024 * 1024;
+///
+/// ⭐ `design/0076` 起**定义搬到** [`crate::document::export::MAX_INLINE_IMAGE_BYTES`]
+/// （导出的图片内联与这里必须同一个数），这里只是一个**别名**，⛔ 别写第二份 32 MiB。
+pub use crate::document::export::MAX_INLINE_IMAGE_BYTES as MAX_ASSET_BYTES;
 
 /// `read_asset` 的返回值。
 #[derive(Debug, Serialize)]
@@ -61,27 +64,90 @@ pub struct AssetPayload {
 /// `not_authorized`（→ 显示"未授权其所在目录" + 一键授权）与
 /// `not_found`（→ 显示"文件不存在"）。**两者的用户含义完全不同**：
 /// 用词错了会把我们的安全策略说成 bug（`design/0003` §7 步骤 18）。
+///
+/// # 为什么是 `async fn` ＋ 两段式锁（backlog `B-06`，2026-11-11）
+///
+/// 此前 `metadata` ＋ `fs::read`（≤32 MB）＋ base64 **全在** `AppState::with`
+/// 的临界区里跑：读一张大图期间，树 / 文档 / 监视回调**全部排队**。
+/// `commands/mod.rs::with` 把"临界区只许内存操作（外加一次 `canonicalize`）"
+/// 写成硬约束（`design/0006` §2.1 ⑤），这里就是那条约束的落实。
+///
+/// 顺序固定，⛔ 不许合并：
+/// ① **持锁**：代次核对 → `resolve` → `check_readable_asset`（唯一一次 `canonicalize`）；
+/// ② **放锁**（`spawn_blocking`）：大小闸门 → `fs::read` → `mime` → base64。
+/// ③ ⛔ **没有第三段**：本命令**不写**任何会话状态，读到的字节也不进缓存
+///    （缓存是前端的 `ASSETS`），所以不需要"再进锁提交"。
+///
+/// ⚠️⚠️ 阶段② 读的必须是**阶段① 判过的那个 `real`**，⛔ 不重新 `canonicalize`：
+/// 重新解析等于在锁外再做一次路径决定，而授权判定只允许有一份（`INV-FS-01`）。
+/// "检查与使用之间外部进程换掉文件"这件事**原来的锁内版本也挡不住**
+/// （锁锁不住别的进程，见 `grants.rs::authorize_root_recorded` 的边界说明）
+/// ⇒ 本改造**不放宽**授权，只是把不碰 `Session` 的 I/O 搬到锁外。
 #[tauri::command]
-pub fn read_asset(
+pub async fn read_asset(
     state: tauri::State<'_, AppState>,
+    window: tauri::WebviewWindow,
     src: String,
     generation: u64,
     req: u64,
 ) -> Result<AssetPayload, Denied> {
     let _ = req;
-    let result = state.with(|s| {
+    // ⭐ 多窗口：会话按窗口 label 取（`design/0068` §2.1）。
+    let result = read_asset_off_lock(&state, window.label(), &src, generation).await;
+
+    match &result {
+        Ok(a) => diag!("▶ read_asset {}（{} B, {}）", a.real_path, a.bytes, a.mime),
+        Err(e) => {
+            diag_stderr!("▶ read_asset 被拒：{}（{}）", e.label(), e);
+            diag_file!(
+                "▶ read_asset 被拒 label={} err_len={}",
+                e.label(),
+                e.to_string().len()
+            );
+        }
+    }
+    result
+}
+
+/// [`read_asset`] 的**两段式本体**：① 持锁校验 → ② 放锁读盘与编码。
+///
+/// ⚠️ IPC 契约一个字节没变：命令名、参数、返回结构、拒绝类型都在
+/// [`read_asset`] 那一层；这里只是把阻塞工作挪出会话锁。
+async fn read_asset_off_lock(
+    state: &AppState,
+    label: &str,
+    src: &str,
+    generation: u64,
+) -> Result<AssetPayload, Denied> {
+    /// 阶段②要搬进阻塞池的那一份：**只有**原始 `src` 与阶段① 判过的真实路径。
+    /// ⚠️ 它不借用 `Session`——锁外⛔ 不许再碰任何会话状态。
+    struct Ticket {
+        src: String,
+        real: PathBuf,
+    }
+
+    // ── ① 持锁：代次 ＋ 解析基准 ＋ 授权（唯一允许的一跳 IO）────────────
+    let ticket = state.with(label, |s| -> Result<Ticket, Denied> {
         let current = s.grants.root_generation();
         if generation != current {
             return Err(Denied::stale(generation, current));
         }
         let Some(doc_dir) = s.doc_dir.clone() else {
             // 还没有已提交的文档 → 没有解析基准，按"找不到"处理
-            return Err(Denied::not_found(&src));
+            return Err(Denied::not_found(src));
         };
-        let requested = resolve(&doc_dir, &src);
+        let requested = resolve(&doc_dir, src);
         // ⭐ `design/0036`：图片用**图片专用**的那条校验——比 `check_readable` 多一条
         //    「单文件授权 ⇒ 其父目录子树可读」，⛔ 不改 `roots` / 树 / 搜索的范围。
         let real = s.grants.check_readable_asset(&requested)?;
+        Ok(Ticket { src: src.to_string(), real })
+    })?;
+
+    // ── ② 放锁：大小闸门 ＋ 读盘 ＋ base64 ─────────────────────────────
+    // ⚠️ 交给阻塞池，⛔ 不占异步运行时的工作线程（与 `list_dir` 同一条理由）。
+    let real_for_err = ticket.real.clone();
+    let join = tauri::async_runtime::spawn_blocking(move || -> Result<AssetPayload, Denied> {
+        let Ticket { src, real } = ticket;
 
         // ⚠️ 大小检查放在**读之前**：`read` 一个 500 MB 的文件再拒绝，代价一样大
         let meta = std::fs::metadata(&real).map_err(|e| Denied::io(&real, e))?;
@@ -105,20 +171,15 @@ pub fn read_asset(
             mime: mime.clone(),
             data_url: format!("data:{mime};base64,{}", base64(&bytes)),
         })
-    });
+    })
+    .await;
 
-    match &result {
-        Ok(a) => diag!("▶ read_asset {}（{} B, {}）", a.real_path, a.bytes, a.mime),
-        Err(e) => {
-            diag_stderr!("▶ read_asset 被拒：{}（{}）", e.label(), e);
-            diag_file!(
-                "▶ read_asset 被拒 label={} err_len={}",
-                e.label(),
-                e.to_string().len()
-            );
-        }
+    match join {
+        Ok(v) => v,
+        // ⚠️ 走到这里意味着读取线程自己没了（panic）。⛔ 别包成 `Denied::io`：
+        //    那会把我们代码里的 panic 说成"这张图读不出来"（同 `error.rs::worker_lost`）。
+        Err(e) => Err(Denied::worker_lost(&real_for_err, "图片读取线程没能跑完", e)),
     }
-    result
 }
 
 /// 把文档里写的 `src` 解析成一个**待校验**的路径。
@@ -185,24 +246,12 @@ pub fn mime_of(p: &Path) -> String {
     .to_string()
 }
 
-const B64: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-
 /// 标准 base64（带 `=` 填充）。
 ///
-/// ⚠️ 手写而不是加一个 crate：这是本项目里**唯一**需要 base64 的地方，
-/// 而它只有 20 行。⛔ 但别在此基础上扩张（要 URL-safe 变体时该换库了）。
-pub fn base64(data: &[u8]) -> String {
-    let mut out = String::with_capacity(data.len().div_ceil(3) * 4);
-    for chunk in data.chunks(3) {
-        let b = [chunk[0], *chunk.get(1).unwrap_or(&0), *chunk.get(2).unwrap_or(&0)];
-        let n = ((b[0] as u32) << 16) | ((b[1] as u32) << 8) | b[2] as u32;
-        out.push(B64[(n >> 18) as usize & 63] as char);
-        out.push(B64[(n >> 12) as usize & 63] as char);
-        out.push(if chunk.len() > 1 { B64[(n >> 6) as usize & 63] as char } else { '=' });
-        out.push(if chunk.len() > 2 { B64[n as usize & 63] as char } else { '=' });
-    }
-    out
-}
+/// ⚠️ ⭐ `design/0076` 起**唯一实现在** [`crate::document::export::base64`]
+/// （导出侧也要拼 `data:` URI，而那是默认构建可测的纯函数）；这里只**转调**，
+/// ⛔ 不留第二份——两份实现某天会在填充或空输入上分叉。
+pub use crate::document::export::base64;
 
 #[cfg(test)]
 mod tests {

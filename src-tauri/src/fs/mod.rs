@@ -20,10 +20,17 @@
 //! | [`create`] | ⭐ 名字判据（唯一一份）＋ 原子创建 ＋ 创建后复核（`design/0034`） |
 //! | [`rename`] | ⭐ 原子"不覆盖"改名 ＋ errno 映射（`design/0035`） |
 //!
-//! ⚠️ 五者都**不依赖 Tauri**——`make test`（默认构建，不带 `gui`）要能跑
+//! ⭐ **另有一个写盘原语** [`atomic`]（`design/0076` §2.1.6）：同目录 tmp → `rename`
+//! 的**唯一一份**实现。它**不是**"树上的写操作"——`INV-FS-02` 说的是本模块不给
+//! 文件树开写入口（不重命名 / 不删除 / 不移动条目），而 `atomic` 只做"叫我来替换这**一个**
+//! 我已判定可写的目标"：`commands/edit.rs` 的保存与 `commands/export.rs` 的 HTML 导出
+//! 各拿一个**已经过授权闸**的真实路径来调它。⛔ 别把它接进 `tree` / `grants`。
+//!
+//! ⚠️ 六者都**不依赖 Tauri**——`make test`（默认构建，不带 `gui`）要能跑
 //! `check_readable` 的判定矩阵与名字矩阵，那是 `INV-FS-01` / `INV-TREE-07`
 //! 唯一的自动化防线。
 
+pub mod atomic;
 pub mod create;
 pub mod grants;
 pub mod order;

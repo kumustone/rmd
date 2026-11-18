@@ -321,8 +321,21 @@ test('接线：`main.js` 调 `renderImages` 时必须传 `docKey`', function () 
   assert.match(m[0], /docKey:\s*payload\.real_path/, '⛔ 少了 docKey ⇒ 缓存键退化成只认 src（会贴错图）');
 });
 
-test('接线：换根与盘上变更两处都要清表', function () {
-  const hits = MAIN_SRC.match(/ImageView\.clearAssetCache\(\)/g) || [];
+// ⭐ `bugs/0077` §5-4：位置算得对还不够——**必须先把图片盒占住再算**，
+// 否则锚点仍然量在一份"图片全塌了"的版面上，图片一长出来又得补写第二次
+// （用户看到的就是"打勾之后页面跳了"）。顺序是本条判据的全部内容。
+test('接线：重渲时**先占住图片盒，再算滚动位置**（`bugs/0077` §5-4）', function () {
+  const iHtml = MAIN_SRC.indexOf('doc.innerHTML = payload.html');
+  const iHold = MAIN_SRC.indexOf('ImageView.holdBoxes(doc, prevImgBoxes)');
+  const iRestore = MAIN_SRC.indexOf('R.resolveAnchor(prevAnchor');
+  assert.ok(iHtml >= 0, '⛔ 找不到 `doc.innerHTML = payload.html`');
+  assert.ok(iHold > iHtml, '⛔ `innerHTML` 之后没有占住图片盒');
+  assert.ok(iRestore > iHold, '⛔ 占位必须排在 `resolveAnchor` 之前（排在后面等于没占）');
+  assert.match(MAIN_SRC, /prevBoxes:\s*prevImgBoxes/,
+    '⛔ 没把盒子交给 `renderImages` ⇒ 占位那一跳（读盘期间）照样塌');
+});
+
+test('接线：换根与盘上变更两处都要清表', function () {  const hits = MAIN_SRC.match(/ImageView\.clearAssetCache\(\)/g) || [];
   assert.ok(hits.length >= 2, '⛔ 只在 ' + hits.length + ' 处清表：盘上变更（`reloadCurrentDocument`）与换根（`onChooseDirectory`）都要');
 });
 

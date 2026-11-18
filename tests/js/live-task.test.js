@@ -190,6 +190,99 @@ test('武装：只给一个回调就只挂那一个 / 空树返回 0', function 
   assert.strictEqual(Task.arm(null), 0);
 });
 
+// ── 编辑态方框（CM6 widget，`bugs/0103`）────────────────────────────────
+//
+// ⭐ 2026-11-05 用户实测：「这里一开始是好的，点几下就勾不动了，点击没有反应。」
+//    定位结果：先点任务项正文 ⇒ 进编辑态，阅读态那一块被 host 换掉，屏幕上的方框
+//    变成 CM6 widget；而它当时的 `pointer-events` 是 `none`，落点是 `.cm-line`。
+//    ⚠️ **两套判据必须分开**：`countOf()` 是配对闸门（`INV-TASK-03`）的一半，
+//    把 widget 混进去会让"DOM 方框数 == 载荷条数"永远对不上。
+
+/** 造一个编辑态方框（CM6 widget，`live/decorations.js::TaskBoxWidget`）。 */
+function widgetBox(checked) {
+  const attrs = { type: 'checkbox' };
+  return {
+    nodeType: 1,
+    tagName: 'INPUT',
+    className: 'cm-rmd-taskbox',
+    checked: checked === true,
+    getAttribute: function (n) { return Object.prototype.hasOwnProperty.call(attrs, n) ? attrs[n] : null; },
+    children: [],
+    parentNode: null,
+  };
+}
+
+/** 把 `kids` 挂到 `parent` 底下（`nodeType` 走真值，`widgetBoxOf` 靠它上溯）。 */
+function parented(parent, kids) {
+  parent.children = kids;
+  for (let i = 0; i < kids.length; i++) kids[i].parentNode = parent;
+  return parent;
+}
+
+test('编辑态方框：与 comrak 方框是**两套**判据（⛔ 别把一个是另一个的子集）', function () {
+  const w = widgetBox(false);
+  const r = box(false);
+  assert.strictEqual(Task.isWidgetBox(w), true);
+  assert.strictEqual(Task.isTaskCheckbox(w), false, 'widget ⛔ 不是 comrak 方框');
+  assert.strictEqual(Task.isWidgetBox(r), false, 'comrak 方框 ⛔ 不是 widget');
+  assert.strictEqual(Task.isTaskCheckbox(r), true);
+
+  const noType = widgetBox(false);
+  noType.getAttribute = function () { return null; };
+  assert.strictEqual(Task.isWidgetBox(noType), false, '`type` 不对');
+  const span = el('SPAN', [], 'cm-rmd-taskbox');
+  assert.strictEqual(Task.isWidgetBox(span), false, 'tagName 不对');
+  const plain = el('INPUT', [], 'something-else');
+  plain.getAttribute = function () { return 'checkbox'; };
+  assert.strictEqual(Task.isWidgetBox(plain), false, 'class 不对');
+  assert.strictEqual(Task.isWidgetBox(null), false);
+});
+
+test('编辑态方框：从任意后代上溯找得到（落点可能是 widget 里面的节点）', function () {
+  const w = widgetBox(true);
+  const host = parented(el('DIV', [], 'cm-rmd-liveHost'), [el('DIV', [parented(el('DIV', []), [w])])]);
+  const inner = el('SPAN', []);
+  inner.parentNode = w;
+  assert.strictEqual(Task.widgetBoxOf(w), w, '自己也要认');
+  assert.strictEqual(Task.widgetBoxOf(inner), w, '往上上溯');
+  assert.strictEqual(Task.widgetBoxOf(el('SPAN', [])), null, '不是方框就返回 null');
+  assert.strictEqual(Task.widgetBoxOf(null), null);
+  // ⚠️ 假节点没有 `closest` ⇒ 实现里⛔ 不许用它（`design/0051` 评审第 15 条同一理由）。
+  assert.strictEqual(typeof host.children[0].closest, 'undefined');
+});
+
+test('编辑态方框：`widgetsOf` / `widgetIndexOf` 先序，且⛔ 不数 comrak 方框', function () {
+  const w1 = widgetBox(false);
+  const w2 = widgetBox(true);
+  const w3 = widgetBox(false);
+  const 阅读态 = box(true); // 混进来也不能被数
+  const host = parented(el('DIV', [], 'cm-rmd-liveHost'), [
+    parented(el('DIV', []), [w1, el('DIV', [w2])]),
+    阅读态,
+    parented(el('DIV', []), [w3]),
+  ]);
+  assert.deepStrictEqual(Task.widgetsOf(host), [w1, w2, w3], '文档顺序 = 后端 `descendants()` 的先序');
+  assert.strictEqual(Task.widgetIndexOf(host, w2), 1);
+  assert.strictEqual(Task.widgetIndexOf(host, w3), 2);
+  assert.strictEqual(Task.widgetIndexOf(host, 阅读态), -1, '⛔ 别把阅读态方框算进编辑态的序号');
+  assert.strictEqual(Task.widgetIndexOf(host, widgetBox(false)), -1, '不在树里 ⇒ -1');
+  assert.deepStrictEqual(Task.widgetsOf(null), []);
+});
+
+test('编辑态方框：`arm` ⛔ 不碰 widget（它只武装阅读态方框）', function () {
+  const w = widgetBox(false);
+  w.disabled = true;
+  w.removed = [];
+  w.listeners = [];
+  w.removeAttribute = function (n) { w.removed.push(n); };
+  w.addEventListener = function (t, fn) { w.listeners.push([t, fn]); };
+  const r = box(false);
+  const root = parented(el('DIV', []), [w, r]);
+  assert.strictEqual(Task.arm(root, { down: function () {}, click: function () {} }), 1, '只武装阅读态那一个');
+  assert.strictEqual(w.disabled, true, 'widget 的 `disabled` 不该动');
+  assert.deepStrictEqual(w.listeners, [], '⛔ 别给 widget 挂第二条提交路径（接线在 `#doc` capture 上）');
+});
+
 // ── 变异自测：判据必须能打红"写坏的副本" ──────────────────────────────
 
 test('变异 m1：整行重写（丢掉前缀、尾巴补充空格）⇒ 等长那条**抓不住**，逐字符那条必红', function () {

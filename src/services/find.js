@@ -158,6 +158,148 @@
   }
 
   /**
+   * 源码域的命中（`design/0075` 查找替换）。
+   *
+   * ⭐ **它不是第二套匹配实现**：调的就是 [`matchAll`]，只是把 `{seg,start,end}`
+   * 折成全文偏移 `{from,to}`。源码域与渲染域的"什么算一处命中"必须同口径
+   * （非重叠、大小写敏感、字面子串），否则同一个人在两处看到的数字不一致。
+   *
+   * ⚠️ 只用于**有全文源码**的语境（分栏编辑的左栏）。阅读态没有全文源码，
+   *    前端也⛔ 不许为了替换去解析 Markdown（`INV-REPL-06`）。
+   * ⚠️ 空关键词（含纯空白）⇒ 空数组（沿用 [`normalizeQuery`] 的口径）。
+   *
+   * @param {string} text 全文源码
+   * @param {string} query 关键词
+   * @returns {{from:number,to:number}[]} UTF-16 码元偏移，按出现顺序
+   */
+  function sourceHits(text, query) {
+    const s = String(text == null ? '' : text);
+    return matchAll([s], query).map(function (h) {
+      return { from: h.start, to: h.end };
+    });
+  }
+
+  /**
+   * 把一批**已排序、互不重叠**的变更应用到文本上（纯函数，便于断言）。
+   *
+   * ⚠️ 顺序是**前提**：调用方只给 [`sourceHits`] 产出的、按 `from` 升序的区间。
+   *    这里不排序也不查重叠——那是计划函数的事，重复实现只会多一套可能漂的判据。
+   *
+   * @param {string} text
+   * @param {{from:number, to:number, insert:string}[]} changes
+   * @returns {string}
+   */
+  function applyChanges(text, changes) {
+    const s = String(text == null ? '' : text);
+    const cs = changes || [];
+    let out = '';
+    let last = 0;
+    for (let i = 0; i < cs.length; i++) {
+      const c = cs[i];
+      out += s.slice(last, c.from) + c.insert;
+      last = c.to;
+    }
+    return out + s.slice(last);
+  }
+
+  /** 替换计划里 `ok === false` 的两个理由（⛔ 不是给用户看的文案）。 */
+  const REPLACE_EMPTY = 'empty';
+  const REPLACE_NONE = 'none';
+
+  /**
+   * **单次替换**的计划（`design/0075` §2.1 ④）。
+   *
+   * 从 `from` 起找第一处 `hit.from >= from` 的命中；找不到就**环绕**到第一处
+   * （`wrapped: true`）。返回的 `changes` 恒为 0 或 1 项，`nextFrom` 是替换串末尾，
+   * 供调用方把光标放到"刚改完的地方"。
+   *
+   * ⚠️ `replacement` 按**字面**处理：不做正则替换，`$&` / `\1` 都原样写入
+   *    （`INV-REPL-03`）。空串合法 = 删除这一处命中。
+   *
+   * @param {string} text
+   * @param {string} query
+   * @param {string} replacement
+   * @param {number} from 光标位置（UTF-16 码元；越界会被夹取）
+   * @returns {{ok:boolean, reason:string, count:number, total:number, index:number,
+   *            wrapped:boolean, changes:Array, text:string, nextFrom:number}}
+   */
+  function replaceNextPlan(text, query, replacement, from) {
+    const s = String(text == null ? '' : text);
+    const q = normalizeQuery(query);
+    const insert = String(replacement == null ? '' : replacement);
+    const miss = {
+      ok: false, reason: q ? REPLACE_NONE : REPLACE_EMPTY,
+      count: 0, total: 0, index: -1, wrapped: false,
+      changes: [], text: s, nextFrom: 0,
+    };
+    if (!q) return miss;
+    const hits = sourceHits(s, q);
+    if (!hits.length) return miss;
+
+    let start = (typeof from === 'number' && isFinite(from)) ? Math.trunc(from) : 0;
+    if (start < 0) start = 0;
+    if (start > s.length) start = s.length;
+
+    let idx = -1;
+    for (let i = 0; i < hits.length; i++) {
+      if (hits[i].from >= start) { idx = i; break; }
+    }
+    const wrapped = idx < 0;
+    if (wrapped) idx = 0;
+
+    const h = hits[idx];
+    const change = { from: h.from, to: h.to, insert: insert };
+    return {
+      ok: true,
+      reason: '',
+      count: 1,
+      total: hits.length,
+      index: idx,
+      wrapped: wrapped,
+      changes: [change],
+      text: applyChanges(s, [change]),
+      nextFrom: h.from + insert.length,
+    };
+  }
+
+  /**
+   * **全部替换**的计划（`design/0075` §2.1 ⑤）。
+   *
+   * 所有命中放进**同一个 `changes` 数组** ⇒ 调用方一次 `view.dispatch`，
+   * 一个事务 ⇒ 一次撤销（`INV-REPL-05`）。
+   *
+   * ⚠️ 只扫**原文**：替换串里就算又出现被查串，也不再递归（`a` → `aa` 只改一轮）。
+   * ⚠️ 非重叠、大小写敏感、字面串，全部来自 [`sourceHits`]。
+   *
+   * @param {string} text
+   * @param {string} query
+   * @param {string} replacement
+   * @returns {{ok:boolean, reason:string, count:number, changes:Array, text:string}}
+   */
+  function replaceAllPlan(text, query, replacement) {
+    const s = String(text == null ? '' : text);
+    const q = normalizeQuery(query);
+    const insert = String(replacement == null ? '' : replacement);
+    const miss = {
+      ok: false, reason: q ? REPLACE_NONE : REPLACE_EMPTY,
+      count: 0, changes: [], text: s,
+    };
+    if (!q) return miss;
+    const hits = sourceHits(s, q);
+    if (!hits.length) return miss;
+    const changes = hits.map(function (h) {
+      return { from: h.from, to: h.to, insert: insert };
+    });
+    return {
+      ok: true,
+      reason: '',
+      count: changes.length,
+      changes: changes,
+      text: applyChanges(s, changes),
+    };
+  }
+
+  /**
    * 按上限截断**高亮**（⛔ **不截断计数**）。
    *
    * @returns {{shown:number,total:number,truncated:boolean}}
@@ -286,6 +428,10 @@
     isLayoutWhitespace: isLayoutWhitespace,
     normalizeQuery: normalizeQuery,
     matchAll: matchAll,
+    sourceHits: sourceHits,
+    applyChanges: applyChanges,
+    replaceNextPlan: replaceNextPlan,
+    replaceAllPlan: replaceAllPlan,
     clampHits: clampHits,
     step: step,
     group: group,

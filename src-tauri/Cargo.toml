@@ -1,6 +1,6 @@
 [package]
 name = "rmd"
-version = "0.5.0"
+version = "0.6.0"
 edition = "2024"
 rust-version = "1.89"
 description = "一个为 macOS 打造的 Markdown 阅读器：启动轻快，排版用心，文件好找"
@@ -69,7 +69,15 @@ katex-rs = { version = "=0.3.0", default-features = false }
 
 # 图表。零依赖、纯 std；⭐ 它画真 Mermaid 是**对的**，且在不懂的输入上**响亮报错**
 #   （对照 `mermaid-rs-renderer` 的"静默画错"，见 docs/research/notes/0009 §3.2）。
-flowmaid = { version = "=0.27.0", default-features = false }
+# ⚠️ `0.33` 是 `design/0060` 的准入基线：公开 `parser::parse_document()` +
+#   `render::*_with()`，让我们**解析一次、按模型量规模、再用同一个模型出图**。
+#   ⛔ 不放开到 `^`：准入表、XML 白名单、色表都按这个版本写（design/0060 §2.1①）。
+flowmaid = { version = "=0.33.0", default-features = false }
+
+# SVG 结构化清洗（design/0060 §2.1⑦）。⚠️ 它**已经在 `Cargo.lock` 里**
+#   （`plist` 经 Tauri 引入）⇒ 这里只是把它变成直接依赖，**不新增包**。
+#   ⛔ 不自写 XML 解析器：字符串替换挡不住引号/空白/大小写/转义各一条绕过路径（评审 P1-3）。
+quick-xml = { version = "0.42", default-features = false }
 
 # 峰值 RSS 用 mach 的 task_info 直接量（design/0002 §7.3.4 要求"原型自报"）。
 # ⚠️ 只挂 macOS：CLI 的其余部分在别的平台上照样能编译。

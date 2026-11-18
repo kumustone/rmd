@@ -3,7 +3,7 @@
 # （`design/0045`）」的**真 DOM 离屏探针**。
 #
 # 用法：
-#   tools/wkwebview-probe/favorites-rootheader-probe.sh                # 基线 + 十一处变异，判据进退出码
+#   tools/wkwebview-probe/favorites-rootheader-probe.sh                # 基线 + 十二处变异，判据进退出码
 #   tools/wkwebview-probe/favorites-rootheader-probe.sh --no-mutate    # 只跑基线（快）
 #   tools/wkwebview-probe/favorites-rootheader-probe.sh --save         # 另存一份到 benchmarks/results/
 #   tools/wkwebview-probe/favorites-rootheader-probe.sh --save --force # 允许覆盖同名结果
@@ -19,7 +19,7 @@
 #    ＋ `services/{i18n,versions,chunked,dirsession,tauri,search,keymap,session,start,treerefresh,clipboard}.js`。
 #    `main.js` 那层接线**不进**探针页，本探针也**不镜像**它——只照它的调用顺序驱动公开行为。
 #
-# ⚠️ 判据 M1–M10 是**变异测试**，作用在**页面副本**上（⛔ 不碰仓库文件）：
+# ⚠️ 判据 M1–M12 是**变异测试**，作用在**页面副本**上（⛔ 不碰仓库文件）：
 #    M1 = 空态不隐藏根头              ⇒ 判据 5 必须红；
 #    M2 = 根层新建把输入行插到 host 外面（= 顶到根头上面）⇒ 判据 3 必须红；
 #    M3 = 顶层深度从 0 改成 1（根头占一层）    ⇒ 判据 10 必须红；
@@ -35,6 +35,9 @@
 #       ⇒ 调用方忘了 `fresh` 也命中不到旧层。**它现在是反向对照**，证明兜底不是"恰好绿"。
 #    ⭐ M11 = `fresh` 打回 `false` **且**纪元不前进（假后端 `bumpEpoch()` 变空操作）⇒ 判据 12 必须红。
 #       ⚠️ 这一条才是承重的正面控制：没有纪元这道栅栏时，同一个缺陷立刻复活。
+#    ⭐ M12 = `allEls()` 去掉「开始」段的行（`design/0081`）⇒ 判据 B14 必须红。
+#       ⚠️ B14 判的是"三段序 = 焦点链同源"：只改版式不改 `allEls()` 时它必红，
+#       这正是 `design/0081` §7 要的那条变异（光看 DOM 序抓不到"键盘走到别的段"）。
 #    ⚠️ 变异前先校验"模式命中**恰好 1 次**"，并用 `cksum` 证明**真改到了**——
 #       否则"没红"会与"断言不承重"长得一模一样（见 `.claude/rules/tests.md`）。
 
@@ -300,6 +303,7 @@ RAW_M8="$WORK/fr-m8.json"
 RAW_M9="$WORK/fr-m9.json"
 RAW_M10="$WORK/fr-m10.json"
 RAW_M11="$WORK/fr-m11.json"
+RAW_M12="$WORK/fr-m12.json"
 if [ "$MUTATE" = "1" ]; then
   # M1：空态不隐藏根头（= 根头会浮在一句"没打开目录"的提示上面）⇒ 判据 5 必须红。
   P1="$WORK/fr-page-m1"
@@ -376,13 +380,14 @@ if [ "$MUTATE" = "1" ]; then
     "{ key: 'start.menu.forget', run: function () { onForgetRecent(r.tilded); } },"
   run_round "$P7" "$RAW_M7" "$WORK/fr-m7.err"
 
-  # M8：`allEls()` 与版式脱钩（焦点顺序仍是旧的"最近在前"）⇒ 判据 B7 必须红。
+  # M8：`allEls()` 与版式脱钩（焦点顺序仍是旧的"最近在收藏之前"）⇒ 判据 B7 必须红。
+  #   ⚠️ `design/0081` 起焦点顺序是**开始 → 收藏 → 最近**；这里把收藏与最近对调。
   P8="$WORK/fr-page-m8"
   build_page "$P8"
   echo "▶ M8：焦点顺序与版式脱钩…" >&2
   apply_mutation "$P8/startscreen.js" \
-    "function allEls() { return favEls.concat(rowEls); }" \
-    "function allEls() { return rowEls.concat(favEls); }"
+    "function allEls() { return actEls.concat(favEls, rowEls); }" \
+    "function allEls() { return actEls.concat(rowEls, favEls); }"
   run_round "$P8" "$RAW_M8" "$WORK/fr-m8.err"
 
   # M9：`Shift+F10` 只认收藏行（最近行走不到菜单）⇒ 判据 B12 必须红。
@@ -428,11 +433,23 @@ if [ "$MUTATE" = "1" ]; then
     "  function bumpEpoch() { cacheEpoch += 1; }" \
     "  function bumpEpoch() { /* 变异 M11：纪元不前进 */ }"
   run_round "$P11" "$RAW_M11" "$WORK/fr-m11.err"
+
+  # M12：`allEls()` 去掉「开始」段的行（= 版式上三段都在，键盘却从收藏起步）
+  #   ⇒ 判据 B14 必须红。
+  #   ⚠️ `design/0081`：`allEls()` 必须**逐段照着版式**拼；少一段就只是"焦点跳过了它"，
+  #   页面上一处报错都没有。
+  P12="$WORK/fr-page-m12"
+  build_page "$P12"
+  echo "▶ M12：allEls() 去掉开始段…" >&2
+  apply_mutation "$P12/startscreen.js" \
+    "function allEls() { return actEls.concat(favEls, rowEls); }" \
+    "function allEls() { return favEls.concat(rowEls); }"
+  run_round "$P12" "$RAW_M12" "$WORK/fr-m12.err"
 fi
 
 # ── ⑤ 判据汇总：**退出码就是结论** ──
 python3 -I - "$RAW_BASE" "$RAW_M1" "$RAW_M2" "$RAW_M3" "$RAW_M4" "$RAW_M5" \
-  "$RAW_M6" "$RAW_M7" "$RAW_M8" "$RAW_M9" "$RAW_M10" "$RAW_M11" \
+  "$RAW_M6" "$RAW_M7" "$RAW_M8" "$RAW_M9" "$RAW_M10" "$RAW_M11" "$RAW_M12" \
   "$MUTATE" "$TO_JSON" "$SAVE" "$OUT" "$MODEL" "$TODAY" <<'PY'
 import json
 import os
@@ -440,8 +457,8 @@ import platform
 import sys
 
 (raw_base, raw_m1, raw_m2, raw_m3, raw_m4, raw_m5,
- raw_m6, raw_m7, raw_m8, raw_m9, raw_m10, raw_m11,
- mutate, to_json, save, out, model, today) = sys.argv[1:19]
+ raw_m6, raw_m7, raw_m8, raw_m9, raw_m10, raw_m11, raw_m12,
+ mutate, to_json, save, out, model, today) = sys.argv[1:20]
 
 try:
     raw = json.load(open(raw_base, encoding="utf-8"))
@@ -458,7 +475,8 @@ env = raw.get("环境") or {}
 
 # ⚠️ 判据**必须逐条产出**：少一条 = 那条判据根本没跑（⛔ 别把"没产出"读成"通过"）。
 EXPECTED = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12",
-            "B1", "B2", "B3", "B4", "B5", "B6", "B7", "B8", "B9", "B10", "B11", "B12"]
+            "B1", "B2", "B3", "B4", "B5", "B6", "B7", "B8", "B9", "B10", "B11", "B12",
+            "B13", "B14", "B15"]
 有 = set(str(c.get("id")) for c in 检查)
 for cid in EXPECTED:
     if cid not in 有:
@@ -538,6 +556,8 @@ def 变异仍绿判据(cid, path, target, 说明):
     "（`design/0050` §7.5 的『由红转绿』：纪元栅栏接住了调用方的遗漏）"))
 检查.append(变异判据("M11", raw_m11, "12",
     "变异：不 fresh ＋ 纪元不前进（拆掉 `design/0050` 的 M1 栅栏）⇒ 判据 12（外部新增可见）必须红"))
+检查.append(变异判据("M12", raw_m12, "B14",
+    "变异：`allEls()` 去掉「开始」段的行（`design/0081`）⇒ 判据 B14（三段序与焦点链同源）必须红"))
 
 def key(c):
     i = str(c.get("id"))
@@ -554,7 +574,8 @@ doc = {
     "schema": "rmd-favorites-rootheader-probe/1",
     "date": today,
     "口径": {
-        "说明": "`design/0044`（根头）＋ `design/0043`（启动页收藏段）＋ `design/0045`（最近目录的删除 / 清空）："
+        "说明": "`design/0044`（根头）＋ `design/0043`（启动页收藏段）＋ `design/0045`（最近目录的删除 / 清空）"
+                "＋ `design/0081`（启动页「开始」段）："
                 "跑**产品那几份**（components/{FileTree,Sidebar,StartScreen}.js ＋ services/{i18n,versions,chunked,"
                 "dirsession,tauri,search,keymap,session,start,treerefresh,clipboard}.js）"
                 "在真 WKWebView 里的接线。",
@@ -566,7 +587,7 @@ doc = {
         "被测文件": {
             "FileTree.js": "src/components/FileTree.js（host 边界 / 刷新事务 / 根头菜单白名单 / 输入行落点 / 深度）",
             "Sidebar.js": "src/components/Sidebar.js（根头显隐 / `⋯` 与右键 / 空态与未授权态 / 切页签）",
-            "StartScreen.js": "src/components/StartScreen.js（两段渲染与**收藏在前**的顺序 / 数字归属 / 两张行菜单 / 清空的两步确认 / 焦点）",
+            "StartScreen.js": "src/components/StartScreen.js（三段渲染与**开始 → 收藏 → 最近**的顺序 / 数字归属 / 行菜单 / 清空的两步确认 / 焦点 / 「开始」段的派发）",
             "其余": "services/{i18n,versions,chunked,dirsession,tauri,search,keymap,session,start,treerefresh,clipboard}.js",
             "夹具": "tools/wkwebview-probe/favorites-rootheader-harness.js",
         },
@@ -574,12 +595,13 @@ doc = {
                    "② 假后端下沉到 `window.__TAURI__.core.invoke` ⇒ 只有『磁盘里有什么』是假的；"
                    "③ 剪贴板是记账桩子（本探针不点那一项）；"
                    "④ 观感（根头的留白/字重、菜单阴影）与手感只能人工验收。",
-        "⚠️ 变异": "M1–M11 打在**页面副本**上（⛔ 不碰仓库文件）："
+        "⚠️ 变异": "M1–M12 打在**页面副本**上（⛔ 不碰仓库文件）："
                    "M1 ⇒ 5 红；M2 ⇒ 3 红；M3 ⇒ 10 红；M4 ⇒ B1 红；M5 ⇒ 8 红；"
                    "M6 ⇒ B10 红；M7 ⇒ B11 红；M8 ⇒ B7 红；M9 ⇒ B12 红；"
                    "⭐ M10 ⇒ 12 **仍绿**（`bugs/0019` 原样：刷新事务不吃 `fresh`，"
                    "`design/0050` 的纪元栅栏把它接住了 —— 由红转绿，反向对照）；"
-                   "⭐ M11 ⇒ 12 红（同一份 `fresh` 遗漏 **外加**纪元不前进 ⇒ 缺陷立刻复活，正面控制）。"
+                   "⭐ M11 ⇒ 12 红（同一份 `fresh` 遗漏 **外加**纪元不前进 ⇒ 缺陷立刻复活，正面控制）；"
+                   "⭐ M12 ⇒ B14 红（`allEls()` 少一段 ⇒ 键盘跳过了屏上那一整段）。"
                    "⚠️ 施加前校验命中恰好 1 次 ＋ cksum 前后不同，否则根本不算一次变异。",
         "机器": f"{model} / macOS {platform.mac_ver()[0]} / {platform.machine()}",
         "⚠️ 离屏": "窗口 alphaValue=0 ＋ orderBack ＋ .prohibited ⇒ **不弹窗、不抢焦点、不合成按键**"

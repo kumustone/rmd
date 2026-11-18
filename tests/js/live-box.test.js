@@ -123,7 +123,141 @@ test('⭐ 清单与行为不许分叉：`PROPS` 里每一条都必须真的被�
   });
 });
 
-// ⚠️⚠️ 变异测试对**源码**做、⛔ 不是改导出对象：`boxOf` 是 IIFE 里的闭包，
+// ══════════════════════════════════════════════════════════════════════════
+// ⭐ `design/0085` C2（2026-11-15 用户「批准这份设计」）：长度属性**相对根字号**写。
+//
+// 症状：`theme.setFontSize()` 只改根变量，已经进编辑态的那块是 swap 时的 px 快照
+// ⇒ 改字号后两态尺度不同，直到下一次 swap。修法是把 px 换成
+// `calc(var(--reader-font-size) * k + b)`，于是根变量一变，所有 host **自动重解析**。
+//
+// ⚠️ 判据分三层：① 反解（两点 → k/b）；② 表达式（k/b → CSS 串，含 b=0 / k=0 / b<0）；
+//    ③ 写入口（真的写的是表达式、根变量被恢复、品种缓存不重复量）。
+// ══════════════════════════════════════════════════════════════════════════
+
+test('C2 反解：两点实测 → k / b（b 是**真的**存在，不是拟合噪声）', function () {
+  // 纯比例：引用块行高 1.45 × 字号
+  assert.deepStrictEqual(Box.反解(14, 20.3, 28, 40.6), { k: 1.45, b: 0 });
+  // 有固定分量：引用条实测 k ≈ 0.2963、b ≈ −0.513（`make probe-type-metrics` 六档拟合）。
+  // ⚠️ 这不是"拟合噪声"——浏览器把 `calc(fs × 0.2857)` 的条**吸附**到整设备像素
+  //    （12px 档 3.43 ⇒ 3），丢掉 b 之后 12px ⇒ 32px 条宽会少 1 px。
+  const 条 = Box.反解(14, 3.5, 28, 7.5);
+  assert.ok(Math.abs(条.k - 0.2857142857) < 1e-6, 'k 应为 0.2857');
+  assert.ok(Math.abs(条.b + 0.5) < 1e-9, 'b 必须是 −0.5 —— 这一组正是"单点算不出来"的那个分量');
+  const 固定 = Box.反解(14, 1, 28, 1);
+  assert.deepStrictEqual(固定, { k: 0, b: 1 }, 'B 类物理线宽：k = 0、b = 1px');
+});
+
+test('C2 反解：退化输入返回 null（⛔ 不许写出会倒缩的表达式）', function () {
+  assert.strictEqual(Box.反解(14, 3, 14, 6), null, '两档相同 ⇒ 量不到差别');
+  assert.strictEqual(Box.反解(14, 6, 28, 3), null, '负斜率 ⇒ 量到了噪声');
+  assert.strictEqual(Box.反解(NaN, 1, 28, 2), null);
+});
+
+test('C2 表达式：三种形状（纯比例 / 有固定分量 / 根本不缩放）', function () {
+  assert.strictEqual(Box.表达式(1.45, 0), 'calc(var(--reader-font-size) * 1.45)');
+  assert.strictEqual(Box.表达式(2, 0), 'calc(var(--reader-font-size) * 2)');
+  assert.strictEqual(Box.表达式(0.2963, -0.513), 'calc(var(--reader-font-size) * 0.2963 - 0.513px)');
+  assert.strictEqual(Box.表达式(2, 0.5), 'calc(var(--reader-font-size) * 2 + 0.5px)');
+  assert.strictEqual(Box.表达式(0, 1), '1px', 'k = 0 ⇒ 直接给 px，⛔ 不写 `* 0` 的噪声');
+  assert.strictEqual(Box.表达式(1.2, 0.0004), 'calc(var(--reader-font-size) * 1.2)',
+    'b 舍到 3 位之后是 0 ⇒ 不带固定分量（实测 h1 marginBottom 的 b ≈ −0.004 就是这种）');
+});
+
+test('C2 尺度名单：长度项才缩放，字重 / 线型 / 颜色 / 底色原样搬', function () {
+  // ⚠️ 名单与 `PROPS` 必须**同进同出**：新加一条长度却忘了进 `尺度` ⇒ 改字号时那一项不动，
+  //    而屏幕上表现为"某一类块的某一条尺寸不跟着变"（最典型的是右边距不缩、文字贴边）。
+  const 不缩放 = ['font-weight', 'border-left-style', 'border-left-color', 'background-color'];
+  Box.PROPS.forEach(function (p) {
+    const css = p[0];
+    if (不缩放.indexOf(css) >= 0) {
+      assert.ok(Box.尺度[css] !== true, css + ' 不该进尺度名单');
+    } else {
+      assert.strictEqual(Box.尺度[css], true, css + ' 是长度，必须进尺度名单（否则改字号时它不跟）');
+    }
+  });
+});
+
+/** 造一份**假 DOM**：根元素带可读写的 `--reader-font-size`，computed 值随它线性变化。 */
+function fakeDom(初始字号) {
+  /** @type {Object<string,string>} */
+  const 值 = { '--reader-font-size': 初始字号 + 'px' };
+  const 根 = {
+    style: {
+      getPropertyValue: function (k) { return 值[k] || ''; },
+      setProperty: function (k, v) { 值[k] = v; },
+      removeProperty: function (k) { delete 值[k]; },
+    },
+    get offsetHeight() { return 0; },
+  };
+  let 量次数 = 0;
+  const win = {
+    getComputedStyle: function () {
+      量次数 += 1;
+      const fs = parseFloat(值['--reader-font-size']);
+      return { fontSize: (2 * fs) + 'px', marginBottom: (1.1 * fs) + 'px', backgroundColor: 'transparent' };
+    },
+  };
+  return { 根: 根, win: win, 值: 值, 量次数: function () { return 量次数; } };
+}
+
+test('C2 写入口：真的写 `calc(...)`，且量完把根变量**原样放回去**', function () {
+  const dom = fakeDom(14);
+  const 旧 = Object.prototype.hasOwnProperty.call(global, 'document') ? global.document : undefined;
+  global.document = /** @type {any} */ ({ documentElement: dom.根 });
+  try {
+    const mod = load(SRC, dom.win);
+    /** @type {Array<[string,string]>} */
+    const 写 = [];
+    const host = { style: { setProperty: function (k, v) { 写.push([k, v]); } } };
+    mod.applyBox(host, { tagName: 'P' });
+    assert.deepStrictEqual(写, [
+      ['font-size', 'calc(var(--reader-font-size) * 2)'],
+      ['margin-bottom', 'calc(var(--reader-font-size) * 1.1)'],
+    ], '写出去的必须是表达式 —— 裸 px 就是 C2 那个"改字号后停在旧快照"的原样');
+    assert.strictEqual(dom.值['--reader-font-size'], '14px',
+      '量第二档改过根变量 ⇒ 必须恢复原值（否则整篇文档停在一个错误字号上）');
+  } finally {
+    if (旧 === undefined) delete global.document;
+    else global.document = 旧;
+  }
+});
+
+test('C2 写入口：同一个品种只量一次（量第二档 = 一次全篇重排，⛔ 不能每块都付）', function () {
+  const dom = fakeDom(14);
+  const 旧 = Object.prototype.hasOwnProperty.call(global, 'document') ? global.document : undefined;
+  global.document = /** @type {any} */ ({ documentElement: dom.根 });
+  try {
+    const 缓存模块 = load(SRC, dom.win);
+    const host = { style: { setProperty: function () {} } };
+    缓存模块.applyBox(host, { tagName: 'P' });
+    const 首块 = dom.量次数();
+    缓存模块.applyBox(host, { tagName: 'P' });
+    缓存模块.applyBox(host, { tagName: 'P' });
+    assert.strictEqual(dom.量次数(), 首块 + 2, '第二、三个 <p> 只该各量**一次**（命中缓存）');
+    缓存模块.applyBox(host, { tagName: 'H2' });
+    assert.strictEqual(dom.量次数(), 首块 + 4, '另一个品种（h2）要重新量一档');
+  } finally {
+    if (旧 === undefined) delete global.document;
+    else global.document = 旧;
+  }
+});
+
+test('C2 兜底：没有 DOM / 没有根字号 ⇒ 退回裸 px（旧行为，⛔ 不许抛）', function () {
+  const 旧 = Object.prototype.hasOwnProperty.call(global, 'document') ? global.document : undefined;
+  if (旧 !== undefined) delete global.document;
+  try {
+    const mod = load(SRC, { getComputedStyle: function () { return { marginBottom: '15.4px' }; } });
+    /** @type {Array<[string,string]>} */
+    const 写 = [];
+    const host = { style: { setProperty: function (k, v) { 写.push([k, v]); } } };
+    assert.doesNotThrow(function () { mod.applyBox(host, { tagName: 'P' }); });
+    assert.deepStrictEqual(写, [['margin-bottom', '15.4px']], '量不到根字号 ⇒ 裸 px（不是不写）');
+  } finally {
+    if (旧 !== undefined) global.document = 旧;
+  }
+});
+
+
 //    改 `api.PROPS` / `api.INERT` 一行都不会影响它已经捕获的那两份常量
 //    ——那正是"没改到，而输出与'判据不敏感'一模一样"的陷阱。
 const fs = require('node:fs');
@@ -131,9 +265,9 @@ const path = require('node:path');
 const SRC = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'live', 'box.js'), 'utf8');
 
 /** 在**独立模块作用域**里跑一遍源码（不碰全局 `window`）。 */
-function load(src) {
+function load(src, win) {
   const mod = { exports: {} };
-  new Function('module', 'window', src)(mod, undefined);
+  new Function('module', 'window', src)(mod, win);
   return mod.exports;
 }
 

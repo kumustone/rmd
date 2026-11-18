@@ -8,7 +8,7 @@
 //    这里钉住"该贴的类"，几何那边才谈得上对齐。
 //
 // ⚠️ 三类错在屏幕上都不报错：① 类名与 `live.css` 漂开（贴了个没有规则的类 ⇒ 静默无样式）；
-//    ② 围栏里的 `**` 被当成强调（代码块被上色）；③ 活动行把样式一起做掉（用户改字时字重乱跳）。
+//    ② 围栏里的 `**` 被当成强调（代码块被上色）；③ 隐藏集合跟着选区变（`design/0061` L1 之前的老形态）。
 
 'use strict';
 
@@ -67,10 +67,15 @@ test('⭐ 围栏里面**一个类都不贴**（代码块里的 `**` 是内容）
   assert.deepStrictEqual(plan(src).inline, []);
 });
 
-test('⭐ 行内类**不受活动行影响**：活动的意思是"标记不藏"，⛔ 不是"样式作废"', function () {
+test('⭐ 行内类**不受选区影响**；`activeLines` 已是**被忽略**的旧选项（`design/0061` L1）', function () {
   assert.deepStrictEqual(marks('这是 **粗体**', { activeLines: [0] }), ['cm-rmd-strong@**粗体**']);
-  // ⚠️ 反面：同一行上"藏标记"那一半确实被活动行取消了（两条判据互相独立）
-  assert.deepStrictEqual(plan('这是 **粗体**', { activeLines: [0] }).ranges, []);
+  // ⭐ 隐藏集合同样是**纯函数**：传不传 `activeLines` 一字不差。
+  //    ⚠️ 这条以前断言的是反面（活动行 ⇒ `ranges: []`）——`design/0061` L1 之后
+  //    活动行概念消失，旧断言会把"标记恒定隐藏"判成红。
+  assert.deepStrictEqual(
+    plan('这是 **粗体**', { activeLines: [0] }).ranges,
+    plan('这是 **粗体**').ranges
+  );
   assert.deepStrictEqual(plan('这是 **粗体**').ranges.length, 2);
 });
 
@@ -100,9 +105,14 @@ test('⭐ 接线：`createField` 必须把行内类交给 `Decoration.mark`（�
   const state = { doc: { toString: function () { return text; } }, selection: {}, tree: parse(text) };
   const field = D.createField(CM6, { activeLineIndexes: function () { return []; } })[0];
   const built = field.create(state);
-  assert.deepStrictEqual(marks2, ['cm-rmd-strong', 'cm-rmd-code'], '两个类都要真的被 `Decoration.mark` 建出来');
+  // ⭐ `bugs/0304` ④：行内代码的反引号先被拆成 `cm-rmd-zw`（字符留在流里、只压零宽），
+  //    再贴 `plan.inline` 的各条行内类 ⇒ 顺序上 `cm-rmd-zw` 当前。
+  assert.deepStrictEqual(marks2, ['cm-rmd-zw', 'cm-rmd-strong', 'cm-rmd-code'],
+    '三个类都要真的被 `Decoration.mark` 建出来');
   const got = built.decos.filter(function (d) { return d.mark; });
-  assert.deepStrictEqual(got.map(function (d) { return d.mark; }), ['cm-rmd-strong', 'cm-rmd-code']);
+  assert.deepStrictEqual(got.map(function (d) { return d.mark; }),
+    ['cm-rmd-zw', 'cm-rmd-zw', 'cm-rmd-strong', 'cm-rmd-code'],
+    '两个反引号各一条 `cm-rmd-zw`（再是粗体与行内代码的整体 mark）');
 });
 
 // ⭐⭐ 类名与样式表**逐字对应**：贴了个 `live.css` 里没有的类 ⇒ 静默无样式，

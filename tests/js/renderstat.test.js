@@ -19,10 +19,12 @@ function load() {
   );
   const win = {};
   new Function('window', src)(win);
-  return win.rmd.renderstat.codeNotice;
+  return win.rmd.renderstat;
 }
 
-const codeNotice = load();
+const RS = load();
+const codeNotice = RS.codeNotice;
+const mermaidNotice = RS.mermaidNotice;
 
 test('没超限时一个字都不加', () => {
   assert.strictEqual(codeNotice({ code_unhighlighted: 0, code_highlighted: 12 }), '');
@@ -75,4 +77,49 @@ test('文案不许把"没上色"说成"内容丢了"', () => {
     assert.ok(!s.includes(谎话), `⛔ 文案里出现了「${谎话}」：${s}`);
   }
   assert.ok(s.includes('完整'), `必须明说内容完整：${s}`);
+});
+
+// ────────────────────────────────────────────────────────────────
+// ⭐ `design/0060`：Mermaid 回退那一句（同族判据，只是换了字段）
+// ────────────────────────────────────────────────────────────────
+
+test('图表：没回退时一个字都不加', () => {
+  assert.strictEqual(mermaidNotice({ mermaid_unrendered: 0, mermaid_rendered: 3 }), '');
+  assert.strictEqual(mermaidNotice({ mermaid_rendered: 3 }), '');
+  assert.strictEqual(mermaidNotice({}), '');
+  assert.strictEqual(mermaidNotice(undefined), '');
+  assert.strictEqual(mermaidNotice(null), '');
+  assert.strictEqual(mermaidNotice({ mermaid_unrendered: null }), '');
+  assert.strictEqual(mermaidNotice({ mermaid_unrendered: NaN }), '');
+  assert.strictEqual(mermaidNotice({ mermaid_unrendered: -2, mermaid_rendered: 1 }), '');
+});
+
+test('图表：回退时同时给出分母，且缺少已渲染数时不印 NaN', () => {
+  const s = mermaidNotice({ mermaid_unrendered: 2, mermaid_rendered: 3 });
+  assert.ok(s.includes('2 / 5'), `分母必须是 2+3=5：${s}`);
+  const one = mermaidNotice({ mermaid_unrendered: 2 });
+  assert.ok(!one.includes('NaN'), `⛔ 状态条上出现了 NaN：${one}`);
+  assert.ok(one.includes('2 / 2'), one);
+});
+
+test('图表文案：不说成规模限制、不说成内容丢了，且指向文内原因', () => {
+  // ⚠️ 回退成因有五种（不支持 / 语法错 / 超限 / 安全拒绝 / 空图）。
+  //    "规模限制"在另外四种上就是**假话** ⇒ 这条断言钉住的是"措辞要准"。
+  const s = mermaidNotice({ mermaid_unrendered: 1, mermaid_rendered: 0 });
+  for (const 谎话 of ['规模限制', '截断', '跳过', '丢失', '省略', '不全']) {
+    assert.ok(!s.includes(谎话), `⛔ 文案里出现了「${谎话}」：${s}`);
+  }
+  assert.ok(s.includes('原因见文内'), `必须指向逐块原因：${s}`);
+  assert.ok(s.includes('完整'), `必须明说原文完整：${s}`);
+});
+
+test('图表：走注入的翻译函数（键名与字典一致）', () => {
+  const calls = [];
+  const tr = (key, vars) => {
+    calls.push(key);
+    return `T:${key}:${vars.un}/${vars.all}`;
+  };
+  const s = mermaidNotice({ mermaid_unrendered: 1, mermaid_rendered: 2 }, tr);
+  assert.deepStrictEqual(calls, ['doc.diagrams-unrendered']);
+  assert.strictEqual(s, 'T:doc.diagrams-unrendered:1/3');
 });

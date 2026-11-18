@@ -19,7 +19,8 @@
 // ⚠️ `--set` 是**系统级设置**（`INV-APP-04`）：只有人显式跑 `make default-app` 才允许调它，
 //    ⛔ `make app` / `make install-app` / `make smoke-app` 一次都不许碰（那条不变量由 Makefile 守）。
 //
-// 退出码：0 = 成功且核对通过；1 = 参数/环境错误；2 = 设置后读回来的**不是**目标应用。
+// 退出码：0 = 成功且核对通过（含同一 bundle 的另一份拷贝）；1 = 参数/环境错误；
+//         2 = 设置后读回来的是另一个应用（bundle-id 也不同）。
 
 import AppKit
 import Foundation
@@ -104,6 +105,19 @@ func set(appPath: String, sample: URL) -> Int32 {
     let want = app.resolvingSymlinksInPath().path
     let got = URL(fileURLWithPath: after).resolvingSymlinksInPath().path
     if got != want {
+        // ⚠️⚠️ **同一 bundle 的两份拷贝**（2026-11-16 实测）：本仓的交付口径要求
+        //    `/Applications/rmd.app` 与 `~/Applications/rmd.app` 都覆盖安装，两者
+        //    **bundle-id 相同**。LaunchServices 只会登记其中一份（通常是 `/Applications`
+        //    那份），⇒ 拿 `~/Applications` 那份去设置，读回来是 `/Applications` 的路径。
+        //    ⛔ 这**不是**失败：用户要的是"`.md` 由 rmd 打开"，落到同 bundle 的另一份
+        //    拷贝上结果完全一样。判据因此放宽为"路径相同 **或** bundle-id 相同"。
+        if let wantID = Bundle(url: app)?.bundleIdentifier,
+           let gotID = Bundle(url: URL(fileURLWithPath: after))?.bundleIdentifier,
+           wantID == gotID {
+            print("ℹ️ 系统把默认应用落在了同一 bundle 的另一份拷贝上：\(after)")
+            print("   （bundle-id \(wantID) 生效；用户看到的行为与 \(want) 完全一致，按成功处理）")
+            return 0
+        }
         die("⛔ 读回来不是目标应用（期望 \(want)，实际 \(got)）——多半是没 lsregister 或那个 .app 不完整", 2)
     }
     return 0

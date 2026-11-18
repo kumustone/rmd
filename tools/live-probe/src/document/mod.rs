@@ -16,3 +16,28 @@ pub mod offset;
 #[path = "../../../../src-tauri/src/document/parser.rs"]
 #[allow(dead_code)]
 pub mod parser;
+
+// ⭐ `design/0059` 阶段 C：位置映射原型要的是**真实产品渲染**（`render::to_html_with_stats`），
+// 所以 `0007` 的三份渲染增强模块以及 `render.rs` 本身也按 `#[path]` 编进来。
+// ⚠️ 它们的 `super::` 路径依赖本模块把兄弟模块放在同一层——⛔ 别拆子模块。
+// ⚠️ `render.rs` / `parser.rs` 里的 `crate::document::…` 只在 `#[cfg(test)]` 里出现，
+//    正常构建不会编到（`cargo run` 不设 `cfg(test)`）。
+#[path = "../../../../src-tauri/src/document/highlight.rs"]
+#[allow(dead_code)]
+pub mod highlight;
+
+#[path = "../../../../src-tauri/src/document/math.rs"]
+#[allow(dead_code)]
+pub mod math;
+
+#[path = "../../../../src-tauri/src/document/mermaid.rs"]
+#[allow(dead_code)]
+pub mod mermaid;
+
+#[path = "../../../../src-tauri/src/document/diagram.rs"]
+#[allow(dead_code)]
+pub mod diagram;
+
+#[path = "../../../../src-tauri/src/document/render.rs"]
+#[allow(dead_code)]
+pub mod render;

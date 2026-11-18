@@ -1,0 +1,5341 @@
+{
+  "schema": "rmd.visual-parity.coverage/1",
+  "source": {
+    "design": "docs/design/0063-Mardo-端侧对照测试.md",
+    "design_sha256": "419848dcd942726c2d8d6c3a10fd4cac6f06a9cc1bd53b71ff2589564ec266f2",
+    "sections": [
+      "3.1",
+      "3.2",
+      "3.3",
+      "3.4",
+      "3.5"
+    ],
+    "note": "本文件由 ast-expect-check.py coverage 从设计文档生成；⛔ 不手改。"
+  },
+  "summary": {
+    "total_criteria": 150,
+    "total_expanded_ids": 168,
+    "by_family_rows": {
+      "SPEC": 90,
+      "PARITY": 55,
+      "REG": 3,
+      "L3": 2
+    },
+    "by_family_expanded": {
+      "SPEC": 101,
+      "PARITY": 62,
+      "REG": 3,
+      "L3": 2
+    },
+    "by_layer_rows": {
+      "L1": 3,
+      "L2": 145,
+      "L3": 2
+    },
+    "by_layer_any": {
+      "L1": 54,
+      "L2": 145,
+      "L3": 3
+    }
+  },
+  "field_map": {
+    "id": "§3 表「判据 ID」列原文；复合写法（如 P-H-01/02/03-SPEC）不拆，拆开见 expanded_ids",
+    "family": "ID 末尾的族：SPEC / PARITY / REG / L3",
+    "syntax_item": "§3.1–§3.4「语法项」列；§3.5 取「组合」列",
+    "criterion": "§3 表「期望来源（族）」列（SPEC 出处 / PARITY 基线 / 契约 / 有意差异）",
+    "observable": "§3 表「可观测的量」列",
+    "measure": "§3 表「量法」列（M1–M8，含 M3＋M1 这类组合）",
+    "layer": "「层」列归一后的判定层（L1/L2/L3）；L1→L2 记为 L2（L1 采集），原文见 layer_raw",
+    "state": "固定 declared：本文件只声明判据，不记录采集/通过状态"
+  },
+  "criteria": [
+    {
+      "id": "P-PARA-01-SPEC",
+      "expanded_ids": [
+        "P-PARA-01-SPEC"
+      ],
+      "family": "SPEC",
+      "syntax_item": "段落",
+      "criterion": "SPEC：CommonMark §4.8",
+      "observable": "`<p>` 节点数与文本",
+      "measure": "M5",
+      "layer": "L2",
+      "layers": [
+        "L2"
+      ],
+      "layer_raw": "L2-DOM",
+      "tolerance": "结构",
+      "notes": "—",
+      "fixture_refs": [
+        "F0/01",
+        "F0/03"
+      ],
+      "fixtures": [
+        "00-body.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.1",
+        "line": 1087
+      }
+    },
+    {
+      "id": "P-PARA-01-PARITY",
+      "expanded_ids": [
+        "P-PARA-01-PARITY"
+      ],
+      "family": "PARITY",
+      "syntax_item": "段落折行",
+      "criterion": "PARITY：L1 基线（待采）",
+      "observable": "`SP_para/B`；`RAG_para`（**仅同端**）",
+      "measure": "M1",
+      "layer": "L2",
+      "layers": [
+        "L1",
+        "L2"
+      ],
+      "layer_raw": "L1→L2",
+      "tolerance": "T2",
+      "notes": "跨端只比 `SP_para/B`；`RAG_para` 只在同端同环境内比（U3）；rmd `BAND/B` 仅登记",
+      "fixture_refs": [
+        "F0/01",
+        "F0/03"
+      ],
+      "fixtures": [
+        "00-body.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.1",
+        "line": 1088
+      }
+    },
+    {
+      "id": "P-H-01/02/03-SPEC",
+      "expanded_ids": [
+        "P-H-01-SPEC",
+        "P-H-02-SPEC",
+        "P-H-03-SPEC"
+      ],
+      "family": "SPEC",
+      "syntax_item": "ATX h1–h3",
+      "criterion": "SPEC：`0046` §2.1 产品值 **2.00/1.75/1.45**（h1 的 2.00 为外推）",
+      "observable": "标签 `h1/h2/h3`；计算字号比",
+      "measure": "M5",
+      "layer": "L2",
+      "layers": [
+        "L2"
+      ],
+      "layer_raw": "L2-DOM",
+      "tolerance": "精确值",
+      "notes": "墨迹高实测 1.79/1.43 是旧口径，⛔ 不作 SPEC 期望",
+      "fixture_refs": [
+        "F1/01",
+        "F1/03",
+        "F1/05"
+      ],
+      "fixtures": [
+        "01-headings.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.1",
+        "line": 1089
+      }
+    },
+    {
+      "id": "P-H-01/02/03-PARITY",
+      "expanded_ids": [
+        "P-H-01-PARITY",
+        "P-H-02-PARITY",
+        "P-H-03-PARITY"
+      ],
+      "family": "PARITY",
+      "syntax_item": "ATX h1–h3",
+      "criterion": "PARITY：L1 基线（待采）",
+      "observable": "`H/B`、`SP_head/B`、`SP_head_after/B`",
+      "measure": "M1",
+      "layer": "L2",
+      "layers": [
+        "L1",
+        "L2"
+      ],
+      "layer_raw": "L1→L2",
+      "tolerance": "T2",
+      "notes": "1.79/1.43 仅候选；h1 无历史实测",
+      "fixture_refs": [
+        "F1/01",
+        "F1/03",
+        "F1/05"
+      ],
+      "fixtures": [
+        "01-headings.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.1",
+        "line": 1090
+      }
+    },
+    {
+      "id": "P-H-04/05/06-SPEC",
+      "expanded_ids": [
+        "P-H-04-SPEC",
+        "P-H-05-SPEC",
+        "P-H-06-SPEC"
+      ],
+      "family": "SPEC",
+      "syntax_item": "ATX h4–h6",
+      "criterion": "SPEC：`0046` §2.1 的 **1.25/1.00/0.85**",
+      "observable": "标签与计算字号比",
+      "measure": "M5",
+      "layer": "L2",
+      "layers": [
+        "L2"
+      ],
+      "layer_raw": "L2-DOM",
+      "tolerance": "精确值",
+      "notes": "产品值本轮未改",
+      "fixture_refs": [
+        "F1/07",
+        "F1/09",
+        "F1/11"
+      ],
+      "fixtures": [
+        "01-headings.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.1",
+        "line": 1091
+      }
+    },
+    {
+      "id": "P-H-04/05/06-PARITY",
+      "expanded_ids": [
+        "P-H-04-PARITY",
+        "P-H-05-PARITY",
+        "P-H-06-PARITY"
+      ],
+      "family": "PARITY",
+      "syntax_item": "ATX h4–h6",
+      "criterion": "PARITY：L1 基线（待采）",
+      "observable": "`H/B`",
+      "measure": "M1",
+      "layer": "L2",
+      "layers": [
+        "L1",
+        "L2"
+      ],
+      "layer_raw": "L1→L2",
+      "tolerance": "T2",
+      "notes": "若相邻两档带高差 <2 px，合并记「钳位」并登记",
+      "fixture_refs": [
+        "F1/07",
+        "F1/09",
+        "F1/11"
+      ],
+      "fixtures": [
+        "01-headings.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.1",
+        "line": 1092
+      }
+    },
+    {
+      "id": "P-H-07-SPEC",
+      "expanded_ids": [
+        "P-H-07-SPEC"
+      ],
+      "family": "SPEC",
+      "syntax_item": "ATX 闭合序列",
+      "criterion": "SPEC：CommonMark §4.2",
+      "observable": "文本内容不含末尾 `##`",
+      "measure": "M5",
+      "layer": "L2",
+      "layers": [
+        "L2"
+      ],
+      "layer_raw": "L2-DOM",
+      "tolerance": "结构",
+      "notes": "—",
+      "fixture_refs": [
+        "F1/13"
+      ],
+      "fixtures": [
+        "01-headings.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.1",
+        "line": 1093
+      }
+    },
+    {
+      "id": "P-SETEXT-01/02-SPEC",
+      "expanded_ids": [
+        "P-SETEXT-01-SPEC",
+        "P-SETEXT-02-SPEC"
+      ],
+      "family": "SPEC",
+      "syntax_item": "Setext 两级（多行标题）",
+      "criterion": "SPEC：CommonMark §4.3",
+      "observable": "`h1`/`h2` 节点；下划线不成为文本",
+      "measure": "M5",
+      "layer": "L2",
+      "layers": [
+        "L2"
+      ],
+      "layer_raw": "L2-DOM",
+      "tolerance": "结构",
+      "notes": "—",
+      "fixture_refs": [
+        "F1/15-17",
+        "F1/19-21"
+      ],
+      "fixtures": [
+        "01-headings.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.1",
+        "line": 1094
+      }
+    },
+    {
+      "id": "P-SETEXT-01/02-PARITY",
+      "expanded_ids": [
+        "P-SETEXT-01-PARITY",
+        "P-SETEXT-02-PARITY"
+      ],
+      "family": "PARITY",
+      "syntax_item": "Setext 两级",
+      "criterion": "PARITY：L1 基线（待采）",
+      "observable": "`H/B`、下划线是否可见",
+      "measure": "M1",
+      "layer": "L2",
+      "layers": [
+        "L1",
+        "L2"
+      ],
+      "layer_raw": "L1→L2",
+      "tolerance": "T2",
+      "notes": "Mardo 支持性**待测**；不支持则降 `L3` 登记",
+      "fixture_refs": [
+        "F1/15-17",
+        "F1/19-21"
+      ],
+      "fixtures": [
+        "01-headings.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.1",
+        "line": 1095
+      }
+    },
+    {
+      "id": "P-RULE-01-SPEC",
+      "expanded_ids": [
+        "P-RULE-01-SPEC"
+      ],
+      "family": "SPEC",
+      "syntax_item": "分隔线 `---`",
+      "criterion": "SPEC：CommonMark §4.1",
+      "observable": "`<hr>` 节点",
+      "measure": "M5",
+      "layer": "L2",
+      "layers": [
+        "L2"
+      ],
+      "layer_raw": "L2-DOM",
+      "tolerance": "结构",
+      "notes": "—",
+      "fixture_refs": [
+        "F2/05"
+      ],
+      "fixtures": [
+        "02-blocks.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.1",
+        "line": 1096
+      }
+    },
+    {
+      "id": "P-RULE-02/03-SPEC",
+      "expanded_ids": [
+        "P-RULE-02-SPEC",
+        "P-RULE-03-SPEC"
+      ],
+      "family": "SPEC",
+      "syntax_item": "分隔线 `***`/`___`",
+      "criterion": "SPEC：CommonMark §4.1",
+      "observable": "`<hr>` 节点",
+      "measure": "M5",
+      "layer": "L2",
+      "layers": [
+        "L2"
+      ],
+      "layer_raw": "L2-DOM",
+      "tolerance": "结构",
+      "notes": "—",
+      "fixture_refs": [
+        "F2/07",
+        "F2/09"
+      ],
+      "fixtures": [
+        "02-blocks.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.1",
+        "line": 1097
+      }
+    },
+    {
+      "id": "P-RULE-01-PARITY",
+      "expanded_ids": [
+        "P-RULE-01-PARITY"
+      ],
+      "family": "PARITY",
+      "syntax_item": "分隔线外观",
+      "criterion": "PARITY：L1 基线（待采）",
+      "observable": "线宽/B、上下 `SP_block/B`、线色 ΔE",
+      "measure": "M1、M4",
+      "layer": "L2",
+      "layers": [
+        "L1",
+        "L2"
+      ],
+      "layer_raw": "L1→L2",
+      "tolerance": "T2、T4（1 px 线 ΔE≤8 或登记）",
+      "notes": "rmd 线宽变量待取值；线厚属抗锯齿噪声",
+      "fixture_refs": [
+        "F2/05"
+      ],
+      "fixtures": [
+        "02-blocks.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.1",
+        "line": 1098
+      }
+    },
+    {
+      "id": "P-QUOTE-01-SPEC",
+      "expanded_ids": [
+        "P-QUOTE-01-SPEC"
+      ],
+      "family": "SPEC",
+      "syntax_item": "引用单层",
+      "criterion": "SPEC：CommonMark §5.1",
+      "observable": "`blockquote` 节点",
+      "measure": "M5",
+      "layer": "L2",
+      "layers": [
+        "L2"
+      ],
+      "layer_raw": "L2-DOM",
+      "tolerance": "结构",
+      "notes": "—",
+      "fixture_refs": [
+        "F3/01-02"
+      ],
+      "fixtures": [
+        "03-quote.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.1",
+        "line": 1099
+      }
+    },
+    {
+      "id": "P-QUOTE-01-PARITY",
+      "expanded_ids": [
+        "P-QUOTE-01-PARITY"
+      ],
+      "family": "PARITY",
+      "syntax_item": "引用单层",
+      "criterion": "PARITY：L1 基线（待采）",
+      "observable": "`W_qbar/B`、`IND_quote/B`、条色 ΔE",
+      "measure": "M4（条）＋M1（内容）",
+      "layer": "L2",
+      "layers": [
+        "L1",
+        "L2"
+      ],
+      "layer_raw": "L1→L2",
+      "tolerance": "T2、T4",
+      "notes": "⛔ 不预填由字号×行高推算的候选；条色 `#007569` 仅候选",
+      "fixture_refs": [
+        "F3/01-02"
+      ],
+      "fixtures": [
+        "03-quote.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.1",
+        "line": 1100
+      }
+    },
+    {
+      "id": "P-QUOTE-02-SPEC",
+      "expanded_ids": [
+        "P-QUOTE-02-SPEC"
+      ],
+      "family": "SPEC",
+      "syntax_item": "引用嵌套",
+      "criterion": "SPEC：CommonMark §5.1",
+      "observable": "嵌套 `blockquote` 层数",
+      "measure": "M5",
+      "layer": "L2",
+      "layers": [
+        "L2"
+      ],
+      "layer_raw": "L2-DOM",
+      "tolerance": "结构",
+      "notes": "—",
+      "fixture_refs": [
+        "F3/04-05"
+      ],
+      "fixtures": [
+        "03-quote.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.1",
+        "line": 1101
+      }
+    },
+    {
+      "id": "P-QUOTE-02-PARITY",
+      "expanded_ids": [
+        "P-QUOTE-02-PARITY"
+      ],
+      "family": "PARITY",
+      "syntax_item": "引用嵌套",
+      "criterion": "PARITY：L1 基线（待采）",
+      "observable": "每层条左缘 x、每层 `IND_nest/B`",
+      "measure": "M4＋M1",
+      "layer": "L2",
+      "layers": [
+        "L1",
+        "L2"
+      ],
+      "layer_raw": "L1→L2",
+      "tolerance": "T2",
+      "notes": "深层条叠加形态不可比",
+      "fixture_refs": [
+        "F3/04-05"
+      ],
+      "fixtures": [
+        "03-quote.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.1",
+        "line": 1102
+      }
+    },
+    {
+      "id": "P-QUOTE-03-SPEC",
+      "expanded_ids": [
+        "P-QUOTE-03-SPEC"
+      ],
+      "family": "SPEC",
+      "syntax_item": "引用惰性续行",
+      "criterion": "SPEC：CommonMark §5.1",
+      "observable": "续行仍在 `blockquote` 内",
+      "measure": "M5",
+      "layer": "L2",
+      "layers": [
+        "L2"
+      ],
+      "layer_raw": "L2-DOM",
+      "tolerance": "结构",
+      "notes": "—",
+      "fixture_refs": [
+        "F3/07-08"
+      ],
+      "fixtures": [
+        "03-quote.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.1",
+        "line": 1103
+      }
+    },
+    {
+      "id": "P-QUOTE-03-L3",
+      "expanded_ids": [
+        "P-QUOTE-03-L3"
+      ],
+      "family": "L3",
+      "syntax_item": "惰性续行外观",
+      "criterion": "**L3 人眼**：两端帧并排看",
+      "observable": "续行是否与首行同左缘",
+      "measure": "M7",
+      "layer": "L3",
+      "layers": [
+        "L3"
+      ],
+      "layer_raw": "L3",
+      "tolerance": "结构",
+      "notes": "⛔ 不用像素判\"是否同盒\"，因无结构证据；⛔ 不用 `-PARITY`（无落盘基线）",
+      "fixture_refs": [
+        "F3/07-08"
+      ],
+      "fixtures": [
+        "03-quote.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.1",
+        "line": 1104
+      }
+    },
+    {
+      "id": "P-QUOTE-04-SPEC",
+      "expanded_ids": [
+        "P-QUOTE-04-SPEC"
+      ],
+      "family": "SPEC",
+      "syntax_item": "引用内多段",
+      "criterion": "SPEC：CommonMark §5.1",
+      "observable": "两个 `p` 同在 `blockquote`",
+      "measure": "M5",
+      "layer": "L2",
+      "layers": [
+        "L2"
+      ],
+      "layer_raw": "L2-DOM",
+      "tolerance": "结构",
+      "notes": "—",
+      "fixture_refs": [
+        "F3/14-16"
+      ],
+      "fixtures": [
+        "03-quote.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.1",
+        "line": 1105
+      }
+    },
+    {
+      "id": "P-QUOTE-04-PARITY",
+      "expanded_ids": [
+        "P-QUOTE-04-PARITY"
+      ],
+      "family": "PARITY",
+      "syntax_item": "引用内多段",
+      "criterion": "PARITY：L1 基线（待采）",
+      "observable": "段间距/B",
+      "measure": "M1",
+      "layer": "L2",
+      "layers": [
+        "L1",
+        "L2"
+      ],
+      "layer_raw": "L1→L2",
+      "tolerance": "T2",
+      "notes": "—",
+      "fixture_refs": [
+        "F3/14-16"
+      ],
+      "fixtures": [
+        "03-quote.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.1",
+        "line": 1106
+      }
+    },
+    {
+      "id": "P-QUOTE-05-SPEC",
+      "expanded_ids": [
+        "P-QUOTE-05-SPEC"
+      ],
+      "family": "SPEC",
+      "syntax_item": "引用内代码",
+      "criterion": "SPEC：CommonMark §4.5/§5.1",
+      "observable": "`pre>code` 在 `blockquote` 内",
+      "measure": "M5",
+      "layer": "L2",
+      "layers": [
+        "L2"
+      ],
+      "layer_raw": "L2-DOM",
+      "tolerance": "结构",
+      "notes": "—",
+      "fixture_refs": [
+        "F3/18-20"
+      ],
+      "fixtures": [
+        "03-quote.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.1",
+        "line": 1107
+      }
+    },
+    {
+      "id": "P-QUOTE-05-PARITY",
+      "expanded_ids": [
+        "P-QUOTE-05-PARITY"
+      ],
+      "family": "PARITY",
+      "syntax_item": "引用内代码",
+      "criterion": "PARITY：L1 基线（待采）",
+      "observable": "底色 ΔE、`PAD_code/B`",
+      "measure": "M4＋M1",
+      "layer": "L2",
+      "layers": [
+        "L1",
+        "L2"
+      ],
+      "layer_raw": "L1→L2",
+      "tolerance": "T2、T4",
+      "notes": "—",
+      "fixture_refs": [
+        "F3/18-20"
+      ],
+      "fixtures": [
+        "03-quote.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.1",
+        "line": 1108
+      }
+    },
+    {
+      "id": "P-QUOTE-06-SPEC",
+      "expanded_ids": [
+        "P-QUOTE-06-SPEC"
+      ],
+      "family": "SPEC",
+      "syntax_item": "三层以上引用",
+      "criterion": "SPEC：CommonMark §5.1",
+      "observable": "三层 `blockquote`",
+      "measure": "M5",
+      "layer": "L2",
+      "layers": [
+        "L2"
+      ],
+      "layer_raw": "L2-DOM",
+      "tolerance": "结构",
+      "notes": "—",
+      "fixture_refs": [
+        "F3/22"
+      ],
+      "fixtures": [
+        "03-quote.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.1",
+        "line": 1109
+      }
+    },
+    {
+      "id": "P-QUOTE-06-PARITY",
+      "expanded_ids": [
+        "P-QUOTE-06-PARITY"
+      ],
+      "family": "PARITY",
+      "syntax_item": "三层引用",
+      "criterion": "PARITY：L1 基线（待采）",
+      "observable": "三条竖条 x 位置",
+      "measure": "M4",
+      "layer": "L2",
+      "layers": [
+        "L1",
+        "L2"
+      ],
+      "layer_raw": "L1→L2",
+      "tolerance": "T2",
+      "notes": "第三条可能低于墨迹阈值 ⇒ 量不到就降 `L3`",
+      "fixture_refs": [
+        "F3/22"
+      ],
+      "fixtures": [
+        "03-quote.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.1",
+        "line": 1110
+      }
+    },
+    {
+      "id": "P-UL-01-SPEC",
+      "expanded_ids": [
+        "P-UL-01-SPEC"
+      ],
+      "family": "SPEC",
+      "syntax_item": "无序 `-`",
+      "criterion": "SPEC：CommonMark §5.3",
+      "observable": "`ul/li`；紧凑项无 `<p>`",
+      "measure": "M5",
+      "layer": "L2",
+      "layers": [
+        "L2"
+      ],
+      "layer_raw": "L2-DOM",
+      "tolerance": "结构",
+      "notes": "—",
+      "fixture_refs": [
+        "F4a/01-02"
+      ],
+      "fixtures": [
+        "04a-lists-basic.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.1",
+        "line": 1111
+      }
+    },
+    {
+      "id": "P-UL-01-PARITY",
+      "expanded_ids": [
+        "P-UL-01-PARITY"
+      ],
+      "family": "PARITY",
+      "syntax_item": "无序 `-`",
+      "criterion": "PARITY：L1 基线（待采）",
+      "observable": "`W_marker/B`、`IND_list/B`、`H_li/B`",
+      "measure": "M3＋M1",
+      "layer": "L2",
+      "layers": [
+        "L1",
+        "L2"
+      ],
+      "layer_raw": "L1→L2",
+      "tolerance": "T2",
+      "notes": "⛔ 不预填由字号×行高推算的候选；标记字形不可比",
+      "fixture_refs": [
+        "F4a/01-02"
+      ],
+      "fixtures": [
+        "04a-lists-basic.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.1",
+        "line": 1112
+      }
+    },
+    {
+      "id": "P-UL-02/03-SPEC",
+      "expanded_ids": [
+        "P-UL-02-SPEC",
+        "P-UL-03-SPEC"
+      ],
+      "family": "SPEC",
+      "syntax_item": "无序 `*`/`+`",
+      "criterion": "SPEC：CommonMark §5.3",
+      "observable": "与 `-` 同为 `ul/li`",
+      "measure": "M5",
+      "layer": "L2",
+      "layers": [
+        "L2"
+      ],
+      "layer_raw": "L2-DOM",
+      "tolerance": "同端等值",
+      "notes": "—",
+      "fixture_refs": [
+        "F4a/04-05",
+        "F4a/07-08"
+      ],
+      "fixtures": [
+        "04a-lists-basic.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.1",
+        "line": 1113
+      }
+    },
+    {
+      "id": "P-OL-01-SPEC",
+      "expanded_ids": [
+        "P-OL-01-SPEC"
+      ],
+      "family": "SPEC",
+      "syntax_item": "有序 `.`",
+      "criterion": "SPEC：CommonMark §5.3",
+      "observable": "`ol/li`、`start=1`",
+      "measure": "M5",
+      "layer": "L2",
+      "layers": [
+        "L2"
+      ],
+      "layer_raw": "L2-DOM",
+      "tolerance": "结构",
+      "notes": "—",
+      "fixture_refs": [
+        "F4a/10-19"
+      ],
+      "fixtures": [
+        "04a-lists-basic.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.1",
+        "line": 1114
+      }
+    },
+    {
+      "id": "P-OL-01-PARITY",
+      "expanded_ids": [
+        "P-OL-01-PARITY"
+      ],
+      "family": "PARITY",
+      "syntax_item": "有序 `.`",
+      "criterion": "PARITY：L1 基线（待采）",
+      "observable": "编号列宽/B、`IND_list/B`",
+      "measure": "M3＋M1",
+      "layer": "L2",
+      "layers": [
+        "L1",
+        "L2"
+      ],
+      "layer_raw": "L1→L2",
+      "tolerance": "T2",
+      "notes": "rmd 编号列宽 `2em`（`../bugs/0112` §3.0）仅候选",
+      "fixture_refs": [
+        "F4a/10-19"
+      ],
+      "fixtures": [
+        "04a-lists-basic.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.1",
+        "line": 1115
+      }
+    },
+    {
+      "id": "P-OL-02-SPEC",
+      "expanded_ids": [
+        "P-OL-02-SPEC"
+      ],
+      "family": "SPEC",
+      "syntax_item": "有序 `)`",
+      "criterion": "SPEC：CommonMark §5.3",
+      "observable": "`ol/li`、`start=3`",
+      "measure": "M5",
+      "layer": "L2",
+      "layers": [
+        "L2"
+      ],
+      "layer_raw": "L2-DOM",
+      "tolerance": "结构",
+      "notes": "Mardo 支持性待测",
+      "fixture_refs": [
+        "F4a/21-22"
+      ],
+      "fixtures": [
+        "04a-lists-basic.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.1",
+        "line": 1116
+      }
+    },
+    {
+      "id": "P-OL-03-SPEC",
+      "expanded_ids": [
+        "P-OL-03-SPEC"
+      ],
+      "family": "SPEC",
+      "syntax_item": "起始序号 3",
+      "criterion": "SPEC：CommonMark §5.3",
+      "observable": "`start=\"3\"`",
+      "measure": "M5",
+      "layer": "L2",
+      "layers": [
+        "L2"
+      ],
+      "layer_raw": "L2-DOM",
+      "tolerance": "精确值",
+      "notes": "—",
+      "fixture_refs": [
+        "F4a/21"
+      ],
+      "fixtures": [
+        "04a-lists-basic.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.1",
+        "line": 1117
+      }
+    },
+    {
+      "id": "P-OL-03-PARITY",
+      "expanded_ids": [
+        "P-OL-03-PARITY"
+      ],
+      "family": "PARITY",
+      "syntax_item": "首项显示 `3`",
+      "criterion": "PARITY：L1 基线（待采）",
+      "observable": "OCR 读出首项字符 = `3`",
+      "measure": "M6",
+      "layer": "L2",
+      "layers": [
+        "L2"
+      ],
+      "layer_raw": "L2-OCR",
+      "tolerance": "置信度 ≥0.8 ＋ 人复核",
+      "notes": "⛔ 不用 OCR 行盒量几何",
+      "fixture_refs": [
+        "F4a/21"
+      ],
+      "fixtures": [
+        "04a-lists-basic.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.1",
+        "line": 1118
+      }
+    },
+    {
+      "id": "P-OL-04-PARITY",
+      "expanded_ids": [
+        "P-OL-04-PARITY"
+      ],
+      "family": "PARITY",
+      "syntax_item": "9→10 编号宽度",
+      "criterion": "PARITY：L1 基线（待采）",
+      "observable": "编号 bbox 宽增量、文字左缘位移",
+      "measure": "M3＋M1",
+      "layer": "L2",
+      "layers": [
+        "L1",
+        "L2"
+      ],
+      "layer_raw": "L1→L2",
+      "tolerance": "T2",
+      "notes": "rmd 候选缺陷：三位编号溢出缩进带（`../bugs/0112` B2），⛔ 不作期望",
+      "fixture_refs": [
+        "F4a/18-19"
+      ],
+      "fixtures": [
+        "04a-lists-basic.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.1",
+        "line": 1119
+      }
+    },
+    {
+      "id": "P-OL-05-SPEC",
+      "expanded_ids": [
+        "P-OL-05-SPEC"
+      ],
+      "family": "SPEC",
+      "syntax_item": "起始序号 0",
+      "criterion": "SPEC：CommonMark §5.3",
+      "observable": "`start=\"0\"`",
+      "measure": "M5",
+      "layer": "L2",
+      "layers": [
+        "L2"
+      ],
+      "layer_raw": "L2-DOM",
+      "tolerance": "精确值",
+      "notes": "—",
+      "fixture_refs": [
+        "F4c/01-02"
+      ],
+      "fixtures": [
+        "04c-lists-edge.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.1",
+        "line": 1120
+      }
+    },
+    {
+      "id": "P-OL-05-PARITY",
+      "expanded_ids": [
+        "P-OL-05-PARITY"
+      ],
+      "family": "PARITY",
+      "syntax_item": "首项显示 `0`",
+      "criterion": "PARITY：L1 基线（待采）",
+      "observable": "OCR 首字符 = `0`",
+      "measure": "M6",
+      "layer": "L2",
+      "layers": [
+        "L2"
+      ],
+      "layer_raw": "L2-OCR",
+      "tolerance": "≥0.8 ＋ 人复核",
+      "notes": "—",
+      "fixture_refs": [
+        "F4c/01"
+      ],
+      "fixtures": [
+        "04c-lists-edge.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.1",
+        "line": 1121
+      }
+    },
+    {
+      "id": "P-OL-06-SPEC",
+      "expanded_ids": [
+        "P-OL-06-SPEC"
+      ],
+      "family": "SPEC",
+      "syntax_item": "超长序号（9/10 位）",
+      "criterion": "SPEC：CommonMark §5.2",
+      "observable": "9 位成列表、10 位不成列表",
+      "measure": "M5",
+      "layer": "L2",
+      "layers": [
+        "L2"
+      ],
+      "layer_raw": "L2-DOM",
+      "tolerance": "结构",
+      "notes": "—",
+      "fixture_refs": [
+        "F4c/04-05"
+      ],
+      "fixtures": [
+        "04c-lists-edge.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.1",
+        "line": 1122
+      }
+    },
+    {
+      "id": "P-OL-06-PARITY",
+      "expanded_ids": [
+        "P-OL-06-PARITY"
+      ],
+      "family": "PARITY",
+      "syntax_item": "超长序号显示",
+      "criterion": "PARITY：L1 基线（待采）",
+      "observable": "第二行行带 `x0` 是否回到正文左缘（几何，⛔ 不用 OCR）",
+      "measure": "M1＋M6",
+      "layer": "L2",
+      "layers": [
+        "L1",
+        "L2"
+      ],
+      "layer_raw": "L1→L2",
+      "tolerance": "T2",
+      "notes": "位置判定 ⇒ 必须走行带几何；原 `L2-OCR` 是错的（V1）",
+      "fixture_refs": [
+        "F4c/04-05"
+      ],
+      "fixtures": [
+        "04c-lists-edge.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.1",
+        "line": 1123
+      }
+    },
+    {
+      "id": "P-LIST-TIGHT-01-PARITY",
+      "expanded_ids": [
+        "P-LIST-TIGHT-01-PARITY"
+      ],
+      "family": "PARITY",
+      "syntax_item": "紧凑列表",
+      "criterion": "PARITY：L1 基线（待采）",
+      "observable": "项间距/B",
+      "measure": "M1",
+      "layer": "L2",
+      "layers": [
+        "L1",
+        "L2"
+      ],
+      "layer_raw": "L1→L2",
+      "tolerance": "T2",
+      "notes": "—",
+      "fixture_refs": [
+        "F4b/13-14"
+      ],
+      "fixtures": [
+        "04b-lists-nested.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.1",
+        "line": 1124
+      }
+    },
+    {
+      "id": "P-LIST-LOOSE-01-PARITY",
+      "expanded_ids": [
+        "P-LIST-LOOSE-01-PARITY"
+      ],
+      "family": "PARITY",
+      "syntax_item": "松散列表",
+      "criterion": "PARITY：L1 基线（待采）",
+      "observable": "项间距/B",
+      "measure": "M1",
+      "layer": "L2",
+      "layers": [
+        "L1",
+        "L2"
+      ],
+      "layer_raw": "L1→L2",
+      "tolerance": "T2",
+      "notes": "rmd 已知缺段距 83.9 px（`../bugs/0021` §7）**仅候选差异**，⛔ 不作期望",
+      "fixture_refs": [
+        "F4b/16-18"
+      ],
+      "fixtures": [
+        "04b-lists-nested.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.1",
+        "line": 1125
+      }
+    },
+    {
+      "id": "P-LI-P-01-SPEC",
+      "expanded_ids": [
+        "P-LI-P-01-SPEC"
+      ],
+      "family": "SPEC",
+      "syntax_item": "列表项内多段",
+      "criterion": "SPEC：CommonMark §5.2",
+      "observable": "项内两个 `p`",
+      "measure": "M5",
+      "layer": "L2",
+      "layers": [
+        "L2"
+      ],
+      "layer_raw": "L2-DOM",
+      "tolerance": "结构",
+      "notes": "—",
+      "fixture_refs": [
+        "F4b/20-22"
+      ],
+      "fixtures": [
+        "04b-lists-nested.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.1",
+        "line": 1126
+      }
+    },
+    {
+      "id": "P-LI-P-01-PARITY",
+      "expanded_ids": [
+        "P-LI-P-01-PARITY"
+      ],
+      "family": "PARITY",
+      "syntax_item": "项内段距",
+      "criterion": "PARITY：L1 基线（待采）",
+      "observable": "项内 `SP_para/B`",
+      "measure": "M1",
+      "layer": "L2",
+      "layers": [
+        "L1",
+        "L2"
+      ],
+      "layer_raw": "L1→L2",
+      "tolerance": "T2",
+      "notes": "—",
+      "fixture_refs": [
+        "F4b/20-22"
+      ],
+      "fixtures": [
+        "04b-lists-nested.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.1",
+        "line": 1127
+      }
+    },
+    {
+      "id": "P-LI-CODE-01-SPEC",
+      "expanded_ids": [
+        "P-LI-CODE-01-SPEC"
+      ],
+      "family": "SPEC",
+      "syntax_item": "项内代码块",
+      "criterion": "SPEC：CommonMark §5.2/§4.5",
+      "observable": "`pre>code` 在 `li` 内",
+      "measure": "M5",
+      "layer": "L2",
+      "layers": [
+        "L2"
+      ],
+      "layer_raw": "L2-DOM",
+      "tolerance": "结构",
+      "notes": "—",
+      "fixture_refs": [
+        "F13a/08-12"
+      ],
+      "fixtures": [
+        "13a-combos.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.1",
+        "line": 1128
+      }
+    },
+    {
+      "id": "P-LI-CODE-01-PARITY",
+      "expanded_ids": [
+        "P-LI-CODE-01-PARITY"
+      ],
+      "family": "PARITY",
+      "syntax_item": "项内代码块",
+      "criterion": "PARITY：L1 基线（待采）",
+      "observable": "代码块左缘、`PAD_code/B`、块高",
+      "measure": "M4＋M1",
+      "layer": "L2",
+      "layers": [
+        "L1",
+        "L2"
+      ],
+      "layer_raw": "L1→L2",
+      "tolerance": "T2、T4",
+      "notes": "—",
+      "fixture_refs": [
+        "F13a/08-12"
+      ],
+      "fixtures": [
+        "13a-combos.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.1",
+        "line": 1129
+      }
+    },
+    {
+      "id": "P-LIST-EMPTY-01-SPEC",
+      "expanded_ids": [
+        "P-LIST-EMPTY-01-SPEC"
+      ],
+      "family": "SPEC",
+      "syntax_item": "空列表项",
+      "criterion": "SPEC：CommonMark §5.2",
+      "observable": "两个 `li`，第一个文本为空",
+      "measure": "M5",
+      "layer": "L2",
+      "layers": [
+        "L2"
+      ],
+      "layer_raw": "L2-DOM",
+      "tolerance": "结构",
+      "notes": "Mardo 有 `emptyListPlaceholders`（`../research/products/0005-mardo.md` §2.5）",
+      "fixture_refs": [
+        "F4c/09-10"
+      ],
+      "fixtures": [
+        "04c-lists-edge.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.1",
+        "line": 1130
+      }
+    },
+    {
+      "id": "P-LIST-EMPTY-01-PARITY",
+      "expanded_ids": [
+        "P-LIST-EMPTY-01-PARITY"
+      ],
+      "family": "PARITY",
+      "syntax_item": "空项占位形态",
+      "criterion": "PARITY：L1 基线（待采）",
+      "observable": "标记区有墨迹、无文字墨迹",
+      "measure": "M3",
+      "layer": "L2",
+      "layers": [
+        "L1",
+        "L2"
+      ],
+      "layer_raw": "L1→L2",
+      "tolerance": "T2",
+      "notes": "占位符字形/是否显示 ⛔ 像素判不出，降 `L3`",
+      "fixture_refs": [
+        "F4c/09-10"
+      ],
+      "fixtures": [
+        "04c-lists-edge.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.1",
+        "line": 1131
+      }
+    },
+    {
+      "id": "P-LIST-5SPACE-01-SPEC",
+      "expanded_ids": [
+        "P-LIST-5SPACE-01-SPEC"
+      ],
+      "family": "SPEC",
+      "syntax_item": "标记后 5 空格",
+      "criterion": "SPEC：CommonMark §5.2",
+      "observable": "项内出现 `CodeBlock`",
+      "measure": "M5",
+      "layer": "L2",
+      "layers": [
+        "L2"
+      ],
+      "layer_raw": "L2-DOM",
+      "tolerance": "结构",
+      "notes": "—",
+      "fixture_refs": [
+        "F4c/07"
+      ],
+      "fixtures": [
+        "04c-lists-edge.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.1",
+        "line": 1132
+      }
+    },
+    {
+      "id": "P-LIST-INTERRUPT-01-SPEC",
+      "expanded_ids": [
+        "P-LIST-INTERRUPT-01-SPEC"
+      ],
+      "family": "SPEC",
+      "syntax_item": "列表打断段落",
+      "criterion": "SPEC：CommonMark §5.2",
+      "observable": "顶层 `Paragraph` 后接 `List`",
+      "measure": "M5",
+      "layer": "L2",
+      "layers": [
+        "L2"
+      ],
+      "layer_raw": "L2-DOM",
+      "tolerance": "结构",
+      "notes": "—",
+      "fixture_refs": [
+        "F4c/17-18"
+      ],
+      "fixtures": [
+        "04c-lists-edge.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.1",
+        "line": 1133
+      }
+    },
+    {
+      "id": "P-NEST-01-SPEC",
+      "expanded_ids": [
+        "P-NEST-01-SPEC"
+      ],
+      "family": "SPEC",
+      "syntax_item": "≥3 层混合嵌套",
+      "criterion": "SPEC：CommonMark §5.3",
+      "observable": "嵌套 `ul/ol/li` 层数 ≥3",
+      "measure": "M5",
+      "layer": "L2",
+      "layers": [
+        "L2"
+      ],
+      "layer_raw": "L2-DOM",
+      "tolerance": "结构",
+      "notes": "—",
+      "fixture_refs": [
+        "F4b/01-07"
+      ],
+      "fixtures": [
+        "04b-lists-nested.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.1",
+        "line": 1134
+      }
+    },
+    {
+      "id": "P-NEST-01-PARITY",
+      "expanded_ids": [
+        "P-NEST-01-PARITY"
+      ],
+      "family": "PARITY",
+      "syntax_item": "每级缩进与标记",
+      "criterion": "PARITY：L1 基线（待采）",
+      "observable": "每级 `IND_nest/B`、标记左缘 x",
+      "measure": "M3＋M1",
+      "layer": "L2",
+      "layers": [
+        "L1",
+        "L2"
+      ],
+      "layer_raw": "L1→L2",
+      "tolerance": "T2",
+      "notes": "Mardo 三级循环 `•`/`○`/`▪`（用户截图，缩放未知）⛔ 不量像素",
+      "fixture_refs": [
+        "F4b/01-07"
+      ],
+      "fixtures": [
+        "04b-lists-nested.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.1",
+        "line": 1135
+      }
+    },
+    {
+      "id": "P-TASK-01-SPEC",
+      "expanded_ids": [
+        "P-TASK-01-SPEC"
+      ],
+      "family": "SPEC",
+      "syntax_item": "任务列表",
+      "criterion": "SPEC：GFM Task list",
+      "observable": "`input[type=checkbox]`、`checked`",
+      "measure": "M5",
+      "layer": "L2",
+      "layers": [
+        "L2"
+      ],
+      "layer_raw": "L2-DOM",
+      "tolerance": "结构",
+      "notes": "rmd 开 `extension.tasklist`（`parser.rs:98`）＋ `tasklist_classes`（`:110`）仅候选",
+      "fixture_refs": [
+        "F12/01-03"
+      ],
+      "fixtures": [
+        "12-task.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.1",
+        "line": 1136
+      }
+    },
+    {
+      "id": "P-TASK-01-PARITY",
+      "expanded_ids": [
+        "P-TASK-01-PARITY"
+      ],
+      "family": "PARITY",
+      "syntax_item": "任务列表",
+      "criterion": "PARITY：L1 基线（待采）",
+      "observable": "方框宽/B、文字左缘、勾选态可见差",
+      "measure": "M3＋M1",
+      "layer": "L2",
+      "layers": [
+        "L1",
+        "L2"
+      ],
+      "layer_raw": "L1→L2",
+      "tolerance": "T2",
+      "notes": "方框是控件还是字符，形态可能不同",
+      "fixture_refs": [
+        "F12/01-03"
+      ],
+      "fixtures": [
+        "12-task.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.1",
+        "line": 1137
+      }
+    },
+    {
+      "id": "P-BOX-01-PARITY",
+      "expanded_ids": [
+        "P-BOX-01-PARITY"
+      ],
+      "family": "PARITY",
+      "syntax_item": "任务方框几何",
+      "criterion": "PARITY：L1 基线（待采）",
+      "observable": "方框外接宽高/B、与首行基线关系",
+      "measure": "M3",
+      "layer": "L2",
+      "layers": [
+        "L1",
+        "L2"
+      ],
+      "layer_raw": "L1→L2",
+      "tolerance": "T2",
+      "notes": "**出处更正**：`• ☑` 并存见 [`0005-…md`](0005-马克飞象默认排版.md) **§10.4 `:669-673`**；勾选字形不可比",
+      "fixture_refs": [
+        "F12/01"
+      ],
+      "fixtures": [
+        "12-task.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.1",
+        "line": 1138
+      }
+    },
+    {
+      "id": "P-FENCE-01-SPEC",
+      "expanded_ids": [
+        "P-FENCE-01-SPEC"
+      ],
+      "family": "SPEC",
+      "syntax_item": "围栏 ```",
+      "criterion": "SPEC：CommonMark §4.5",
+      "observable": "`pre>code.language-rust`",
+      "measure": "M5",
+      "layer": "L2",
+      "layers": [
+        "L2"
+      ],
+      "layer_raw": "L2-DOM",
+      "tolerance": "结构",
+      "notes": "—",
+      "fixture_refs": [
+        "F5/01-06"
+      ],
+      "fixtures": [
+        "05-fences.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.1",
+        "line": 1139
+      }
+    },
+    {
+      "id": "P-FENCE-01-PARITY",
+      "expanded_ids": [
+        "P-FENCE-01-PARITY"
+      ],
+      "family": "PARITY",
+      "syntax_item": "围栏 ``` 外观",
+      "criterion": "PARITY：L1 基线（待采）",
+      "observable": "底色 ΔE、`PAD_code/B`、`LH_code/B`",
+      "measure": "M4＋M1",
+      "layer": "L2",
+      "layers": [
+        "L1",
+        "L2"
+      ],
+      "layer_raw": "L1→L2",
+      "tolerance": "T2、T4",
+      "notes": "圆角 ⛔ 一维带量不出；改 M3 角点或删除（本表删除）",
+      "fixture_refs": [
+        "F5/01-06"
+      ],
+      "fixtures": [
+        "05-fences.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.1",
+        "line": 1140
+      }
+    },
+    {
+      "id": "P-FENCE-02-SPEC",
+      "expanded_ids": [
+        "P-FENCE-02-SPEC"
+      ],
+      "family": "SPEC",
+      "syntax_item": "围栏 ~~~",
+      "criterion": "SPEC：CommonMark §4.5",
+      "observable": "与 ``` 同为 `pre>code`",
+      "measure": "M5",
+      "layer": "L2",
+      "layers": [
+        "L2"
+      ],
+      "layer_raw": "L2-DOM",
+      "tolerance": "同端等值",
+      "notes": "—",
+      "fixture_refs": [
+        "F5/08-11"
+      ],
+      "fixtures": [
+        "05-fences.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.1",
+        "line": 1141
+      }
+    },
+    {
+      "id": "P-FENCE-03-SPEC",
+      "expanded_ids": [
+        "P-FENCE-03-SPEC"
+      ],
+      "family": "SPEC",
+      "syntax_item": "info string 是否显示",
+      "criterion": "SPEC：Mardo 侧人眼；rmd 侧 M5 断言无该文本节点",
+      "observable": "画面是否出现 `ruby info-string`",
+      "measure": "M6＋M7",
+      "layer": "L2",
+      "layers": [
+        "L2"
+      ],
+      "layer_raw": "L2-OCR（rmd M5 同端）",
+      "tolerance": "≥0.8 ＋ 人复核",
+      "notes": "rmd 只做语言高亮、不显示 info（待核）；Mardo 待测",
+      "fixture_refs": [
+        "F5/08"
+      ],
+      "fixtures": [
+        "05-fences.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.1",
+        "line": 1142
+      }
+    },
+    {
+      "id": "P-FENCE-04-REG",
+      "expanded_ids": [
+        "P-FENCE-04-REG"
+      ],
+      "family": "REG",
+      "syntax_item": "围栏长行",
+      "criterion": "产品取向**未定**",
+      "observable": "折行还是横向滚动",
+      "measure": "M7",
+      "layer": "L1",
+      "layers": [
+        "L1"
+      ],
+      "layer_raw": "L1 登记",
+      "tolerance": "T5",
+      "notes": "**待用户裁定**；未裁定只登记（§6）",
+      "fixture_refs": [
+        "F5/13-15"
+      ],
+      "fixtures": [
+        "05-fences.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.1",
+        "line": 1143
+      }
+    },
+    {
+      "id": "P-FENCE-05-SPEC",
+      "expanded_ids": [
+        "P-FENCE-05-SPEC"
+      ],
+      "family": "SPEC",
+      "syntax_item": "围栏内 Tab",
+      "criterion": "SPEC：CSS 契约——`tab-size` 的**初始值是 8**（CSS Text 3），不是 rmd 自己选的值",
+      "observable": "`pre` 的计算 `tab-size`；制表位推进量（字符宽）",
+      "measure": "M5",
+      "layer": "L2",
+      "layers": [
+        "L2"
+      ],
+      "layer_raw": "L2-DOM",
+      "tolerance": "结构",
+      "notes": "Mardo 待测，本轮只判 rmd；⛔ 不用行带量制表位（B3）",
+      "fixture_refs": [
+        "F5/03"
+      ],
+      "fixtures": [
+        "05-fences.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.1",
+        "line": 1144
+      }
+    },
+    {
+      "id": "P-FENCE-06-PARITY",
+      "expanded_ids": [
+        "P-FENCE-06-PARITY"
+      ],
+      "family": "PARITY",
+      "syntax_item": "围栏内空行",
+      "criterion": "PARITY：L1 基线（待采）",
+      "observable": "空行前后带距 == 2 × `LH_code`",
+      "measure": "M1",
+      "layer": "L2",
+      "layers": [
+        "L1",
+        "L2"
+      ],
+      "layer_raw": "L1→L2",
+      "tolerance": "T2",
+      "notes": "该块 5 个源码内容行中 1 行为空 ⇒ **4 条行带**；空行不产生行带、不计入 DOM 行盒（§2.6）",
+      "fixture_refs": [
+        "F5/17-23"
+      ],
+      "fixtures": [
+        "05-fences.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.1",
+        "line": 1145
+      }
+    },
+    {
+      "id": "P-FENCE-07-SPEC",
+      "expanded_ids": [
+        "P-FENCE-07-SPEC"
+      ],
+      "family": "SPEC",
+      "syntax_item": "未闭合围栏",
+      "criterion": "SPEC：CommonMark §4.5",
+      "observable": "`CodeBlock` 延伸到 EOF",
+      "measure": "M5",
+      "layer": "L2",
+      "layers": [
+        "L2"
+      ],
+      "layer_raw": "L2-DOM",
+      "tolerance": "结构",
+      "notes": "—",
+      "fixture_refs": [
+        "F5/25-27"
+      ],
+      "fixtures": [
+        "05-fences.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.1",
+        "line": 1146
+      }
+    },
+    {
+      "id": "P-FENCE-08-SPEC",
+      "expanded_ids": [
+        "P-FENCE-08-SPEC"
+      ],
+      "family": "SPEC",
+      "syntax_item": "更长闭合围栏",
+      "criterion": "SPEC：CommonMark §4.5",
+      "observable": "4 反引号闭合，内部 3 反引号是文本",
+      "measure": "M5",
+      "layer": "L2",
+      "layers": [
+        "L2"
+      ],
+      "layer_raw": "L2-DOM",
+      "tolerance": "结构",
+      "notes": "—",
+      "fixture_refs": [
+        "F5/17-23"
+      ],
+      "fixtures": [
+        "05-fences.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.1",
+        "line": 1147
+      }
+    },
+    {
+      "id": "P-FENCE-09-SPEC",
+      "expanded_ids": [
+        "P-FENCE-09-SPEC"
+      ],
+      "family": "SPEC",
+      "syntax_item": "围栏内含反引号",
+      "criterion": "SPEC：CommonMark §4.5",
+      "observable": "代码文本包含 ```",
+      "measure": "M5",
+      "layer": "L2",
+      "layers": [
+        "L2"
+      ],
+      "layer_raw": "L2-DOM",
+      "tolerance": "结构",
+      "notes": "—",
+      "fixture_refs": [
+        "F5/21-22"
+      ],
+      "fixtures": [
+        "05-fences.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.1",
+        "line": 1148
+      }
+    },
+    {
+      "id": "P-INDENT-01-SPEC",
+      "expanded_ids": [
+        "P-INDENT-01-SPEC"
+      ],
+      "family": "SPEC",
+      "syntax_item": "缩进代码块",
+      "criterion": "SPEC：CommonMark §4.4",
+      "observable": "`pre>code`，无 info",
+      "measure": "M5",
+      "layer": "L2",
+      "layers": [
+        "L2"
+      ],
+      "layer_raw": "L2-DOM",
+      "tolerance": "结构",
+      "notes": "—",
+      "fixture_refs": [
+        "F2/13-15"
+      ],
+      "fixtures": [
+        "02-blocks.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.1",
+        "line": 1149
+      }
+    },
+    {
+      "id": "P-INDENT-01-PARITY",
+      "expanded_ids": [
+        "P-INDENT-01-PARITY"
+      ],
+      "family": "PARITY",
+      "syntax_item": "缩进代码外观",
+      "criterion": "PARITY：L1 基线（待采）",
+      "observable": "底色 ΔE、`PAD_code/B`",
+      "measure": "M4＋M1",
+      "layer": "L2",
+      "layers": [
+        "L1",
+        "L2"
+      ],
+      "layer_raw": "L1→L2",
+      "tolerance": "T2、T4",
+      "notes": "Mardo 可能给不同底色",
+      "fixture_refs": [
+        "F2/13-15"
+      ],
+      "fixtures": [
+        "02-blocks.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.1",
+        "line": 1150
+      }
+    },
+    {
+      "id": "P-INDENT-02-SPEC",
+      "expanded_ids": [
+        "P-INDENT-02-SPEC"
+      ],
+      "family": "SPEC",
+      "syntax_item": "段后缩进行/代码内空行",
+      "criterion": "SPEC：CommonMark §4.4/§4.8",
+      "observable": "前者是 `Paragraph`，后者空行属 `CodeBlock`",
+      "measure": "M5",
+      "layer": "L2",
+      "layers": [
+        "L2"
+      ],
+      "layer_raw": "L2-DOM",
+      "tolerance": "结构",
+      "notes": "—",
+      "fixture_refs": [
+        "F4c/12-13",
+        "F2/14"
+      ],
+      "fixtures": [
+        "02-blocks.md",
+        "04c-lists-edge.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.1",
+        "line": 1151
+      }
+    },
+    {
+      "id": "P-HTMLB-01-SPEC",
+      "expanded_ids": [
+        "P-HTMLB-01-SPEC"
+      ],
+      "family": "SPEC",
+      "syntax_item": "HTML 块",
+      "criterion": "**有意差异**（§3.6）",
+      "observable": "rmd 丢弃（`HtmlBlock` 块表与可见节点不一致）",
+      "measure": "M5",
+      "layer": "L2",
+      "layers": [
+        "L2"
+      ],
+      "layer_raw": "L2-DOM（同端）",
+      "tolerance": "结构",
+      "notes": "rmd 丢弃（`INV-SEC-01`）；Mardo 有 `HtmlBlock`/`SafeTag`；⛔ 不判缺陷",
+      "fixture_refs": [
+        "F2/17"
+      ],
+      "fixtures": [
+        "02-blocks.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.1",
+        "line": 1152
+      }
+    },
+    {
+      "id": "P-LREF-01-SPEC",
+      "expanded_ids": [
+        "P-LREF-01-SPEC"
+      ],
+      "family": "SPEC",
+      "syntax_item": "链接引用定义（完整）",
+      "criterion": "SPEC：CommonMark §4.7",
+      "observable": "渲染树无该定义节点；前后块间距正常",
+      "measure": "M5",
+      "layer": "L2",
+      "layers": [
+        "L2"
+      ],
+      "layer_raw": "L2-DOM",
+      "tolerance": "结构",
+      "notes": "第 1 稿「该行零墨迹」删掉：定义行没有显示位置",
+      "fixture_refs": [
+        "F2/19"
+      ],
+      "fixtures": [
+        "02-blocks.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.1",
+        "line": 1153
+      }
+    },
+    {
+      "id": "P-LREF-01-L3",
+      "expanded_ids": [
+        "P-LREF-01-L3"
+      ],
+      "family": "L3",
+      "syntax_item": "定义行是否可见",
+      "criterion": "**L3 人眼**：看两端帧",
+      "observable": "画面无 `[full]:` 行",
+      "measure": "M7",
+      "layer": "L3",
+      "layers": [
+        "L3"
+      ],
+      "layer_raw": "L3",
+      "tolerance": "结构",
+      "notes": "若 Mardo 显示定义行则是 Mardo 独有；⛔ 不用 `-PARITY`（无落盘基线）",
+      "fixture_refs": [
+        "F2/19"
+      ],
+      "fixtures": [
+        "02-blocks.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.1",
+        "line": 1154
+      }
+    },
+    {
+      "id": "P-LREF-02/03/04-SPEC",
+      "expanded_ids": [
+        "P-LREF-02-SPEC",
+        "P-LREF-03-SPEC",
+        "P-LREF-04-SPEC"
+      ],
+      "family": "SPEC",
+      "syntax_item": "折叠/简写/多行定义",
+      "criterion": "SPEC：CommonMark §4.7",
+      "observable": "对应 `a` 节点与 href",
+      "measure": "M5",
+      "layer": "L2",
+      "layers": [
+        "L2"
+      ],
+      "layer_raw": "L2-DOM",
+      "tolerance": "结构",
+      "notes": "多行定义续行 `F8/20` 用于确认续行被吞进定义",
+      "fixture_refs": [
+        "F8/03",
+        "F8/17-20",
+        "F2/19"
+      ],
+      "fixtures": [
+        "02-blocks.md",
+        "08-links-images.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.1",
+        "line": 1155
+      }
+    },
+    {
+      "id": "P-LREF-05-SPEC",
+      "expanded_ids": [
+        "P-LREF-05-SPEC"
+      ],
+      "family": "SPEC",
+      "syntax_item": "重复定义",
+      "criterion": "SPEC：CommonMark §4.7",
+      "observable": "**第一条**定义生效（`href` 仍是 `/full`）",
+      "measure": "M5",
+      "layer": "L2",
+      "layers": [
+        "L2"
+      ],
+      "layer_raw": "L2-DOM",
+      "tolerance": "结构",
+      "notes": "`F8/21` 是第二条 `[full]`",
+      "fixture_refs": [
+        "F8/15",
+        "F8/21"
+      ],
+      "fixtures": [
+        "08-links-images.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.1",
+        "line": 1156
+      }
+    },
+    {
+      "id": "P-LREF-06-SPEC",
+      "expanded_ids": [
+        "P-LREF-06-SPEC"
+      ],
+      "family": "SPEC",
+      "syntax_item": "未定义引用",
+      "criterion": "SPEC：CommonMark §6.3",
+      "observable": "文本节点原样保留方括号",
+      "measure": "M5",
+      "layer": "L2",
+      "layers": [
+        "L2"
+      ],
+      "layer_raw": "L2-DOM",
+      "tolerance": "结构",
+      "notes": "—",
+      "fixture_refs": [
+        "F8/13"
+      ],
+      "fixtures": [
+        "08-links-images.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.1",
+        "line": 1157
+      }
+    },
+    {
+      "id": "P-GAP-01-PARITY",
+      "expanded_ids": [
+        "P-GAP-01-PARITY"
+      ],
+      "family": "PARITY",
+      "syntax_item": "块间距",
+      "criterion": "PARITY：L1 基线（待采）",
+      "observable": "上/下 `SP_block/B`",
+      "measure": "M1",
+      "layer": "L2",
+      "layers": [
+        "L1",
+        "L2"
+      ],
+      "layer_raw": "L1→L2",
+      "tolerance": "T2",
+      "notes": "—",
+      "fixture_refs": [
+        "F2/05-07"
+      ],
+      "fixtures": [
+        "02-blocks.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.1",
+        "line": 1158
+      }
+    },
+    {
+      "id": "P-TBL-01-SPEC",
+      "expanded_ids": [
+        "P-TBL-01-SPEC"
+      ],
+      "family": "SPEC",
+      "syntax_item": "表头/表体",
+      "criterion": "SPEC：GFM Tables",
+      "observable": "`table>thead>tr>th`、`tbody>tr>td`",
+      "measure": "M5",
+      "layer": "L2",
+      "layers": [
+        "L2"
+      ],
+      "layer_raw": "L2-DOM",
+      "tolerance": "结构",
+      "notes": "—",
+      "fixture_refs": [
+        "F6a/01-05"
+      ],
+      "fixtures": [
+        "06a-table.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.2",
+        "line": 1165
+      }
+    },
+    {
+      "id": "P-TBL-01-PARITY",
+      "expanded_ids": [
+        "P-TBL-01-PARITY"
+      ],
+      "family": "PARITY",
+      "syntax_item": "表格整体",
+      "criterion": "PARITY：L1 基线（待采）",
+      "observable": "表宽/B、行高/B、表头底色 ΔE、表头字重",
+      "measure": "M1＋M2＋M4",
+      "layer": "L2",
+      "layers": [
+        "L1",
+        "L2"
+      ],
+      "layer_raw": "L1→L2",
+      "tolerance": "T2、T4",
+      "notes": "rmd 表头底 `#e1ebf0`（`0046` §2.2 实测取自 Mardo）仅候选；表头 1.21 对比度不可比",
+      "fixture_refs": [
+        "F6a/01-05"
+      ],
+      "fixtures": [
+        "06a-table.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.2",
+        "line": 1166
+      }
+    },
+    {
+      "id": "P-TBL-02-SPEC",
+      "expanded_ids": [
+        "P-TBL-02-SPEC"
+      ],
+      "family": "SPEC",
+      "syntax_item": "三列对齐 `:--`/`:-:`/`--:`",
+      "criterion": "SPEC：GFM Tables",
+      "observable": "`th.style.textAlign` 或计算 `text-align`",
+      "measure": "M5",
+      "layer": "L2",
+      "layers": [
+        "L2"
+      ],
+      "layer_raw": "L2-DOM",
+      "tolerance": "精确值",
+      "notes": "—",
+      "fixture_refs": [
+        "F6a/01-03"
+      ],
+      "fixtures": [
+        "06a-table.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.2",
+        "line": 1167
+      }
+    },
+    {
+      "id": "P-TBL-02-PARITY",
+      "expanded_ids": [
+        "P-TBL-02-PARITY"
+      ],
+      "family": "PARITY",
+      "syntax_item": "三列对齐外观",
+      "criterion": "PARITY：L1 基线（待采）",
+      "observable": "单元格文字盒左/中/右偏移",
+      "measure": "M2",
+      "layer": "L2",
+      "layers": [
+        "L1",
+        "L2"
+      ],
+      "layer_raw": "L1→L2",
+      "tolerance": "T2",
+      "notes": "⛔ 用**单元格内**左右留白比判对齐，不用行带左右界",
+      "fixture_refs": [
+        "F6a/01-03"
+      ],
+      "fixtures": [
+        "06a-table.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.2",
+        "line": 1168
+      }
+    },
+    {
+      "id": "P-TBL-03-SPEC",
+      "expanded_ids": [
+        "P-TBL-03-SPEC"
+      ],
+      "family": "SPEC",
+      "syntax_item": "格内行内语法",
+      "criterion": "SPEC：GFM Tables ＋ CommonMark §6",
+      "observable": "格内 `strong/code/a` 节点",
+      "measure": "M5",
+      "layer": "L2",
+      "layers": [
+        "L2"
+      ],
+      "layer_raw": "L2-DOM",
+      "tolerance": "结构",
+      "notes": "—",
+      "fixture_refs": [
+        "F6a/04"
+      ],
+      "fixtures": [
+        "06a-table.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.2",
+        "line": 1169
+      }
+    },
+    {
+      "id": "P-TBL-03-PARITY",
+      "expanded_ids": [
+        "P-TBL-03-PARITY"
+      ],
+      "family": "PARITY",
+      "syntax_item": "格内样式外观",
+      "criterion": "PARITY：L1 基线（待采）",
+      "observable": "格内 code 底色 ΔE、行高增量",
+      "measure": "M4＋M1",
+      "layer": "L2",
+      "layers": [
+        "L1",
+        "L2"
+      ],
+      "layer_raw": "L1→L2",
+      "tolerance": "T2、T4",
+      "notes": "—",
+      "fixture_refs": [
+        "F6a/04"
+      ],
+      "fixtures": [
+        "06a-table.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.2",
+        "line": 1170
+      }
+    },
+    {
+      "id": "P-TBL-04-SPEC",
+      "expanded_ids": [
+        "P-TBL-04-SPEC"
+      ],
+      "family": "SPEC",
+      "syntax_item": "格内转义竖线 `\\|`",
+      "criterion": "SPEC：GFM Tables（转义）",
+      "observable": "该格读出 `a\\|b`，且表格列数仍为 3",
+      "measure": "M6＋M7",
+      "layer": "L2",
+      "layers": [
+        "L2"
+      ],
+      "layer_raw": "L2-OCR",
+      "tolerance": "≥0.8 ＋ 人复核",
+      "notes": "rmd 侧先用 M5 断言 3 列、格内文本含 `\\|`；⛔ 不用像素判\"哪根线是表格线\"",
+      "fixture_refs": [
+        "F6a/05"
+      ],
+      "fixtures": [
+        "06a-table.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.2",
+        "line": 1171
+      }
+    },
+    {
+      "id": "P-TBL-05-PARITY",
+      "expanded_ids": [
+        "P-TBL-05-PARITY"
+      ],
+      "family": "PARITY",
+      "syntax_item": "中英混排列宽",
+      "criterion": "PARITY：L1 基线（待采）",
+      "observable": "三列宽占比 `w_i/Σw`",
+      "measure": "M2",
+      "layer": "L2",
+      "layers": [
+        "L1",
+        "L2"
+      ],
+      "layer_raw": "L1→L2",
+      "tolerance": "T2（占比，绝对 px 不跨端比）",
+      "notes": "`table-layout:auto` ⇒ 只比占比；**跨端列宽差 > 一个字符宽即降「仅登记」**、不进 pass/fail（C3、§8.3）；Mardo 待测；八列宽表归 `P-TBL-06-REG`（E3）",
+      "fixture_refs": [
+        "F6a/03"
+      ],
+      "fixtures": [
+        "06a-table.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.2",
+        "line": 1172
+      }
+    },
+    {
+      "id": "P-TBL-06-REG",
+      "expanded_ids": [
+        "P-TBL-06-REG"
+      ],
+      "family": "REG",
+      "syntax_item": "8 列宽表",
+      "criterion": "产品取向**未定**",
+      "observable": "是否横向滚动/挤压",
+      "measure": "M7",
+      "layer": "L1",
+      "layers": [
+        "L1"
+      ],
+      "layer_raw": "L1 登记",
+      "tolerance": "T5",
+      "notes": "**待用户裁定**（§6 默认只登记）",
+      "fixture_refs": [
+        "F6a/07-10"
+      ],
+      "fixtures": [
+        "06a-table.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.2",
+        "line": 1173
+      }
+    },
+    {
+      "id": "P-TBL-07-SPEC",
+      "expanded_ids": [
+        "P-TBL-07-SPEC"
+      ],
+      "family": "SPEC",
+      "syntax_item": "行缺格",
+      "criterion": "SPEC：GFM Tables",
+      "observable": "缺格补空 `td`，行仍 3 格",
+      "measure": "M5",
+      "layer": "L2",
+      "layers": [
+        "L2"
+      ],
+      "layer_raw": "L2-DOM",
+      "tolerance": "结构",
+      "notes": "—",
+      "fixture_refs": [
+        "F6b/01-03"
+      ],
+      "fixtures": [
+        "06b-table-edge.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.2",
+        "line": 1174
+      }
+    },
+    {
+      "id": "P-TBL-08-SPEC",
+      "expanded_ids": [
+        "P-TBL-08-SPEC"
+      ],
+      "family": "SPEC",
+      "syntax_item": "行多格",
+      "criterion": "SPEC：GFM Tables",
+      "observable": "**行 2 格**，第 3 格被截断丢弃",
+      "measure": "M5",
+      "layer": "L2",
+      "layers": [
+        "L2"
+      ],
+      "layer_raw": "L2-DOM",
+      "tolerance": "结构",
+      "notes": "该表表头 `\\| A \\| B \\|` 是 **2 列**；`\\| 1 \\| 2 \\| 3 \\|` 的第 3 格被丢弃（D9）",
+      "fixture_refs": [
+        "F6b/05-07"
+      ],
+      "fixtures": [
+        "06b-table-edge.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.2",
+        "line": 1175
+      }
+    },
+    {
+      "id": "P-TBL-09-SPEC",
+      "expanded_ids": [
+        "P-TBL-09-SPEC"
+      ],
+      "family": "SPEC",
+      "syntax_item": "仅表头",
+      "criterion": "SPEC：GFM Tables",
+      "observable": "有 `thead`、`tbody` 为空",
+      "measure": "M5",
+      "layer": "L2",
+      "layers": [
+        "L2"
+      ],
+      "layer_raw": "L2-DOM",
+      "tolerance": "结构",
+      "notes": "Mardo 是否画空表体待测",
+      "fixture_refs": [
+        "F6b/09-10"
+      ],
+      "fixtures": [
+        "06b-table-edge.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.2",
+        "line": 1176
+      }
+    },
+    {
+      "id": "P-TBL-10-SPEC",
+      "expanded_ids": [
+        "P-TBL-10-SPEC"
+      ],
+      "family": "SPEC",
+      "syntax_item": "分隔行列数不符",
+      "criterion": "SPEC：GFM Tables",
+      "observable": "分隔行 2 列 vs 表头 3 列 ⇒ **不成表**",
+      "measure": "M5",
+      "layer": "L2",
+      "layers": [
+        "L2"
+      ],
+      "layer_raw": "L2-DOM",
+      "tolerance": "结构",
+      "notes": "规范要求分隔行与表头列数一致；Mardo 待测",
+      "fixture_refs": [
+        "F6b/12-14"
+      ],
+      "fixtures": [
+        "06b-table-edge.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.2",
+        "line": 1177
+      }
+    },
+    {
+      "id": "P-CELLBR-01-PARITY",
+      "expanded_ids": [
+        "P-CELLBR-01-PARITY"
+      ],
+      "family": "PARITY",
+      "syntax_item": "格内原始 `<br>`",
+      "criterion": "PARITY：L1 基线（待采）",
+      "observable": "该格显示为 **2 行**，行距 = `LH_table`",
+      "measure": "M1",
+      "layer": "L2",
+      "layers": [
+        "L1",
+        "L2"
+      ],
+      "layer_raw": "L1→L2",
+      "tolerance": "T2",
+      "notes": "**只判两行显示**；不做字节判据",
+      "fixture_refs": [
+        "F6a/14"
+      ],
+      "fixtures": [
+        "06a-table.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.2",
+        "line": 1178
+      }
+    },
+    {
+      "id": "P-CELLBR-02-SPEC",
+      "expanded_ids": [
+        "P-CELLBR-02-SPEC"
+      ],
+      "family": "SPEC",
+      "syntax_item": "格内代码 `` `<br>` `` 结构",
+      "criterion": "SPEC：GFM Tables ＋ 同端结构",
+      "observable": "rmd：格内 `code` 节点文本为 `<br>`；该格**不得**渲染为两行",
+      "measure": "M5",
+      "layer": "L2",
+      "layers": [
+        "L2"
+      ],
+      "layer_raw": "L2-DOM",
+      "tolerance": "结构",
+      "notes": "字节侧引 `Q14c`，⛔ 不新立 parity ID",
+      "fixture_refs": [
+        "F6a/18"
+      ],
+      "fixtures": [
+        "06a-table.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.2",
+        "line": 1179
+      }
+    },
+    {
+      "id": "P-CELLBR-02-PARITY",
+      "expanded_ids": [
+        "P-CELLBR-02-PARITY"
+      ],
+      "family": "PARITY",
+      "syntax_item": "格内代码 `` `<br>` `` 显示",
+      "criterion": "PARITY：L1 基线（待采）",
+      "observable": "Mardo 侧 OCR 读到 `<br>` 字样且该格为一行",
+      "measure": "M6",
+      "layer": "L2",
+      "layers": [
+        "L2"
+      ],
+      "layer_raw": "L2-OCR",
+      "tolerance": "≥0.8 ＋ 人复核",
+      "notes": "若 Mardo 折行则记差异；⛔ 不用 OCR 行盒量几何",
+      "fixture_refs": [
+        "F6a/18"
+      ],
+      "fixtures": [
+        "06a-table.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.2",
+        "line": 1180
+      }
+    },
+    {
+      "id": "P-EM-01/02-SPEC",
+      "expanded_ids": [
+        "P-EM-01-SPEC",
+        "P-EM-02-SPEC"
+      ],
+      "family": "SPEC",
+      "syntax_item": "`*斜*` / `_斜_`",
+      "criterion": "SPEC：CommonMark §6.2",
+      "observable": "`em` 节点",
+      "measure": "M5",
+      "layer": "L2",
+      "layers": [
+        "L2"
+      ],
+      "layer_raw": "L2-DOM",
+      "tolerance": "结构",
+      "notes": "—",
+      "fixture_refs": [
+        "F7a/01-03"
+      ],
+      "fixtures": [
+        "07a-inline-em.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.3",
+        "line": 1190
+      }
+    },
+    {
+      "id": "P-EM-01/02-PARITY",
+      "expanded_ids": [
+        "P-EM-01-PARITY",
+        "P-EM-02-PARITY"
+      ],
+      "family": "PARITY",
+      "syntax_item": "斜体外观",
+      "criterion": "PARITY：L1 基线（待采）",
+      "observable": "`R_w`（同端配对）",
+      "measure": "M1",
+      "layer": "L2",
+      "layers": [
+        "L1",
+        "L2"
+      ],
+      "layer_raw": "L1→L2",
+      "tolerance": "T2",
+      "notes": "斜体角度不可比；`R_d` 仅登记",
+      "fixture_refs": [
+        "F7a/01-03"
+      ],
+      "fixtures": [
+        "07a-inline-em.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.3",
+        "line": 1191
+      }
+    },
+    {
+      "id": "P-EM-03/04-SPEC",
+      "expanded_ids": [
+        "P-EM-03-SPEC",
+        "P-EM-04-SPEC"
+      ],
+      "family": "SPEC",
+      "syntax_item": "`**粗**` / `__粗__`",
+      "criterion": "SPEC：CommonMark §6.2",
+      "observable": "`strong` 节点",
+      "measure": "M5",
+      "layer": "L2",
+      "layers": [
+        "L2"
+      ],
+      "layer_raw": "L2-DOM",
+      "tolerance": "结构",
+      "notes": "—",
+      "fixture_refs": [
+        "F7a/04-05"
+      ],
+      "fixtures": [
+        "07a-inline-em.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.3",
+        "line": 1192
+      }
+    },
+    {
+      "id": "P-EM-03/04-PARITY",
+      "expanded_ids": [
+        "P-EM-03-PARITY",
+        "P-EM-04-PARITY"
+      ],
+      "family": "PARITY",
+      "syntax_item": "粗体外观",
+      "criterion": "PARITY：L1 基线（待采）",
+      "observable": "`R_w`、`R_d`",
+      "measure": "M1",
+      "layer": "L2",
+      "layers": [
+        "L1",
+        "L2"
+      ],
+      "layer_raw": "L1→L2",
+      "tolerance": "T2",
+      "notes": "字重阈值不跨端；`R_d` 仅登记",
+      "fixture_refs": [
+        "F7a/04-05"
+      ],
+      "fixtures": [
+        "07a-inline-em.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.3",
+        "line": 1193
+      }
+    },
+    {
+      "id": "P-EM-05-SPEC",
+      "expanded_ids": [
+        "P-EM-05-SPEC"
+      ],
+      "family": "SPEC",
+      "syntax_item": "`***粗斜***`",
+      "criterion": "SPEC：CommonMark §6.2",
+      "observable": "`strong>em` 嵌套",
+      "measure": "M5",
+      "layer": "L2",
+      "layers": [
+        "L2"
+      ],
+      "layer_raw": "L2-DOM",
+      "tolerance": "结构",
+      "notes": "—",
+      "fixture_refs": [
+        "F7a/06"
+      ],
+      "fixtures": [
+        "07a-inline-em.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.3",
+        "line": 1194
+      }
+    },
+    {
+      "id": "P-EM-06-SPEC",
+      "expanded_ids": [
+        "P-EM-06-SPEC"
+      ],
+      "family": "SPEC",
+      "syntax_item": "词内 `_`（`foo_bar_baz`）",
+      "criterion": "SPEC：CommonMark §6.2",
+      "observable": "**无** `em` 节点，文本原样",
+      "measure": "M5",
+      "layer": "L2",
+      "layers": [
+        "L2"
+      ],
+      "layer_raw": "L2-DOM",
+      "tolerance": "结构",
+      "notes": "Mardo 待测；GFM 同规则",
+      "fixture_refs": [
+        "F7a/07-08"
+      ],
+      "fixtures": [
+        "07a-inline-em.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.3",
+        "line": 1195
+      }
+    },
+    {
+      "id": "P-EM-07-SPEC",
+      "expanded_ids": [
+        "P-EM-07-SPEC"
+      ],
+      "family": "SPEC",
+      "syntax_item": "嵌套强调",
+      "criterion": "SPEC：CommonMark §6.2",
+      "observable": "`strong>em` / `em>strong`",
+      "measure": "M5",
+      "layer": "L2",
+      "layers": [
+        "L2"
+      ],
+      "layer_raw": "L2-DOM",
+      "tolerance": "结构",
+      "notes": "—",
+      "fixture_refs": [
+        "F7a/09"
+      ],
+      "fixtures": [
+        "07a-inline-em.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.3",
+        "line": 1196
+      }
+    },
+    {
+      "id": "P-EM-08-SPEC",
+      "expanded_ids": [
+        "P-EM-08-SPEC"
+      ],
+      "family": "SPEC",
+      "syntax_item": "规则三（`*a**b*`）",
+      "criterion": "SPEC：CommonMark §6.2",
+      "observable": "具体嵌套形态",
+      "measure": "M5",
+      "layer": "L2",
+      "layers": [
+        "L2"
+      ],
+      "layer_raw": "L2-DOM",
+      "tolerance": "结构",
+      "notes": "形态由规范算法唯一确定，写成快照断言",
+      "fixture_refs": [
+        "F7a/10-11"
+      ],
+      "fixtures": [
+        "07a-inline-em.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.3",
+        "line": 1197
+      }
+    },
+    {
+      "id": "P-EM-09-SPEC",
+      "expanded_ids": [
+        "P-EM-09-SPEC"
+      ],
+      "family": "SPEC",
+      "syntax_item": "未配对定界符",
+      "criterion": "SPEC：CommonMark §6.2",
+      "observable": "文本原样保留 `*`",
+      "measure": "M5",
+      "layer": "L2",
+      "layers": [
+        "L2"
+      ],
+      "layer_raw": "L2-DOM",
+      "tolerance": "结构",
+      "notes": "—",
+      "fixture_refs": [
+        "F7a/12-14"
+      ],
+      "fixtures": [
+        "07a-inline-em.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.3",
+        "line": 1198
+      }
+    },
+    {
+      "id": "P-DEL-01-SPEC",
+      "expanded_ids": [
+        "P-DEL-01-SPEC"
+      ],
+      "family": "SPEC",
+      "syntax_item": "`~~删除~~`",
+      "criterion": "SPEC：GFM Strikethrough",
+      "observable": "`del` 节点",
+      "measure": "M5",
+      "layer": "L2",
+      "layers": [
+        "L2"
+      ],
+      "layer_raw": "L2-DOM",
+      "tolerance": "结构",
+      "notes": "rmd 开 `extension.strikethrough` 仅候选",
+      "fixture_refs": [
+        "F7a/15"
+      ],
+      "fixtures": [
+        "07a-inline-em.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.3",
+        "line": 1199
+      }
+    },
+    {
+      "id": "P-DEL-01-PARITY",
+      "expanded_ids": [
+        "P-DEL-01-PARITY"
+      ],
+      "family": "PARITY",
+      "syntax_item": "删除线外观",
+      "criterion": "PARITY：L1 基线（待采）",
+      "observable": "线是否穿过文字、线的纵向位置/带高、线色 ΔE",
+      "measure": "M1＋M4",
+      "layer": "L2",
+      "layers": [
+        "L1",
+        "L2"
+      ],
+      "layer_raw": "L1→L2",
+      "tolerance": "T2、T4",
+      "notes": "**无同文本普通行 ⇒ 不算 `R_w`**（T2）；线的粗细/位置只作登记，⛔ 不进 pass/fail",
+      "fixture_refs": [
+        "F7a/15"
+      ],
+      "fixtures": [
+        "07a-inline-em.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.3",
+        "line": 1200
+      }
+    },
+    {
+      "id": "P-DEL-02-SPEC",
+      "expanded_ids": [
+        "P-DEL-02-SPEC"
+      ],
+      "family": "SPEC",
+      "syntax_item": "单波浪 `~删~`",
+      "criterion": "SPEC：GFM Strikethrough",
+      "observable": "`del` 节点（GFM 允许 1 或 2 个 `~`）",
+      "measure": "M5",
+      "layer": "L2",
+      "layers": [
+        "L2"
+      ],
+      "layer_raw": "L2-DOM",
+      "tolerance": "结构",
+      "notes": "Mardo 支持性待测",
+      "fixture_refs": [
+        "F7a/16"
+      ],
+      "fixtures": [
+        "07a-inline-em.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.3",
+        "line": 1201
+      }
+    },
+    {
+      "id": "P-CODE-01-SPEC",
+      "expanded_ids": [
+        "P-CODE-01-SPEC"
+      ],
+      "family": "SPEC",
+      "syntax_item": "行内代码 `` `x` ``",
+      "criterion": "SPEC：CommonMark §6.1",
+      "observable": "`code` 节点",
+      "measure": "M5",
+      "layer": "L2",
+      "layers": [
+        "L2"
+      ],
+      "layer_raw": "L2-DOM",
+      "tolerance": "结构",
+      "notes": "—",
+      "fixture_refs": [
+        "F7b/01"
+      ],
+      "fixtures": [
+        "07b-inline-code.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.3",
+        "line": 1202
+      }
+    },
+    {
+      "id": "P-CODE-01-PARITY",
+      "expanded_ids": [
+        "P-CODE-01-PARITY"
+      ],
+      "family": "PARITY",
+      "syntax_item": "行内代码底色",
+      "criterion": "PARITY：L1 基线（待采）",
+      "observable": "底色 ΔE、底色块高/B",
+      "measure": "M4",
+      "layer": "L2",
+      "layers": [
+        "L1",
+        "L2"
+      ],
+      "layer_raw": "L1→L2",
+      "tolerance": "T2、T4",
+      "notes": "rmd `--reader-inline-code-*`（待取值）仅候选",
+      "fixture_refs": [
+        "F7b/01"
+      ],
+      "fixtures": [
+        "07b-inline-code.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.3",
+        "line": 1203
+      }
+    },
+    {
+      "id": "P-CODE-02-SPEC",
+      "expanded_ids": [
+        "P-CODE-02-SPEC"
+      ],
+      "family": "SPEC",
+      "syntax_item": "双反引号含反引号",
+      "criterion": "SPEC：CommonMark §6.1",
+      "observable": "`code` 文本含 `` ` ``",
+      "measure": "M5",
+      "layer": "L2",
+      "layers": [
+        "L2"
+      ],
+      "layer_raw": "L2-DOM",
+      "tolerance": "结构",
+      "notes": "—",
+      "fixture_refs": [
+        "F7b/02"
+      ],
+      "fixtures": [
+        "07b-inline-code.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.3",
+        "line": 1204
+      }
+    },
+    {
+      "id": "P-CODE-03-SPEC",
+      "expanded_ids": [
+        "P-CODE-03-SPEC"
+      ],
+      "family": "SPEC",
+      "syntax_item": "代码跨度空格归一",
+      "criterion": "SPEC：CommonMark §6.1",
+      "observable": "读出两侧各 1 空格被去掉",
+      "measure": "M6",
+      "layer": "L2",
+      "layers": [
+        "L2"
+      ],
+      "layer_raw": "L2-OCR",
+      "tolerance": "≥0.8 ＋ 人复核",
+      "notes": "rmd 侧 M5 断言文本；Mardo 待测",
+      "fixture_refs": [
+        "F7b/03"
+      ],
+      "fixtures": [
+        "07b-inline-code.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.3",
+        "line": 1205
+      }
+    },
+    {
+      "id": "P-CODE-04-SPEC",
+      "expanded_ids": [
+        "P-CODE-04-SPEC"
+      ],
+      "family": "SPEC",
+      "syntax_item": "代码跨度跨行",
+      "criterion": "SPEC：CommonMark §6.1",
+      "observable": "源码两行 ⇒ 一个 `code` 节点；显示为一行的**文字**但可折行",
+      "measure": "M5＋M1",
+      "layer": "L2",
+      "layers": [
+        "L2"
+      ],
+      "layer_raw": "L2-DOM（结构）",
+      "tolerance": "结构",
+      "notes": "⛔ 跨端不判显示行数（依赖栏宽）；同端由 DOM 行盒数判（§2.6）",
+      "fixture_refs": [
+        "F7b/05-06"
+      ],
+      "fixtures": [
+        "07b-inline-code.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.3",
+        "line": 1206
+      }
+    },
+    {
+      "id": "P-CODE-05-SPEC",
+      "expanded_ids": [
+        "P-CODE-05-SPEC"
+      ],
+      "family": "SPEC",
+      "syntax_item": "空代码跨度",
+      "criterion": "SPEC：CommonMark §6.1",
+      "observable": "空 `code` 节点（无墨迹）",
+      "measure": "M5",
+      "layer": "L2",
+      "layers": [
+        "L2"
+      ],
+      "layer_raw": "L2-DOM",
+      "tolerance": "结构",
+      "notes": "像素无观测，⛔ 不进 L2-PIX",
+      "fixture_refs": [
+        "F7b/07"
+      ],
+      "fixtures": [
+        "07b-inline-code.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.3",
+        "line": 1207
+      }
+    },
+    {
+      "id": "P-LINK-01-SPEC",
+      "expanded_ids": [
+        "P-LINK-01-SPEC"
+      ],
+      "family": "SPEC",
+      "syntax_item": "内联链接",
+      "criterion": "SPEC：CommonMark §6.3",
+      "observable": "`a[href]`、文本",
+      "measure": "M5",
+      "layer": "L2",
+      "layers": [
+        "L2"
+      ],
+      "layer_raw": "L2-DOM",
+      "tolerance": "结构",
+      "notes": "—",
+      "fixture_refs": [
+        "F8/01"
+      ],
+      "fixtures": [
+        "08-links-images.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.3",
+        "line": 1208
+      }
+    },
+    {
+      "id": "P-LINK-01-PARITY",
+      "expanded_ids": [
+        "P-LINK-01-PARITY"
+      ],
+      "family": "PARITY",
+      "syntax_item": "链接外观",
+      "criterion": "PARITY：L1 基线（待采）",
+      "observable": "链接文字色 ΔE、是否出现下划线/颜色区分",
+      "measure": "M4＋M1",
+      "layer": "L2",
+      "layers": [
+        "L1",
+        "L2"
+      ],
+      "layer_raw": "L1→L2",
+      "tolerance": "T4（文字色 ΔE≤8）",
+      "notes": "**链接与普通文字同行 ⇒ 一维行带切不出链接片段，不算 `R_w`**（T2）；rmd `#2f6fd8`（`0046` §2.2）仅候选；**Mardo 链接色未取证** ⇒ ΔE 首轮只能登记",
+      "fixture_refs": [
+        "F8/01"
+      ],
+      "fixtures": [
+        "08-links-images.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.3",
+        "line": 1209
+      }
+    },
+    {
+      "id": "P-LINK-02-SPEC",
+      "expanded_ids": [
+        "P-LINK-02-SPEC"
+      ],
+      "family": "SPEC",
+      "syntax_item": "引用式链接（完整）",
+      "criterion": "SPEC：CommonMark §6.3",
+      "observable": "`a[href]`",
+      "measure": "M5",
+      "layer": "L2",
+      "layers": [
+        "L2"
+      ],
+      "layer_raw": "L2-DOM",
+      "tolerance": "结构",
+      "notes": "—",
+      "fixture_refs": [
+        "F8/03"
+      ],
+      "fixtures": [
+        "08-links-images.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.3",
+        "line": 1210
+      }
+    },
+    {
+      "id": "P-LINK-03-SPEC",
+      "expanded_ids": [
+        "P-LINK-03-SPEC"
+      ],
+      "family": "SPEC",
+      "syntax_item": "自动链接 `<https://…>`",
+      "criterion": "SPEC：CommonMark §6.5",
+      "observable": "`a[href]`",
+      "measure": "M5",
+      "layer": "L2",
+      "layers": [
+        "L2"
+      ],
+      "layer_raw": "L2-DOM",
+      "tolerance": "结构",
+      "notes": "—",
+      "fixture_refs": [
+        "F8/05"
+      ],
+      "fixtures": [
+        "08-links-images.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.3",
+        "line": 1211
+      }
+    },
+    {
+      "id": "P-LINK-04-SPEC",
+      "expanded_ids": [
+        "P-LINK-04-SPEC"
+      ],
+      "family": "SPEC",
+      "syntax_item": "GFM 裸 URL",
+      "criterion": "SPEC：GFM Autolinks (extension)",
+      "observable": "`a[href]` 覆盖整段 URL",
+      "measure": "M5",
+      "layer": "L2",
+      "layers": [
+        "L2"
+      ],
+      "layer_raw": "L2-DOM",
+      "tolerance": "结构",
+      "notes": "`extension.autolink` 已开（`parser.rs`）仅候选",
+      "fixture_refs": [
+        "F8/07"
+      ],
+      "fixtures": [
+        "08-links-images.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.3",
+        "line": 1212
+      }
+    },
+    {
+      "id": "P-LINK-05-SPEC",
+      "expanded_ids": [
+        "P-LINK-05-SPEC"
+      ],
+      "family": "SPEC",
+      "syntax_item": "GFM `www.` 自动链接",
+      "criterion": "SPEC：GFM Autolinks (extension)",
+      "observable": "`a[href=\"http://www…\"]`",
+      "measure": "M5",
+      "layer": "L2",
+      "layers": [
+        "L2"
+      ],
+      "layer_raw": "L2-DOM",
+      "tolerance": "结构",
+      "notes": "—",
+      "fixture_refs": [
+        "F8/07"
+      ],
+      "fixtures": [
+        "08-links-images.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.3",
+        "line": 1213
+      }
+    },
+    {
+      "id": "P-LINK-06-SPEC",
+      "expanded_ids": [
+        "P-LINK-06-SPEC"
+      ],
+      "family": "SPEC",
+      "syntax_item": "GFM 邮箱自动链接",
+      "criterion": "SPEC：GFM Autolinks (extension)",
+      "observable": "`a[href^=\"mailto:\"]`",
+      "measure": "M5",
+      "layer": "L2",
+      "layers": [
+        "L2"
+      ],
+      "layer_raw": "L2-DOM",
+      "tolerance": "结构",
+      "notes": "—",
+      "fixture_refs": [
+        "F8/07"
+      ],
+      "fixtures": [
+        "08-links-images.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.3",
+        "line": 1214
+      }
+    },
+    {
+      "id": "P-LINK-07-SPEC",
+      "expanded_ids": [
+        "P-LINK-07-SPEC"
+      ],
+      "family": "SPEC",
+      "syntax_item": "链接内图片/空 alt",
+      "criterion": "SPEC：CommonMark §6.3/§6.4",
+      "observable": "`a>img`；空 `alt` 仍渲染 `img`",
+      "measure": "M5",
+      "layer": "L2",
+      "layers": [
+        "L2"
+      ],
+      "layer_raw": "L2-DOM",
+      "tolerance": "结构",
+      "notes": "空 alt 的替代文本渲染属无障碍，不比外观",
+      "fixture_refs": [
+        "F8/09",
+        "F8/11"
+      ],
+      "fixtures": [
+        "08-links-images.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.3",
+        "line": 1215
+      }
+    },
+    {
+      "id": "P-IMG-01-PARITY",
+      "expanded_ids": [
+        "P-IMG-01-PARITY"
+      ],
+      "family": "PARITY",
+      "syntax_item": "内联图片包围盒",
+      "criterion": "PARITY：L1 基线（待采）",
+      "observable": "非白连通区 bbox 宽高/B、左右留白",
+      "measure": "M3＋M4",
+      "layer": "L2",
+      "layers": [
+        "L1",
+        "L2"
+      ],
+      "layer_raw": "L1→L2",
+      "tolerance": "T2",
+      "notes": "`pic.png` 64×64 画布、**48×48 黑色方块**（§2.6）；⛔ 图片加载失败时 bbox 为空 ⇒ **本条直接判红**（C1 类：产品不一致），在报告里注明「未加载」；⛔ 不转由环境闸门代判——`P-ENV-02` 已不判可见行",
+      "fixture_refs": [
+        "F8/09"
+      ],
+      "fixtures": [
+        "08-links-images.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.3",
+        "line": 1216
+      }
+    },
+    {
+      "id": "P-IMG-02-SPEC",
+      "expanded_ids": [
+        "P-IMG-02-SPEC"
+      ],
+      "family": "SPEC",
+      "syntax_item": "引用式图片",
+      "criterion": "SPEC：CommonMark §6.4",
+      "observable": "`img[src]` 等于定义值",
+      "measure": "M5",
+      "layer": "L2",
+      "layers": [
+        "L2"
+      ],
+      "layer_raw": "L2-DOM",
+      "tolerance": "结构",
+      "notes": "用 `pic.png`，⛔ 不再引用不存在的 `pic2.png`",
+      "fixture_refs": [
+        "F8/09"
+      ],
+      "fixtures": [
+        "08-links-images.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.3",
+        "line": 1217
+      }
+    },
+    {
+      "id": "P-IMG-03-SPEC",
+      "expanded_ids": [
+        "P-IMG-03-SPEC"
+      ],
+      "family": "SPEC",
+      "syntax_item": "图片 title",
+      "criterion": "SPEC：CommonMark §6.4",
+      "observable": "`img[title]`",
+      "measure": "M5",
+      "layer": "L2",
+      "layers": [
+        "L2"
+      ],
+      "layer_raw": "L2-DOM",
+      "tolerance": "结构",
+      "notes": "title 是悬浮提示，画面不可见",
+      "fixture_refs": [
+        "F8/09"
+      ],
+      "fixtures": [
+        "08-links-images.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.3",
+        "line": 1218
+      }
+    },
+    {
+      "id": "P-IMG-04-PARITY",
+      "expanded_ids": [
+        "P-IMG-04-PARITY"
+      ],
+      "family": "PARITY",
+      "syntax_item": "图片与基线关系",
+      "criterion": "PARITY：L1 基线（待采）",
+      "observable": "图片 bbox 底边与相邻文字基线差/B",
+      "measure": "M1＋M3",
+      "layer": "L2",
+      "layers": [
+        "L1",
+        "L2"
+      ],
+      "layer_raw": "L1→L2",
+      "tolerance": "T2",
+      "notes": "首轮若 Mardo 图未加载则降 `L3`",
+      "fixture_refs": [
+        "F8/09"
+      ],
+      "fixtures": [
+        "08-links-images.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.3",
+        "line": 1219
+      }
+    },
+    {
+      "id": "P-IMG-05-REG",
+      "expanded_ids": [
+        "P-IMG-05-REG"
+      ],
+      "family": "REG",
+      "syntax_item": "本地相对路径是否加载",
+      "criterion": "行为待测",
+      "observable": "是否出现图片",
+      "measure": "M7",
+      "layer": "L1",
+      "layers": [
+        "L1"
+      ],
+      "layer_raw": "L1 登记",
+      "tolerance": "T5",
+      "notes": "`research/0005` 记有 `MardoRemoteImageAuthorization`，**本地图行为未取证**",
+      "fixture_refs": [
+        "F8/09"
+      ],
+      "fixtures": [
+        "08-links-images.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.3",
+        "line": 1220
+      }
+    },
+    {
+      "id": "P-BR-01-PARITY",
+      "expanded_ids": [
+        "P-BR-01-PARITY"
+      ],
+      "family": "PARITY",
+      "syntax_item": "硬换行（两空格）",
+      "criterion": "PARITY：L1 基线（待采）",
+      "observable": "两行、行距 = `LH`",
+      "measure": "M1",
+      "layer": "L2",
+      "layers": [
+        "L1",
+        "L2"
+      ],
+      "layer_raw": "L1→L2",
+      "tolerance": "T2",
+      "notes": "—",
+      "fixture_refs": [
+        "F9/01-03"
+      ],
+      "fixtures": [
+        "09-breaks-entities.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.3",
+        "line": 1221
+      }
+    },
+    {
+      "id": "P-BR-02-SPEC",
+      "expanded_ids": [
+        "P-BR-02-SPEC"
+      ],
+      "family": "SPEC",
+      "syntax_item": "硬换行（反斜杠）",
+      "criterion": "SPEC：CommonMark §6.7",
+      "observable": "文本无 `\\`，`br` 节点",
+      "measure": "M5",
+      "layer": "L2",
+      "layers": [
+        "L2"
+      ],
+      "layer_raw": "L2-DOM",
+      "tolerance": "结构",
+      "notes": "—",
+      "fixture_refs": [
+        "F9/02"
+      ],
+      "fixtures": [
+        "09-breaks-entities.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.3",
+        "line": 1222
+      }
+    },
+    {
+      "id": "P-BR-03-SPEC",
+      "expanded_ids": [
+        "P-BR-03-SPEC"
+      ],
+      "family": "SPEC",
+      "syntax_item": "软换行",
+      "criterion": "SPEC：CommonMark §6.8",
+      "observable": "同段两个文本节点（无 `br`）",
+      "measure": "M5",
+      "layer": "L2",
+      "layers": [
+        "L2"
+      ],
+      "layer_raw": "L2-DOM",
+      "tolerance": "结构",
+      "notes": "折成几行依赖栏宽 ⇒ 跨端不比行数；同端由 DOM 行盒数判（§2.6）",
+      "fixture_refs": [
+        "F9/05-06"
+      ],
+      "fixtures": [
+        "09-breaks-entities.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.3",
+        "line": 1223
+      }
+    },
+    {
+      "id": "P-ESC-01-SPEC",
+      "expanded_ids": [
+        "P-ESC-01-SPEC"
+      ],
+      "family": "SPEC",
+      "syntax_item": "反斜杠转义",
+      "criterion": "SPEC：CommonMark §2.4",
+      "observable": "显示 `*`/`` ` ``/`\\` 本身",
+      "measure": "M6＋M5",
+      "layer": "L2",
+      "layers": [
+        "L2"
+      ],
+      "layer_raw": "L2-OCR",
+      "tolerance": "≥0.8 ＋ 人复核",
+      "notes": "rmd 侧 M5 断言文本，Mardo 侧 OCR",
+      "fixture_refs": [
+        "F9/12"
+      ],
+      "fixtures": [
+        "09-breaks-entities.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.3",
+        "line": 1224
+      }
+    },
+    {
+      "id": "P-ENT-01-SPEC",
+      "expanded_ids": [
+        "P-ENT-01-SPEC"
+      ],
+      "family": "SPEC",
+      "syntax_item": "命名实体 `&amp;`",
+      "criterion": "SPEC：CommonMark §2.5",
+      "observable": "显示 `&`",
+      "measure": "M6＋M5",
+      "layer": "L2",
+      "layers": [
+        "L2"
+      ],
+      "layer_raw": "L2-OCR",
+      "tolerance": "≥0.8 ＋ 人复核",
+      "notes": "—",
+      "fixture_refs": [
+        "F9/14"
+      ],
+      "fixtures": [
+        "09-breaks-entities.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.3",
+        "line": 1225
+      }
+    },
+    {
+      "id": "P-ENT-02-SPEC",
+      "expanded_ids": [
+        "P-ENT-02-SPEC"
+      ],
+      "family": "SPEC",
+      "syntax_item": "数字实体 `&#35;`/`&#x41;`",
+      "criterion": "SPEC：CommonMark §2.5",
+      "observable": "显示 `#`/`A`",
+      "measure": "M6＋M5",
+      "layer": "L2",
+      "layers": [
+        "L2"
+      ],
+      "layer_raw": "L2-OCR",
+      "tolerance": "≥0.8 ＋ 人复核",
+      "notes": "—",
+      "fixture_refs": [
+        "F9/16"
+      ],
+      "fixtures": [
+        "09-breaks-entities.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.3",
+        "line": 1226
+      }
+    },
+    {
+      "id": "P-TAB-01-SPEC",
+      "expanded_ids": [
+        "P-TAB-01-SPEC"
+      ],
+      "family": "SPEC",
+      "syntax_item": "非代码位置 Tab",
+      "criterion": "SPEC：CSS 契约——`tab-size` 初始值 **8**（CSS Text 3）；Mardo 侧另记人眼结果",
+      "observable": "段落内 Tab 的计算 `tab-size`；制表位推进量",
+      "measure": "M5",
+      "layer": "L2",
+      "layers": [
+        "L2",
+        "L3"
+      ],
+      "layer_raw": "L2-DOM / L3",
+      "tolerance": "结构",
+      "notes": "行带量不出制表位（B3）；⛔ 不以 rmd 的计算值当期望（U2）",
+      "fixture_refs": [
+        "F9/08",
+        "F9/10"
+      ],
+      "fixtures": [
+        "09-breaks-entities.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.3",
+        "line": 1227
+      }
+    },
+    {
+      "id": "P-FN-01-SPEC",
+      "expanded_ids": [
+        "P-FN-01-SPEC"
+      ],
+      "family": "SPEC",
+      "syntax_item": "脚注单次引用",
+      "criterion": "SPEC：GFM Footnotes",
+      "observable": "`sup`/`a` 引用 ＋ 文末定义区",
+      "measure": "M5",
+      "layer": "L2",
+      "layers": [
+        "L2"
+      ],
+      "layer_raw": "L2-DOM",
+      "tolerance": "结构",
+      "notes": "rmd 开 `extension.footnote` 仅候选",
+      "fixture_refs": [
+        "F10/01",
+        "F10/09"
+      ],
+      "fixtures": [
+        "10-footnotes.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.3",
+        "line": 1228
+      }
+    },
+    {
+      "id": "P-FN-02-SPEC",
+      "expanded_ids": [
+        "P-FN-02-SPEC"
+      ],
+      "family": "SPEC",
+      "syntax_item": "同一脚注多次引用",
+      "criterion": "SPEC：GFM Footnotes",
+      "observable": "两处引用指向同一 id",
+      "measure": "M5",
+      "layer": "L2",
+      "layers": [
+        "L2"
+      ],
+      "layer_raw": "L2-DOM",
+      "tolerance": "结构",
+      "notes": "—",
+      "fixture_refs": [
+        "F10/03"
+      ],
+      "fixtures": [
+        "10-footnotes.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.3",
+        "line": 1229
+      }
+    },
+    {
+      "id": "P-FN-03-SPEC",
+      "expanded_ids": [
+        "P-FN-03-SPEC"
+      ],
+      "family": "SPEC",
+      "syntax_item": "多段脚注",
+      "criterion": "SPEC：GFM Footnotes",
+      "observable": "定义区内 ≥2 段",
+      "measure": "M5",
+      "layer": "L2",
+      "layers": [
+        "L2"
+      ],
+      "layer_raw": "L2-DOM",
+      "tolerance": "结构",
+      "notes": "—",
+      "fixture_refs": [
+        "F10/05",
+        "F10/15-17"
+      ],
+      "fixtures": [
+        "10-footnotes.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.3",
+        "line": 1230
+      }
+    },
+    {
+      "id": "P-FN-04-SPEC",
+      "expanded_ids": [
+        "P-FN-04-SPEC"
+      ],
+      "family": "SPEC",
+      "syntax_item": "未定义脚注引用",
+      "criterion": "SPEC：GFM Footnotes",
+      "observable": "原样文本，无 `sup`",
+      "measure": "M5",
+      "layer": "L2",
+      "layers": [
+        "L2"
+      ],
+      "layer_raw": "L2-DOM",
+      "tolerance": "结构",
+      "notes": "Mardo 待测",
+      "fixture_refs": [
+        "F10/07"
+      ],
+      "fixtures": [
+        "10-footnotes.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.3",
+        "line": 1231
+      }
+    },
+    {
+      "id": "P-MERMAID-01-SPEC",
+      "expanded_ids": [
+        "P-MERMAID-01-SPEC"
+      ],
+      "family": "SPEC",
+      "syntax_item": "```mermaid 围栏形态（契约）",
+      "criterion": "**契约**：产品承诺\"围栏渲染为图形\"，⛔ 不以 `diagram.rs`/`render.rs` 的行号为 oracle",
+      "observable": "渲染为图形节点；**不得**留 `pre>code` 源码文本",
+      "measure": "M5",
+      "layer": "L2",
+      "layers": [
+        "L2"
+      ],
+      "layer_raw": "L2-DOM",
+      "tolerance": "结构",
+      "notes": "这三类围栏是本仓扩展，Mardo 无对应（§3.6「不比」）",
+      "fixture_refs": [
+        "F11/01-05"
+      ],
+      "fixtures": [
+        "11-diagrams.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.4",
+        "line": 1238
+      }
+    },
+    {
+      "id": "P-MERMAID-01-PARITY",
+      "expanded_ids": [
+        "P-MERMAID-01-PARITY"
+      ],
+      "family": "PARITY",
+      "syntax_item": "```mermaid 围栏",
+      "criterion": "PARITY：L1 基线（待采）",
+      "observable": "块高/B、前后 `SP_block/B`",
+      "measure": "M1",
+      "layer": "L2",
+      "layers": [
+        "L1",
+        "L2"
+      ],
+      "layer_raw": "L1→L2",
+      "tolerance": "T2",
+      "notes": "源码是否显示：Mardo 侧人眼；rmd 侧 M5 断言无源码文本",
+      "fixture_refs": [
+        "F11/01-05"
+      ],
+      "fixtures": [
+        "11-diagrams.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.4",
+        "line": 1239
+      }
+    },
+    {
+      "id": "P-MERMAID-01-CENTER-PARITY",
+      "expanded_ids": [
+        "P-MERMAID-01-CENTER-PARITY"
+      ],
+      "family": "PARITY",
+      "syntax_item": "图是否居中",
+      "criterion": "PARITY：L1 基线（待采）",
+      "observable": "SVG/图形 bbox 中心 − 内容列中心",
+      "measure": "M3",
+      "layer": "L2",
+      "layers": [
+        "L2"
+      ],
+      "layer_raw": "`L2-PIX`（有界）",
+      "tolerance": "T2",
+      "notes": "**S14 部分接受**：成立条件 = bbox 不触内容列左右边（**触边阈值：任一侧 ≤2 px**，否则图内留白主导，判据无效），触边即降 `L3`；每轮记录是否触边",
+      "fixture_refs": [
+        "F11/01-05"
+      ],
+      "fixtures": [
+        "11-diagrams.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.4",
+        "line": 1240
+      }
+    },
+    {
+      "id": "P-FLOW-01-SPEC",
+      "expanded_ids": [
+        "P-FLOW-01-SPEC"
+      ],
+      "family": "SPEC",
+      "syntax_item": "```flow 围栏形态（契约）",
+      "criterion": "**契约**：产品承诺\"围栏渲染为图形\"，⛔ 不引用 `diagram.rs` 的分派表",
+      "observable": "渲染为图形节点；**不得**留 `pre>code` 源码文本",
+      "measure": "M5",
+      "layer": "L2",
+      "layers": [
+        "L2"
+      ],
+      "layer_raw": "L2-DOM",
+      "tolerance": "结构",
+      "notes": "本仓扩展，Mardo 无对应（§3.6「不比」）；围栏名大小写/别名待核",
+      "fixture_refs": [
+        "F11/07-11"
+      ],
+      "fixtures": [
+        "11-diagrams.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.4",
+        "line": 1241
+      }
+    },
+    {
+      "id": "P-FLOW-01-PARITY",
+      "expanded_ids": [
+        "P-FLOW-01-PARITY"
+      ],
+      "family": "PARITY",
+      "syntax_item": "flow 块几何",
+      "criterion": "PARITY：L1 基线（待采）",
+      "observable": "块高/B、前后间距",
+      "measure": "M1",
+      "layer": "L2",
+      "layers": [
+        "L1",
+        "L2"
+      ],
+      "layer_raw": "L1→L2",
+      "tolerance": "T2",
+      "notes": "Mardo 是否支持待测；不支持则只登记",
+      "fixture_refs": [
+        "F11/07-11"
+      ],
+      "fixtures": [
+        "11-diagrams.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.4",
+        "line": 1242
+      }
+    },
+    {
+      "id": "P-SEQUENCE-01-SPEC",
+      "expanded_ids": [
+        "P-SEQUENCE-01-SPEC"
+      ],
+      "family": "SPEC",
+      "syntax_item": "```sequence 围栏形态（契约）",
+      "criterion": "**契约**：同上，⛔ 不引用产品源码",
+      "observable": "渲染为图形节点；**不得**留 `pre>code` 源码文本",
+      "measure": "M5",
+      "layer": "L2",
+      "layers": [
+        "L2"
+      ],
+      "layer_raw": "L2-DOM",
+      "tolerance": "结构",
+      "notes": "本仓扩展，Mardo 无对应（§3.6「不比」）",
+      "fixture_refs": [
+        "F11/13-16"
+      ],
+      "fixtures": [
+        "11-diagrams.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.4",
+        "line": 1243
+      }
+    },
+    {
+      "id": "P-SEQUENCE-01-PARITY",
+      "expanded_ids": [
+        "P-SEQUENCE-01-PARITY"
+      ],
+      "family": "PARITY",
+      "syntax_item": "sequence 块几何",
+      "criterion": "PARITY：L1 基线（待采）",
+      "observable": "块高/B",
+      "measure": "M1",
+      "layer": "L2",
+      "layers": [
+        "L1",
+        "L2"
+      ],
+      "layer_raw": "L1→L2",
+      "tolerance": "T2",
+      "notes": "Mardo 支持性待测",
+      "fixture_refs": [
+        "F11/13-16"
+      ],
+      "fixtures": [
+        "11-diagrams.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.4",
+        "line": 1244
+      }
+    },
+    {
+      "id": "P-MATHFENCE-01-SPEC",
+      "expanded_ids": [
+        "P-MATHFENCE-01-SPEC"
+      ],
+      "family": "SPEC",
+      "syntax_item": "```math 围栏形态（契约）",
+      "criterion": "**契约**：产品承诺\"围栏渲染为公式\"，⛔ 不引用 `render.rs:268-277`",
+      "observable": "渲染为公式节点；**不得**留 `pre>code` 源码文本",
+      "measure": "M5",
+      "layer": "L2",
+      "layers": [
+        "L2"
+      ],
+      "layer_raw": "L2-DOM",
+      "tolerance": "结构",
+      "notes": "本仓扩展，Mardo 无对应（§3.6「不比」）",
+      "fixture_refs": [
+        "F11/24-26"
+      ],
+      "fixtures": [
+        "11-diagrams.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.4",
+        "line": 1245
+      }
+    },
+    {
+      "id": "P-MATH-01-SPEC",
+      "expanded_ids": [
+        "P-MATH-01-SPEC"
+      ],
+      "family": "SPEC",
+      "syntax_item": "行内 `$x$` 形态（契约）",
+      "criterion": "**契约**：产品承诺行内数学被渲染，⛔ 不引用 `render.rs` 分支",
+      "observable": "公式节点/文本形态，**不得**把 `$…$` 原样显示",
+      "measure": "M5",
+      "layer": "L2",
+      "layers": [
+        "L2"
+      ],
+      "layer_raw": "L2-DOM",
+      "tolerance": "结构",
+      "notes": "公式与正文的基线关系不可比",
+      "fixture_refs": [
+        "F11/18"
+      ],
+      "fixtures": [
+        "11-diagrams.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.4",
+        "line": 1246
+      }
+    },
+    {
+      "id": "P-MATH-01-PARITY",
+      "expanded_ids": [
+        "P-MATH-01-PARITY"
+      ],
+      "family": "PARITY",
+      "syntax_item": "行内公式几何",
+      "criterion": "PARITY：L1 基线（待采）",
+      "observable": "行带高度增量/B",
+      "measure": "M1",
+      "layer": "L2",
+      "layers": [
+        "L1",
+        "L2"
+      ],
+      "layer_raw": "L1→L2",
+      "tolerance": "T2",
+      "notes": "字体不同 ⇒ 只比高度占比",
+      "fixture_refs": [
+        "F11/18"
+      ],
+      "fixtures": [
+        "11-diagrams.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.4",
+        "line": 1247
+      }
+    },
+    {
+      "id": "P-MATH-02-SPEC",
+      "expanded_ids": [
+        "P-MATH-02-SPEC"
+      ],
+      "family": "SPEC",
+      "syntax_item": "块级 `$$…$$` 形态（契约）",
+      "criterion": "**契约**：同上，⛔ 不引用产品源码",
+      "observable": "块级公式节点；**不得**留 `pre>code` 源码文本",
+      "measure": "M5",
+      "layer": "L2",
+      "layers": [
+        "L2"
+      ],
+      "layer_raw": "L2-DOM",
+      "tolerance": "结构",
+      "notes": "本仓扩展，Mardo 无对应（§3.6「不比」）",
+      "fixture_refs": [
+        "F11/20-22"
+      ],
+      "fixtures": [
+        "11-diagrams.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.4",
+        "line": 1248
+      }
+    },
+    {
+      "id": "P-MATH-02-PARITY",
+      "expanded_ids": [
+        "P-MATH-02-PARITY"
+      ],
+      "family": "PARITY",
+      "syntax_item": "块级公式几何",
+      "criterion": "PARITY：L1 基线（待采）",
+      "observable": "块高/B、`SP_block/B`",
+      "measure": "M1",
+      "layer": "L2",
+      "layers": [
+        "L1",
+        "L2"
+      ],
+      "layer_raw": "L1→L2",
+      "tolerance": "T2",
+      "notes": "Mardo 支持性待测",
+      "fixture_refs": [
+        "F11/20-22"
+      ],
+      "fixtures": [
+        "11-diagrams.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.4",
+        "line": 1249
+      }
+    },
+    {
+      "id": "P-C-QULI-01-PARITY",
+      "expanded_ids": [
+        "P-C-QULI-01-PARITY"
+      ],
+      "family": "PARITY",
+      "syntax_item": "引用里的列表",
+      "criterion": "PARITY：L1 基线（待采）",
+      "observable": "条右缘到标记左缘、条到文字左缘",
+      "measure": "M3＋M1",
+      "layer": "L2",
+      "layers": [
+        "L1",
+        "L2"
+      ],
+      "layer_raw": "L1→L2",
+      "tolerance": "T2",
+      "notes": "两个 `--reader-*` 变量叠加 ⇒ 期望来自 L1，不由单变量推导",
+      "fixture_refs": [
+        "F13a/01-03"
+      ],
+      "fixtures": [
+        "13a-combos.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.5",
+        "line": 1255
+      }
+    },
+    {
+      "id": "P-C-LIQT-01-PARITY",
+      "expanded_ids": [
+        "P-C-LIQT-01-PARITY"
+      ],
+      "family": "PARITY",
+      "syntax_item": "列表里的引用",
+      "criterion": "PARITY：L1 基线（待采）",
+      "observable": "标记左缘、条左缘",
+      "measure": "M3＋M1",
+      "layer": "L2",
+      "layers": [
+        "L1",
+        "L2"
+      ],
+      "layer_raw": "L1→L2",
+      "tolerance": "T2",
+      "notes": "—",
+      "fixture_refs": [
+        "F13a/05-06"
+      ],
+      "fixtures": [
+        "13a-combos.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.5",
+        "line": 1256
+      }
+    },
+    {
+      "id": "P-C-LICODE-01-PARITY",
+      "expanded_ids": [
+        "P-C-LICODE-01-PARITY"
+      ],
+      "family": "PARITY",
+      "syntax_item": "列表里的代码块",
+      "criterion": "PARITY：L1 基线（待采）",
+      "observable": "代码底色块左缘、`PAD_code/B`",
+      "measure": "M4＋M1",
+      "layer": "L2",
+      "layers": [
+        "L1",
+        "L2"
+      ],
+      "layer_raw": "L1→L2",
+      "tolerance": "T2、T4",
+      "notes": "—",
+      "fixture_refs": [
+        "F13a/08-12"
+      ],
+      "fixtures": [
+        "13a-combos.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.5",
+        "line": 1257
+      }
+    },
+    {
+      "id": "P-C-TBLINQ-01-PARITY",
+      "expanded_ids": [
+        "P-C-TBLINQ-01-PARITY"
+      ],
+      "family": "PARITY",
+      "syntax_item": "引用里的表格",
+      "criterion": "PARITY：L1 基线（待采）",
+      "observable": "表格左缘、列宽占比、表头底色",
+      "measure": "M2＋M4",
+      "layer": "L2",
+      "layers": [
+        "L1",
+        "L2"
+      ],
+      "layer_raw": "L1→L2",
+      "tolerance": "T2、T4",
+      "notes": "列宽只比占比",
+      "fixture_refs": [
+        "F13b/07-11"
+      ],
+      "fixtures": [
+        "13b-combos2.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.5",
+        "line": 1258
+      }
+    },
+    {
+      "id": "P-C-HINLINE-01-PARITY",
+      "expanded_ids": [
+        "P-C-HINLINE-01-PARITY"
+      ],
+      "family": "PARITY",
+      "syntax_item": "标题里的行内代码",
+      "criterion": "PARITY：L1 基线（待采）",
+      "observable": "标题行内底色块高/B",
+      "measure": "M4＋M1",
+      "layer": "L2",
+      "layers": [
+        "L1",
+        "L2"
+      ],
+      "layer_raw": "L1→L2",
+      "tolerance": "T2、T4",
+      "notes": "标题字号放大后的底块高度不可由正文推导",
+      "fixture_refs": [
+        "F13a/14"
+      ],
+      "fixtures": [
+        "13a-combos.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.5",
+        "line": 1259
+      }
+    },
+    {
+      "id": "P-C-TBLINLINE-01-SPEC",
+      "expanded_ids": [
+        "P-C-TBLINLINE-01-SPEC"
+      ],
+      "family": "SPEC",
+      "syntax_item": "格内 code/链接/粗体",
+      "criterion": "SPEC：GFM Tables ＋ CommonMark §6",
+      "observable": "格内节点序列",
+      "measure": "M5",
+      "layer": "L2",
+      "layers": [
+        "L2"
+      ],
+      "layer_raw": "L2-DOM",
+      "tolerance": "结构",
+      "notes": "—",
+      "fixture_refs": [
+        "F6a/04"
+      ],
+      "fixtures": [
+        "06a-table.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.5",
+        "line": 1260
+      }
+    },
+    {
+      "id": "P-C-NESTTASK-01-PARITY",
+      "expanded_ids": [
+        "P-C-NESTTASK-01-PARITY"
+      ],
+      "family": "PARITY",
+      "syntax_item": "多级列表里的任务项",
+      "criterion": "PARITY：L1 基线（待采）",
+      "observable": "每级方框左缘、方框宽/B",
+      "measure": "M3＋M1",
+      "layer": "L2",
+      "layers": [
+        "L1",
+        "L2"
+      ],
+      "layer_raw": "L1→L2",
+      "tolerance": "T2",
+      "notes": "负对照 M2 会同时移动本级与嵌套项（见 §7.2）",
+      "fixture_refs": [
+        "F12/03-05"
+      ],
+      "fixtures": [
+        "12-task.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.5",
+        "line": 1261
+      }
+    },
+    {
+      "id": "P-C-CJK-01-PARITY",
+      "expanded_ids": [
+        "P-C-CJK-01-PARITY"
+      ],
+      "family": "PARITY",
+      "syntax_item": "长段中文折行",
+      "criterion": "PARITY：L1 基线（待采）",
+      "observable": "`SP_para/B`；`RAG_para`（**仅同端**）",
+      "measure": "M1",
+      "layer": "L2",
+      "layers": [
+        "L1",
+        "L2"
+      ],
+      "layer_raw": "L1→L2",
+      "tolerance": "T2",
+      "notes": "断行位置依赖栏宽与字体 ⇒ 跨端不比断点、不比行数；`RAG_para` 只在同端同环境内比（U3）",
+      "fixture_refs": [
+        "F0/01"
+      ],
+      "fixtures": [
+        "00-body.md"
+      ],
+      "state": "declared",
+      "source": {
+        "section": "§3.5",
+        "line": 1262
+      }
+    }
+  ],
+  "spec_matrix": [
+    {
+      "group": "CommonMark 0.31.2",
+      "chapter": "§2.1",
+      "item": "字符与行（换行符）",
+      "conclusion": "不适用",
+      "conclusion_kind": "不适用",
+      "criterion_ids_raw": "—",
+      "fixture_refs_raw": "本轮夹具统一 LF；CRLF 另立",
+      "source": {
+        "section": "§3.7.1",
+        "line": 1289
+      }
+    },
+    {
+      "group": "CommonMark 0.31.2",
+      "chapter": "§2.2",
+      "item": "制表符",
+      "conclusion": "覆盖",
+      "conclusion_kind": "覆盖",
+      "criterion_ids_raw": "`P-FENCE-05-SPEC`、`P-TAB-01-SPEC`",
+      "fixture_refs_raw": "F5/03、F9/08",
+      "source": {
+        "section": "§3.7.1",
+        "line": 1290
+      }
+    },
+    {
+      "group": "CommonMark 0.31.2",
+      "chapter": "§2.3",
+      "item": "不安全字符/URL 编码",
+      "conclusion": "不适用",
+      "conclusion_kind": "不适用",
+      "criterion_ids_raw": "—",
+      "fixture_refs_raw": "不判 URL 编码形态",
+      "source": {
+        "section": "§3.7.1",
+        "line": 1291
+      }
+    },
+    {
+      "group": "CommonMark 0.31.2",
+      "chapter": "§2.4",
+      "item": "反斜杠转义",
+      "conclusion": "覆盖",
+      "conclusion_kind": "覆盖",
+      "criterion_ids_raw": "`P-ESC-01-SPEC`",
+      "fixture_refs_raw": "F9/12",
+      "source": {
+        "section": "§3.7.1",
+        "line": 1292
+      }
+    },
+    {
+      "group": "CommonMark 0.31.2",
+      "chapter": "§2.5",
+      "item": "实体与数字字符引用",
+      "conclusion": "覆盖",
+      "conclusion_kind": "覆盖",
+      "criterion_ids_raw": "`P-ENT-01-SPEC`、`P-ENT-02-SPEC`",
+      "fixture_refs_raw": "F9/14、F9/16",
+      "source": {
+        "section": "§3.7.1",
+        "line": 1293
+      }
+    },
+    {
+      "group": "CommonMark 0.31.2",
+      "chapter": "§3.1",
+      "item": "解析优先级",
+      "conclusion": "覆盖（经组合）",
+      "conclusion_kind": "覆盖",
+      "criterion_ids_raw": "`P-C-*`",
+      "fixture_refs_raw": "F13a、F13b",
+      "source": {
+        "section": "§3.7.1",
+        "line": 1294
+      }
+    },
+    {
+      "group": "CommonMark 0.31.2",
+      "chapter": "§3.2",
+      "item": "容器块与叶块",
+      "conclusion": "覆盖（经组合）",
+      "conclusion_kind": "覆盖",
+      "criterion_ids_raw": "`P-QUOTE-*`、`P-C-*`",
+      "fixture_refs_raw": "F3、F13a",
+      "source": {
+        "section": "§3.7.1",
+        "line": 1295
+      }
+    },
+    {
+      "group": "CommonMark 0.31.2",
+      "chapter": "§3.3",
+      "item": "列表项与松散性",
+      "conclusion": "覆盖",
+      "conclusion_kind": "覆盖",
+      "criterion_ids_raw": "`P-LIST-TIGHT-01`、`P-LIST-LOOSE-01`",
+      "fixture_refs_raw": "F4b/13-18",
+      "source": {
+        "section": "§3.7.1",
+        "line": 1296
+      }
+    },
+    {
+      "group": "CommonMark 0.31.2",
+      "chapter": "§4.1",
+      "item": "分隔线",
+      "conclusion": "覆盖",
+      "conclusion_kind": "覆盖",
+      "criterion_ids_raw": "`P-RULE-01/02/03`",
+      "fixture_refs_raw": "F2/05、07、09",
+      "source": {
+        "section": "§3.7.1",
+        "line": 1297
+      }
+    },
+    {
+      "group": "CommonMark 0.31.2",
+      "chapter": "§4.2",
+      "item": "ATX 标题（含闭合序列）",
+      "conclusion": "覆盖",
+      "conclusion_kind": "覆盖",
+      "criterion_ids_raw": "`P-H-01..07`",
+      "fixture_refs_raw": "F1/01-13",
+      "source": {
+        "section": "§3.7.1",
+        "line": 1298
+      }
+    },
+    {
+      "group": "CommonMark 0.31.2",
+      "chapter": "§4.3",
+      "item": "Setext 标题（含多行）",
+      "conclusion": "覆盖",
+      "conclusion_kind": "覆盖",
+      "criterion_ids_raw": "`P-SETEXT-01/02`",
+      "fixture_refs_raw": "F1/15-21",
+      "source": {
+        "section": "§3.7.1",
+        "line": 1299
+      }
+    },
+    {
+      "group": "CommonMark 0.31.2",
+      "chapter": "§4.4",
+      "item": "缩进代码块（含内部空行）",
+      "conclusion": "覆盖",
+      "conclusion_kind": "覆盖",
+      "criterion_ids_raw": "`P-INDENT-01/02`",
+      "fixture_refs_raw": "F2/13-15、F4c/12",
+      "source": {
+        "section": "§3.7.1",
+        "line": 1300
+      }
+    },
+    {
+      "group": "CommonMark 0.31.2",
+      "chapter": "§4.5",
+      "item": "围栏代码块（未闭合/更长闭合/内含反引号）",
+      "conclusion": "覆盖",
+      "conclusion_kind": "覆盖",
+      "criterion_ids_raw": "`P-FENCE-01..09`",
+      "fixture_refs_raw": "F5/01-27",
+      "source": {
+        "section": "§3.7.1",
+        "line": 1301
+      }
+    },
+    {
+      "group": "CommonMark 0.31.2",
+      "chapter": "§4.6",
+      "item": "HTML 块",
+      "conclusion": "有意差异",
+      "conclusion_kind": "有意差异",
+      "criterion_ids_raw": "`P-HTMLB-01-SPEC`",
+      "fixture_refs_raw": "F2/17",
+      "source": {
+        "section": "§3.7.1",
+        "line": 1302
+      }
+    },
+    {
+      "group": "CommonMark 0.31.2",
+      "chapter": "§4.7",
+      "item": "链接引用定义（完整/折叠/简写/多行/重复）",
+      "conclusion": "覆盖",
+      "conclusion_kind": "覆盖",
+      "criterion_ids_raw": "`P-LREF-01..06`、`P-LINK-02`",
+      "fixture_refs_raw": "F2/19、F8/03、F8/13、F8/15-21",
+      "source": {
+        "section": "§3.7.1",
+        "line": 1303
+      }
+    },
+    {
+      "group": "CommonMark 0.31.2",
+      "chapter": "§4.8",
+      "item": "段落",
+      "conclusion": "覆盖",
+      "conclusion_kind": "覆盖",
+      "criterion_ids_raw": "`P-PARA-01-SPEC`、`P-PARA-01-PARITY`（编辑回读移 §4 `P-D3-03`）",
+      "fixture_refs_raw": "F0/01、F14/03",
+      "source": {
+        "section": "§3.7.1",
+        "line": 1304
+      }
+    },
+    {
+      "group": "CommonMark 0.31.2",
+      "chapter": "§4.9",
+      "item": "空行",
+      "conclusion": "覆盖",
+      "conclusion_kind": "覆盖",
+      "criterion_ids_raw": "`P-GAP-01`",
+      "fixture_refs_raw": "F2/05-07",
+      "source": {
+        "section": "§3.7.1",
+        "line": 1305
+      }
+    },
+    {
+      "group": "CommonMark 0.31.2",
+      "chapter": "§5.1",
+      "item": "引用（惰性/多段/代码/3 层以上）",
+      "conclusion": "覆盖",
+      "conclusion_kind": "覆盖",
+      "criterion_ids_raw": "`P-QUOTE-01..06`",
+      "fixture_refs_raw": "F3/01-22",
+      "source": {
+        "section": "§3.7.1",
+        "line": 1306
+      }
+    },
+    {
+      "group": "CommonMark 0.31.2",
+      "chapter": "§5.2",
+      "item": "列表项（项内多段/代码/空项/5 空格/超长序号）",
+      "conclusion": "覆盖",
+      "conclusion_kind": "覆盖",
+      "criterion_ids_raw": "`P-LI-P-01`、`P-LI-CODE-01`、`P-LIST-EMPTY-01`、`P-LIST-5SPACE-01`、`P-OL-06`",
+      "fixture_refs_raw": "F4b/20-22、F13a/08-12、F4c/09-10、F4c/07、F4c/04-05",
+      "source": {
+        "section": "§3.7.1",
+        "line": 1307
+      }
+    },
+    {
+      "group": "CommonMark 0.31.2",
+      "chapter": "§5.3",
+      "item": "列表（三符号/两种序号/起始 0/打断段落/嵌套）",
+      "conclusion": "覆盖",
+      "conclusion_kind": "覆盖",
+      "criterion_ids_raw": "`P-UL-01..03`、`P-OL-01..05`、`P-LIST-INTERRUPT-01`、`P-NEST-01`",
+      "fixture_refs_raw": "F4a、F4b、F4c/17-18",
+      "source": {
+        "section": "§3.7.1",
+        "line": 1308
+      }
+    },
+    {
+      "group": "CommonMark 0.31.2",
+      "chapter": "§6.1",
+      "item": "代码跨度（空格归一/跨行/空跨度）",
+      "conclusion": "覆盖",
+      "conclusion_kind": "覆盖",
+      "criterion_ids_raw": "`P-CODE-01..05`",
+      "fixture_refs_raw": "F7b/01-07",
+      "source": {
+        "section": "§3.7.1",
+        "line": 1309
+      }
+    },
+    {
+      "group": "CommonMark 0.31.2",
+      "chapter": "§6.2",
+      "item": "强调与加粗（词内 `_`/嵌套/规则三/未配对）",
+      "conclusion": "覆盖",
+      "conclusion_kind": "覆盖",
+      "criterion_ids_raw": "`P-EM-01..09`",
+      "fixture_refs_raw": "F7a/01-14",
+      "source": {
+        "section": "§3.7.1",
+        "line": 1310
+      }
+    },
+    {
+      "group": "CommonMark 0.31.2",
+      "chapter": "§6.3",
+      "item": "链接（内联/引用式/含图片）",
+      "conclusion": "覆盖",
+      "conclusion_kind": "覆盖",
+      "criterion_ids_raw": "`P-LINK-01`、`P-LINK-02`、`P-LINK-07`",
+      "fixture_refs_raw": "F8/01、03、11",
+      "source": {
+        "section": "§3.7.1",
+        "line": 1311
+      }
+    },
+    {
+      "group": "CommonMark 0.31.2",
+      "chapter": "§6.4",
+      "item": "图片（内联/引用式/title/空 alt）",
+      "conclusion": "覆盖",
+      "conclusion_kind": "覆盖",
+      "criterion_ids_raw": "`P-IMG-01..05`、`P-LINK-07`",
+      "fixture_refs_raw": "F8/09",
+      "source": {
+        "section": "§3.7.1",
+        "line": 1312
+      }
+    },
+    {
+      "group": "CommonMark 0.31.2",
+      "chapter": "§6.5",
+      "item": "自动链接 `<…>`",
+      "conclusion": "覆盖",
+      "conclusion_kind": "覆盖",
+      "criterion_ids_raw": "`P-LINK-03`",
+      "fixture_refs_raw": "F8/05",
+      "source": {
+        "section": "§3.7.1",
+        "line": 1313
+      }
+    },
+    {
+      "group": "CommonMark 0.31.2",
+      "chapter": "§6.6",
+      "item": "原始行内 HTML",
+      "conclusion": "有意差异",
+      "conclusion_kind": "有意差异",
+      "criterion_ids_raw": "`P-IHTML-01`（同端结构）",
+      "fixture_refs_raw": "与 §4.6 同策略，不单列夹具",
+      "source": {
+        "section": "§3.7.1",
+        "line": 1314
+      }
+    },
+    {
+      "group": "CommonMark 0.31.2",
+      "chapter": "§6.7",
+      "item": "硬换行（两空格/反斜杠）",
+      "conclusion": "覆盖",
+      "conclusion_kind": "覆盖",
+      "criterion_ids_raw": "`P-BR-01`、`P-BR-02`",
+      "fixture_refs_raw": "F9/01-03",
+      "source": {
+        "section": "§3.7.1",
+        "line": 1315
+      }
+    },
+    {
+      "group": "CommonMark 0.31.2",
+      "chapter": "§6.8",
+      "item": "软换行",
+      "conclusion": "覆盖",
+      "conclusion_kind": "覆盖",
+      "criterion_ids_raw": "`P-BR-03`",
+      "fixture_refs_raw": "F9/05-06",
+      "source": {
+        "section": "§3.7.1",
+        "line": 1316
+      }
+    },
+    {
+      "group": "CommonMark 0.31.2",
+      "chapter": "§6.9",
+      "item": "文本内容",
+      "conclusion": "覆盖",
+      "conclusion_kind": "覆盖",
+      "criterion_ids_raw": "`P-PARA-01-SPEC`/`P-PARA-01-PARITY`、`P-C-CJK-01-PARITY`",
+      "fixture_refs_raw": "F0/01",
+      "source": {
+        "section": "§3.7.1",
+        "line": 1317
+      }
+    },
+    {
+      "group": "GFM 扩展",
+      "chapter": "Tables",
+      "item": "表头/表体/对齐/缺格/多格/仅表头/分隔列数不符",
+      "conclusion": "覆盖",
+      "conclusion_kind": "覆盖",
+      "criterion_ids_raw": "`P-TBL-01..10`",
+      "fixture_refs_raw": "F6a/01-18、F6b/01-14",
+      "source": {
+        "section": "§3.7.2",
+        "line": 1323
+      }
+    },
+    {
+      "group": "GFM 扩展",
+      "chapter": "Tables",
+      "item": "格内 `<br>`（原始/代码）",
+      "conclusion": "覆盖（拆两条）",
+      "conclusion_kind": "覆盖",
+      "criterion_ids_raw": "`P-CELLBR-01`、`P-CELLBR-02-SPEC`/`P-CELLBR-02-PARITY`",
+      "fixture_refs_raw": "F6a/14、F6a/18",
+      "source": {
+        "section": "§3.7.2",
+        "line": 1324
+      }
+    },
+    {
+      "group": "GFM 扩展",
+      "chapter": "Tables",
+      "item": "表格在列表/引用内",
+      "conclusion": "覆盖",
+      "conclusion_kind": "覆盖",
+      "criterion_ids_raw": "`P-C-TBLINQ-01`",
+      "fixture_refs_raw": "F13b/07-11",
+      "source": {
+        "section": "§3.7.2",
+        "line": 1325
+      }
+    },
+    {
+      "group": "GFM 扩展",
+      "chapter": "Task list items",
+      "item": "任务项/方框",
+      "conclusion": "覆盖",
+      "conclusion_kind": "覆盖",
+      "criterion_ids_raw": "`P-TASK-01`、`P-BOX-01`",
+      "fixture_refs_raw": "F12/01-03",
+      "source": {
+        "section": "§3.7.2",
+        "line": 1326
+      }
+    },
+    {
+      "group": "GFM 扩展",
+      "chapter": "Strikethrough",
+      "item": "`~~` 与单 `~`",
+      "conclusion": "覆盖",
+      "conclusion_kind": "覆盖",
+      "criterion_ids_raw": "`P-DEL-01`、`P-DEL-02`",
+      "fixture_refs_raw": "F7a/15-16",
+      "source": {
+        "section": "§3.7.2",
+        "line": 1327
+      }
+    },
+    {
+      "group": "GFM 扩展",
+      "chapter": "Autolinks (extension)",
+      "item": "裸 URL / `www.` / 邮箱",
+      "conclusion": "覆盖",
+      "conclusion_kind": "覆盖",
+      "criterion_ids_raw": "`P-LINK-04/05/06`",
+      "fixture_refs_raw": "F8/07",
+      "source": {
+        "section": "§3.7.2",
+        "line": 1328
+      }
+    },
+    {
+      "group": "GFM 扩展",
+      "chapter": "Footnotes",
+      "item": "单次/多次/多段/未定义",
+      "conclusion": "覆盖",
+      "conclusion_kind": "覆盖",
+      "criterion_ids_raw": "`P-FN-01..04`",
+      "fixture_refs_raw": "F10/01-17",
+      "source": {
+        "section": "§3.7.2",
+        "line": 1329
+      }
+    },
+    {
+      "group": "GFM 扩展",
+      "chapter": "Disallowed raw HTML (tagfilter)",
+      "item": "—",
+      "conclusion": "有意差异",
+      "conclusion_kind": "有意差异",
+      "criterion_ids_raw": "`P-HTMLB-01-SPEC`",
+      "fixture_refs_raw": "rmd 整体丢弃 HTML，不适用 tagfilter",
+      "source": {
+        "section": "§3.7.2",
+        "line": 1330
+      }
+    },
+    {
+      "group": "本仓扩展",
+      "chapter": "",
+      "item": "`mermaid` 围栏",
+      "conclusion": "覆盖",
+      "conclusion_kind": "覆盖",
+      "criterion_ids_raw": "`P-MERMAID-01-*`",
+      "fixture_refs_raw": "F11/01-05",
+      "source": {
+        "section": "§3.7.3",
+        "line": 1336
+      }
+    },
+    {
+      "group": "本仓扩展",
+      "chapter": "",
+      "item": "`flow` 围栏",
+      "conclusion": "覆盖",
+      "conclusion_kind": "覆盖",
+      "criterion_ids_raw": "`P-FLOW-01-*`",
+      "fixture_refs_raw": "F11/07-11",
+      "source": {
+        "section": "§3.7.3",
+        "line": 1337
+      }
+    },
+    {
+      "group": "本仓扩展",
+      "chapter": "",
+      "item": "`sequence` 围栏",
+      "conclusion": "覆盖",
+      "conclusion_kind": "覆盖",
+      "criterion_ids_raw": "`P-SEQUENCE-01-*`",
+      "fixture_refs_raw": "F11/13-16",
+      "source": {
+        "section": "§3.7.3",
+        "line": 1338
+      }
+    },
+    {
+      "group": "本仓扩展",
+      "chapter": "",
+      "item": "`math` 围栏",
+      "conclusion": "覆盖",
+      "conclusion_kind": "覆盖",
+      "criterion_ids_raw": "`P-MATHFENCE-01-SPEC`",
+      "fixture_refs_raw": "F11/24-26",
+      "source": {
+        "section": "§3.7.3",
+        "line": 1339
+      }
+    },
+    {
+      "group": "本仓扩展",
+      "chapter": "",
+      "item": "行内/块级数学",
+      "conclusion": "覆盖",
+      "conclusion_kind": "覆盖",
+      "criterion_ids_raw": "`P-MATH-01-SPEC`/`P-MATH-01-PARITY`、`P-MATH-02-SPEC`/`P-MATH-02-PARITY`",
+      "fixture_refs_raw": "F11/18、F11/20-22",
+      "source": {
+        "section": "§3.7.3",
+        "line": 1340
+      }
+    },
+    {
+      "group": "本仓扩展",
+      "chapter": "",
+      "item": "`[TOC]` / `@(标签)[名]`",
+      "conclusion": "不比",
+      "conclusion_kind": "不比",
+      "criterion_ids_raw": "—",
+      "fixture_refs_raw": "§3.6",
+      "source": {
+        "section": "§3.7.3",
+        "line": 1341
+      }
+    }
+  ],
+  "exemptions": [
+    {
+      "item": "原始 HTML（块级/行内）",
+      "stance": "**有意差异**，只做 `P-HTMLB-01-SPEC` 同端结构断言",
+      "reason": "rmd 丢弃 HTML（`INV-SEC-01`）；Mardo 有 `HtmlBlock`/`SafeTag`。⛔ 不把差异记缺陷",
+      "source": {
+        "section": "§3.6",
+        "line": 1268
+      }
+    },
+    {
+      "item": "`[TOC]`、`@(标签)[名]`",
+      "stance": "**不比**",
+      "reason": "本仓扩展，Mardo 无对应语义",
+      "source": {
+        "section": "§3.6",
+        "line": 1269
+      }
+    },
+    {
+      "item": "`flow`/`sequence`/`mermaid`/`math` 围栏的**形态**",
+      "stance": "**跨端不比**；只做 `P-*-SPEC` 同端契约断言",
+      "reason": "本仓扩展，Mardo 无对应围栏；按 §3.4 只判\"渲染为图形/公式、不得留 `pre>code` 源码\"，⛔ 不引用产品源码行号当 oracle（C7）",
+      "source": {
+        "section": "§3.6",
+        "line": 1270
+      }
+    },
+    {
+      "item": "浮动格式条、Source Code Mode",
+      "stance": "**不比**",
+      "reason": "交互形态，不属阅读面",
+      "source": {
+        "section": "§3.6",
+        "line": 1271
+      }
+    },
+    {
+      "item": "字体族/字形、字距",
+      "stance": "**不比**",
+      "reason": "两端字体不同；只比同端配对比值与带高占比",
+      "source": {
+        "section": "§3.6",
+        "line": 1272
+      }
+    },
+    {
+      "item": "Mermaid/数学图内颜色",
+      "stance": "**不比**",
+      "reason": "图由各自渲染库产出，配色不受 rmd 主题控制",
+      "source": {
+        "section": "§3.6",
+        "line": 1273
+      }
+    },
+    {
+      "item": "窗口宽度、缩放、DPR",
+      "stance": "**不比绝对值**",
+      "reason": "跨端只比 `/B` 归一后的比值；窗口尺寸是环境字段",
+      "source": {
+        "section": "§3.6",
+        "line": 1274
+      }
+    },
+    {
+      "item": "光标闪烁、选区色",
+      "stance": "**本轮只登记**",
+      "reason": "Mardo 光标是独立合成层（`research/0005` §2.8），抓帧相位不可控",
+      "source": {
+        "section": "§3.6",
+        "line": 1275
+      }
+    },
+    {
+      "item": "dark / warm 主题",
+      "stance": "**本轮不比**（只判 light）",
+      "reason": "见 §2.2 与 §6；下一轮再扩主题维度",
+      "source": {
+        "section": "§3.6",
+        "line": 1276
+      }
+    },
+    {
+      "item": "图片 title 悬浮提示",
+      "stance": "**不比外观**",
+      "reason": "悬浮态截图无法稳定取得；只判 `img[title]` 存在",
+      "source": {
+        "section": "§3.6",
+        "line": 1277
+      }
+    },
+    {
+      "item": "表格/代码块圆角",
+      "stance": "**不比**",
+      "reason": "一维带量不出（B3）；若将来要判，须单列二维角点判据",
+      "source": {
+        "section": "§3.6",
+        "line": 1278
+      }
+    }
+  ],
+  "fixture_index": [
+    {
+      "fixture": "00-body.md",
+      "intent": "`B` 基准（长中文段、长英文段）",
+      "source_lines": 3,
+      "source": {
+        "section": "§2.6",
+        "line": 456
+      }
+    },
+    {
+      "fixture": "01-headings.md",
+      "intent": "ATX h1–h6、闭合序列、多行 Setext 两级",
+      "source_lines": 21,
+      "source": {
+        "section": "§2.6",
+        "line": 457
+      }
+    },
+    {
+      "fixture": "02-blocks.md",
+      "intent": "段落、`---`/`***`/`___`、缩进代码（内含空行）、HTML 块、引用定义、软换行",
+      "source_lines": 23,
+      "source": {
+        "section": "§2.6",
+        "line": 458
+      }
+    },
+    {
+      "fixture": "03-quote.md",
+      "intent": "单层、嵌套、惰性续行、引用内列表、引用内多段、引用内代码、三层",
+      "source_lines": 24,
+      "source": {
+        "section": "§2.6",
+        "line": 459
+      }
+    },
+    {
+      "fixture": "04a-lists-basic.md",
+      "intent": "三种无序符号、有序 `.` 1→10、`)` 起始 3",
+      "source_lines": 22,
+      "source": {
+        "section": "§2.6",
+        "line": 460
+      }
+    },
+    {
+      "fixture": "04b-lists-nested.md",
+      "intent": "≥3 层混合嵌套、紧凑/松散（两个独立列表）、项内多段",
+      "source_lines": 22,
+      "source": {
+        "section": "§2.6",
+        "line": 461
+      }
+    },
+    {
+      "fixture": "04c-lists-edge.md",
+      "intent": "起始 0、超长序号、标记后 5 空格、空项、段后缩进行（列表项内的惰性续行）、列表打断段落",
+      "source_lines": 18,
+      "source": {
+        "section": "§2.6",
+        "line": 462
+      }
+    },
+    {
+      "fixture": "05-fences.md",
+      "intent": "```/~~~、info string、长行、Tab、空行、更长闭合、围栏内反引号、未闭合",
+      "source_lines": 27,
+      "source": {
+        "section": "§2.6",
+        "line": 463
+      }
+    },
+    {
+      "fixture": "06a-table.md",
+      "intent": "表头/表体、对齐、格内行内、转义竖线、8 列、原始 `<br>`、代码 `<br>`",
+      "source_lines": 18,
+      "source": {
+        "section": "§2.6",
+        "line": 464
+      }
+    },
+    {
+      "fixture": "06b-table-edge.md",
+      "intent": "缺格、多格、仅表头、分隔行列数不符（**不成表**，落为段落）",
+      "source_lines": 14,
+      "source": {
+        "section": "§2.6",
+        "line": 465
+      }
+    },
+    {
+      "fixture": "07a-inline-em.md",
+      "intent": "五种强调（含同文本配对行）、词内 `_`/`*`、嵌套、规则三、未配对、`~~`/`~`",
+      "source_lines": 16,
+      "source": {
+        "section": "§2.6",
+        "line": 466
+      }
+    },
+    {
+      "fixture": "07b-inline-code.md",
+      "intent": "单/双反引号、空格归一、跨行代码跨度、空跨度、行内 HTML",
+      "source_lines": 8,
+      "source": {
+        "section": "§2.6",
+        "line": 467
+      }
+    },
+    {
+      "fixture": "08-links-images.md",
+      "intent": "内联/完整/折叠/简写引用、多行与重复定义、两种自动链接、GFM 裸链接、图片三态、链接含图、未定义引用",
+      "source_lines": 21,
+      "source": {
+        "section": "§2.6",
+        "line": 468
+      }
+    },
+    {
+      "fixture": "09-breaks-entities.md",
+      "intent": "两种硬换行、软换行、正文 Tab、行首 Tab 缩进代码、转义、命名/数字实体、行内 HTML",
+      "source_lines": 18,
+      "source": {
+        "section": "§2.6",
+        "line": 469
+      }
+    },
+    {
+      "fixture": "10-footnotes.md",
+      "intent": "单次、多次引用、多段、未定义",
+      "source_lines": 17,
+      "source": {
+        "section": "§2.6",
+        "line": 470
+      }
+    },
+    {
+      "fixture": "11-diagrams.md",
+      "intent": "mermaid、flow、sequence、行内/块级数学、`math` 围栏",
+      "source_lines": 26,
+      "source": {
+        "section": "§2.6",
+        "line": 471
+      }
+    },
+    {
+      "fixture": "12-task.md",
+      "intent": "任务列表、三级嵌套、松散任务（同一列表三项）",
+      "source_lines": 9,
+      "source": {
+        "section": "§2.6",
+        "line": 472
+      }
+    },
+    {
+      "fixture": "13a-combos.md",
+      "intent": "引用里列表、列表里引用、列表里代码（两个独立列表）、标题里行内语法",
+      "source_lines": 14,
+      "source": {
+        "section": "§2.6",
+        "line": 473
+      }
+    },
+    {
+      "fixture": "13b-combos2.md",
+      "intent": "列表里的表格、引用里的表格、多级任务",
+      "source_lines": 14,
+      "source": {
+        "section": "§2.6",
+        "line": 474
+      }
+    },
+    {
+      "fixture": "14-edit-menu.md",
+      "intent": "每类块各一，供 L3 逐块点击",
+      "source_lines": 23,
+      "source": {
+        "section": "§2.6",
+        "line": 475
+      }
+    }
+  ]
+}

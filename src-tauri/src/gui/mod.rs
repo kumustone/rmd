@@ -36,7 +36,8 @@ use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogResult};
 
 use crate::cli_tool;
 use crate::commands::{
-    self, asset, document, edit, fs as fs_cmd, link as link_cmd, AppState, Mode, Session,
+    self, asset, document, edit, export as export_cmd, fs as fs_cmd, link as link_cmd, AppState,
+    Mode, Session,
 };
 use crate::config::{self, Appearance, Config};
 use crate::fs::grants::SessionGrants;
@@ -247,10 +248,15 @@ const SHORTCUTS: &[Shortcut] = &[
         aliases: &[],
         owner: Owner::Web,
     },
+    // ⭐ `design/0071` §3.2（2026-11-14）：`⌘O` 的语义由「打开目录」改为「打开面板」
+    //    （面板里第一屏是「最近」，下面才是「浏览目录…」「浏览文件…」）⇒ id 改名
+    //    `file.open-directory` → `file.open`，文案「打开…」。⚠️ 这**推翻** T32 ③，
+    //    新取舍记在 `design/0071` §3.2，⛔ 不回写 `tasks.md`（历史记录只追加）。
+    //    ⚠️ `owner` 仍是 `Web`：面板是 DOM 覆盖层，键必须由前端 `keymap` 接。
     Shortcut {
-        id: "file.open-directory",
-        label_zh: "打开目录…",
-        label_en: "Open Folder…",
+        id: "file.open",
+        label_zh: "打开…",
+        label_en: "Open…",
         accel: "Cmd+O",
         aliases: &["Ctrl+O"],
         owner: Owner::Web,
@@ -261,6 +267,24 @@ const SHORTCUTS: &[Shortcut] = &[
         label_en: "Open File…",
         accel: "Shift+Cmd+O",
         aliases: &["Shift+Ctrl+O"],
+        owner: Owner::Web,
+    },
+    // ⭐ `design/0071` §4.2（阶段 3，2026-11-15 实施）：`⌘N` = **在当前目录新建一份空 `.md`**。
+    //
+    // ⚠️ **它不新写一套写盘路径**（`INV-OPEN-06`）：整个动作都在前端——展开侧边栏、
+    //    定位目标目录、把**既有的**就地输入行（`FileTree::openInput`）打开；
+    //    落盘仍是 `create_entry` 那唯一一处（名字判据在 `fs/create.rs::validate_name`）。
+    //    ⇒ `owner = Web`，Rust 侧一个字节都不参与。
+    // ⚠️ 没有已授权目录时由前端走 `#fail-bar`（`design/0070`）说一句「先打开一个目录」，
+    //    ⛔ **不静默**、⛔ 也不在这里判（这里没有会话）。
+    // ⚠️ `⌘N` 在 macOS 的默认菜单上**没有**对应项（`kb/0016` §1 的真机菜单表里只有
+    //    `Close Window`），所以不会与 AppKit 抢键。
+    Shortcut {
+        id: "file.new",
+        label_zh: "新建文件…",
+        label_en: "New File…",
+        accel: "Cmd+N",
+        aliases: &["Ctrl+N"],
         owner: Owner::Web,
     },
     Shortcut {
@@ -283,6 +307,10 @@ const SHORTCUTS: &[Shortcut] = &[
         id: "reader.font-reset",
         label_zh: "复位字号",
         label_en: "Reset Font Size",
+        // ⭐ **2026-11-16 回到 `⌘0`**：同日早些时候它曾让到 `⇧⌘0`，为的是把 `⌘0` 腾给
+        //    `view.start`；当天第二轮用户把导航页改到 **`⌘L`**（见 `view.start` 的注释）⇒
+        //    `⌘0` 重新空出来，复位字号**恢复原键**（`⌘0` = 复位视图，浏览器/IDE 同一直觉）。
+        //    ⚠️ 别名 `Ctrl+0` 一直保留，两种写法都能用。
         accel: "Cmd+0",
         aliases: &["Ctrl+0"],
         owner: Owner::Web,
@@ -415,6 +443,27 @@ const SHORTCUTS: &[Shortcut] = &[
         aliases: &[],
         owner: Owner::Web,
     },
+    // ⭐ `design/0075`（查找替换，2026-11-14 用户指令授权实施）：`⌥⌘F`。
+    //
+    // ⚠️ **为什么是 `Alt+Cmd+F`**：`⌘F` / `⌘G` / `⇧⌘G` 已经占着查找那一族，
+    //    macOS 上"查找并替换"的惯例就是 **`⌥⌘F`**（Xcode / TextEdit 同键）。
+    //    ⭐ 已核冲突：本表此前**没有任何** Alt 组合，`⌥⌘F` 也不会落进
+    //    `Menu::default` 的预定义项（全表只有 `⌘F` 被 `0011` 换掉了主人）。
+    // ⚠️ **owner = Web**：替换的整个生命周期在前端（面板 + 匹配计划 + CM6 事务），
+    //    Rust 侧一个字节都不参与——与 `edit.find` 同形。它**同时**进
+    //    [`PLAIN_MENU_ITEMS`]（`Edit ▸ 查找替换…`，**⛔ 无加速键**），所以
+    //    `MENU_ITEM_IDS` 不动、`INV-SET-04` 不受影响。
+    // ⚠️ 它是**转发白名单**里的一员（`src/editor/keys.js` 收所有
+    //    `owner=web ∧ 含 cmd ∧ 无 ctrl` 的项），翻出来的 CM6 串是 `Alt-Mod-f`
+    //    ——`f` 在"免 Shift 字符集"里，所以这一条**能**在分栏编辑区里按到。
+    Shortcut {
+        id: "edit.replace",
+        label_zh: "查找替换…",
+        label_en: "Find and Replace…",
+        accel: "Alt+Cmd+F",
+        aliases: &[],
+        owner: Owner::Web,
+    },
     // ⭐ `⌘G` / `⇧⌘G`（§9.1 第 5 条的建议：**做**）。
     //
     // ⚠️⚠️ **浮层没开时它们是明确的 no-op**（⛔ 不顺手把浮层打开）——
@@ -465,6 +514,279 @@ const SHORTCUTS: &[Shortcut] = &[
         aliases: &[],
         owner: Owner::Web,
     },
+    // ⭐⭐ `design/0077`（2026-11-15）：四种复制格式 ＋「粘贴为字面 Markdown 源码」。
+    //
+    // ⚠️ 五条都 `Owner::Web`（剪贴板与选区都在前端），且加速键统一 `⇧⌘`、**不带 Ctrl**
+    //    ⇒ 自动进入 `editor/keys.js` 的转发白名单（分栏编辑态里按得动）。
+    // ⚠️ 选键避开了系统/WebKit 的常用组合：尤其 **⛔ 不用 `⇧⌘V`**（WebKit 的
+    //    「粘贴并匹配样式」可能先吃掉）；这里用 `⇧⌘L`（Literal）。
+    // ⚠️⚠️ 2026-11-15 合入时改名一条：`edit.copy-plain` 原定 `⇧⌘P`，与 `design/0076`
+    //    的 `file.export-pdf` **撞键**（`表中_accel_两两不同` 当场打红）——
+    //    导出那一枚已先落地且更贴 macOS「打印/导出 PDF」惯例，所以这里退到
+    //    **`⌥⌘P`**（保留 P 这个助记，只把修饰键从 ⇧ 换成 ⌥）。
+    // ⚠️ 五条**同时**各占一条 [`PLAIN_MENU_ITEMS`]（Edit 菜单可见、⛔ 不装原生加速键）——
+    //    与 `edit.find` 完全同形：**菜单里有没有这一项**与**这个键归谁处理**是两个维度。
+    Shortcut {
+        id: "edit.copy-markdown",
+        label_zh: "复制为 Markdown",
+        label_en: "Copy as Markdown",
+        accel: "Shift+Cmd+M",
+        aliases: &[],
+        owner: Owner::Web,
+    },
+    Shortcut {
+        id: "edit.copy-html",
+        label_zh: "复制为 HTML 源码",
+        label_en: "Copy as HTML Source",
+        accel: "Shift+Cmd+K",
+        aliases: &[],
+        owner: Owner::Web,
+    },
+    Shortcut {
+        id: "edit.copy-plain",
+        label_zh: "复制为纯文本",
+        label_en: "Copy as Plain Text",
+        accel: "Alt+Cmd+P",
+        aliases: &[],
+        owner: Owner::Web,
+    },
+    Shortcut {
+        id: "edit.copy-rich",
+        label_zh: "复制为富文本",
+        label_en: "Copy as Rich Text",
+        accel: "Shift+Cmd+R",
+        aliases: &[],
+        owner: Owner::Web,
+    },
+    Shortcut {
+        id: "edit.paste-literal",
+        label_zh: "粘贴为字面 Markdown 源码",
+        label_en: "Paste as Literal Markdown",
+        accel: "Shift+Cmd+L",
+        aliases: &[],
+        owner: Owner::Web,
+    },
+    // ⭐⭐ `⌘Z` / `⇧⌘Z` **进表**（`bugs/0020` §8，2026-11-02）：多块提交栈的撤销/重做
+    //    在此之前**一个主人也没有** —— `src/live/index.js` 的 `undo()` 零调用点，
+    //    表现是「表格里改完、提交之后按 `⌘Z` 什么也不发生」。
+    //
+    // ⚠️⚠️ **⛔ 不加菜单加速键**：一旦给菜单项挂上 `⌘Z`，AppKit 会在送达 key window
+    //    之前吞掉它，**块内**的 CM6 `history()` 撤销（层①）当场失效。
+    //
+    // ⚠️⚠️ **但 `Menu::default` 自带的预定义 `Undo`/`Redo` 必须摘掉**（`bugs/0310`，
+    //    2026-11-11 更正）：本条注释原写「预定义项**没有加速键**」——**那句是错的**。
+    //    `muda 0.20.0` 给预定义项装了加速键（`items/predefined.rs`：`Undo => Cmd+Z`、
+    //    macOS 的 `Redo => Shift+Cmd+Z`），并经 `platform_impl/macos/mod.rs` 落到
+    //    `NSMenuItem` 的 key equivalent 上 ⇒ **AppKit 先把 `⌘Z` 吃掉**、再往响应链发
+    //    `undo:`/`redo:`，前端一个字节都收不到（真机症状：就地编辑里 `⌘Z` 完全没反应，
+    //    而所有离屏探针都是绿的）。⇒ `install_menu` 摘掉那两项，由 `PLAIN_MENU_ITEMS`
+    //    在**同两个格子**里放回无加速键的 `edit.undo` / `edit.redo`（菜单照旧有「撤销/重做」，
+    //    键归前端）。`kb/0016` 与 `bugs/0020` 里的旧结论已按这一条原地更正。
+    //
+    // ⚠️ 它们**在**转发白名单里（`owner=web ∧ 含 cmd`），但分栏编辑态里轮不到转发：
+    //    CM6 的 `historyKeymap` 在**默认优先级**，转发的 `Prec.low` 排在它后面
+    //    （`src/editor/keys.js` 文件头 ①/②）——编辑器自己的撤销照旧先命中。
+    // ⚠️ 就地编辑态由 `main.js::makeLiveView` **自己认领**这两个键（层① 块内历史），
+    //    那一支必须排在 `K.matchEvent` 之前，否则会被转发出块。
+    Shortcut {
+        id: "edit.undo",
+        label_zh: "撤销",
+        label_en: "Undo",
+        accel: "Cmd+Z",
+        aliases: &[],
+        owner: Owner::Web,
+    },
+    Shortcut {
+        id: "edit.redo",
+        label_zh: "重做",
+        label_en: "Redo",
+        accel: "Shift+Cmd+Z",
+        aliases: &[],
+        owner: Owner::Web,
+    },
+    // ⭐ `design/0056`（2026-10-30 用户放行）：**关闭当前文档、回到导航页**。
+    //
+    // ⚠️⚠️ **2026-11-16 改键：`⇧⌘H` → `⌘L`**（用户原话：「导航页的快捷键，改成 cmd + L」）。
+    //    历史：`F2` → `⇧⌘H`（2026-11-11，`bugs/0097`：裸 F-键在默认媒体键设置下到不了 WebView）；
+    //    同日早些时候曾短暂用过 `⌘0`，第二轮按用户明令定为 `⌘L`。
+    //    ⇒ 要的是**手感**：一个修饰键 ＋ 左手区字母，两键可达；`L` 取 "Location / 入口" 之意。
+    //    `⌘0` 随之空出来，复位字号（`reader.font-reset`）**恢复原键 `⌘0`**。
+    //    ⚠️ 同字母的另外两条不冲突：`⇧⌘L`（字面粘贴）、`⌃⌘L`（行号）。
+    //    ⛔ 表内 accel 必须唯一，加键前先在这里查。
+    //    ⚠️ 仍然**含 `cmd`** ⇒ 依旧在编辑区转发白名单里，编辑区里按它仍不会绕过保存/丢弃询问。
+    //
+    // ⚠️ **`owner = Web` 且 ⛔ 不进菜单**，与 `view.toggle-chrome`（`⇧⌘B`）同形：
+    //    正文/导航页全在前端，Rust 侧不参与 ⇒ 没有"AppKit 在送达 key window 之前
+    //    就吞掉"的理由；设置覆盖层是它**唯一**的展示位（`INV-SET-01`：表现算）。
+    //    ⚠️ 前端那边**没有** handler 就是"按下去没反应且不报错"——
+    //    `main.js` 的 `keymap.register('view.start', …)` 与 `checkActions` 是两道防线。
+    Shortcut {
+        id: "view.start",
+        label_zh: "回到导航页",
+        label_en: "Go to Start Page",
+        accel: "Cmd+L",
+        aliases: &[],
+        owner: Owner::Web,
+    },
+    // ⭐ `design/0069`（2026-11-13 用户指示实施）：**在打开过的文档之间后退 / 前进**。
+    //
+    // ⚠️ 用户原话（2026-11-13）：「支持跳转到上一个下一个文件……或者使用 cmd + [ cmd + ]
+    //    跳转到上一个，下一个文件。」键位就按用户点名的 `⌘[` / `⌘]`——这正是
+    //    `design/0069` §9 待裁项第 1 条的裁定结果。
+    // ⚠️ **`owner = Web` 且 ⛔ 不进菜单**：历史栈纯在前端（`src/services/history.js`），
+    //    Rust 侧不参与；与 `view.start` / `view.toggle-chrome` 同形，设置覆盖层是唯一展示位。
+    //    ⛔ 别把它们塞进 `PLAIN_MENU_ITEMS`：本设计明确不加菜单项（§2.1.4 / §4）。
+    // ⚠️ 前端 `main.js` 的 `keymap.register('view.history-back' | 'view.history-forward', …)`
+    //    必须同批存在，否则 `checkActions` 启动时就报「表里有、没有 handler」。
+    // ⚠️ `Cmd+[` / `Cmd+]` 里的方括号是 **muda 认的键名**（`accelerator/mod.rs:284-285`），
+    //    「每个 accel 都能被 muda 解析」那条测试照样通过。
+    Shortcut {
+        id: "view.history-back",
+        label_zh: "后退（上一份文档）",
+        label_en: "Back (Previous Document)",
+        accel: "Cmd+[",
+        aliases: &[],
+        owner: Owner::Web,
+    },
+    Shortcut {
+        id: "view.history-forward",
+        label_zh: "前进（下一份文档）",
+        label_en: "Forward (Next Document)",
+        accel: "Cmd+]",
+        aliases: &[],
+        owner: Owner::Web,
+    },
+    // ⭐ `design/0079`（2026-11-14 用户指令授权的 P2）：**阅读视图三件套**——
+    //    行号 / 专注模式 / 画布缩放。五项**全部 `Owner::Web`**：
+    //    状态与 DOM 都在前端（`src/services/viewstate.js` + `main.js`），Rust 侧不参与。
+    // ⚠️ 五项**都进** `PLAIN_MENU_ITEMS` 的 `View` 组（菜单项在、⛔ 不装原生加速键），
+    //    与 `⌘F` / `⌘S` / `⇧⌘E` 同形：「菜单里有没有这一项」与「键归谁处理」是两个维度。
+    // ⚠️ 键位取舍：`⌘=` / `⌘-` / `⌘0` 已被**字号**占用（`reader.font-*`），
+    //    缩放改用 `⌃⌘` 前缀，语义与浏览器缩放同形；`⌥⌘Z` 之类会撞输入法 / 系统保留键，
+    //    `⇧⌘Z` 是重做 ⇒ 专注用 `⌃⌘Z`。
+    // ⚠️ 带 `Ctrl` 的五条（行号 / 专注 / 缩放三条）**不进** `editor/keys.js` 的转发白名单
+    //    （判据 `owner=web ∧ cmd ∧ 无 ctrl`）⇒ 编辑区聚焦时按了没反应，这是刻意的：
+    //    这五项只作用于阅读画布。
+    //    ⚠️⚠️ 合入时改过一枚：行号原定 `⇧⌘L`，与 `design/0077` 的
+    //    `edit.paste-literal` **撞键**（`表中_accel_两两不同` 打红）⇒ 退到 `⌃⌘L`，
+    //    与同组其余四项统一成 `⌃⌘` 前缀。
+    // ⚠️ 前端 `main.js` 必须同批有五个 `keymap.register`，否则 `checkActions` 启动即报。
+    Shortcut {
+        id: "view.toggle-line-numbers",
+        label_zh: "行号",
+        label_en: "Line Numbers",
+        accel: "Ctrl+Cmd+L",
+        aliases: &[],
+        owner: Owner::Web,
+    },
+    Shortcut {
+        id: "view.toggle-zen",
+        label_zh: "专注模式",
+        label_en: "Zen Mode",
+        accel: "Ctrl+Cmd+Z",
+        aliases: &[],
+        owner: Owner::Web,
+    },
+    Shortcut {
+        id: "view.zoom-actual",
+        label_zh: "实际大小",
+        label_en: "Actual Size",
+        accel: "Ctrl+Cmd+0",
+        aliases: &[],
+        owner: Owner::Web,
+    },
+    Shortcut {
+        id: "view.zoom-in",
+        label_zh: "放大",
+        label_en: "Zoom In",
+        accel: "Ctrl+Cmd+=",
+        aliases: &[],
+        owner: Owner::Web,
+    },
+    Shortcut {
+        id: "view.zoom-out",
+        label_zh: "缩小",
+        label_en: "Zoom Out",
+        accel: "Ctrl+Cmd+-",
+        aliases: &[],
+        owner: Owner::Web,
+    },
+    // ⭐ `design/0057`（2026-10-30 用户放行）：**收藏 / 取消收藏当前文档**。
+    //
+    // ⚠️ 文案是"切换"语义而不是"加入"：菜单文案由本表**静态派生**（`menu_label`），
+    //    没有"随状态改字"的通道 ⇒ 标签必须让两种结果都读得通，动作真值由
+    //    前端 `S.toggleFavorite` 在**队首按最新快照**决定（`session.js`，`design/0043`）。
+    // ⚠️ `⌘D` 在本表空闲，且是 Safari/Chrome 的"加书签"惯例。
+    // ⚠️ 它**进** `PLAIN_MENU_ITEMS`（`File` 菜单），所以菜单文案走 `menu_label` 派生，
+    //    ⛔ 菜单表里不许出现文案字面量（`INV-START-06` 同族）。
+    Shortcut {
+        id: "file.toggle-favorite",
+        label_zh: "收藏 / 取消收藏",
+        label_en: "Toggle Favorite",
+        accel: "Cmd+D",
+        aliases: &[],
+        owner: Owner::Web,
+    },
+    // ⭐ `design/0076`（2026-11-15）：**导出**两项。`Owner::Web`——键归前端 `keymap.js`，
+    //    菜单里是**无加速键**的普通项（[`PLAIN_MENU_ITEMS`] 的 `File` 组），
+    //    ⛔ 不装原生加速键、`MENU_ITEM_IDS` 不动。
+    //
+    // ⚠️ 为什么不用 `Owner::Menu`：菜单加速键会被 AppKit 在送达 key window **之前**吞掉，
+    //    而导出的"单飞 / 脏态拦截 / 状态条 / 失败条"全在前端 `main.js`；
+    //    让键绕开前端等于把这些判据**一个都不跑**（同 `file.save` 的取舍）。
+    // ⚠️ 键位：`⇧⌘S` 是"另存为"的跨应用惯例（Safari / Chrome / Finder），
+    //    `⇧⌘P` 是"打印"的常见变体（`⌘P` 被 macOS 默认菜单占用）。
+    Shortcut {
+        id: "file.export-html",
+        label_zh: "保存为 HTML…",
+        label_en: "Save as HTML…",
+        accel: "Shift+Cmd+S",
+        aliases: &[],
+        owner: Owner::Web,
+    },
+    Shortcut {
+        id: "file.export-pdf",
+        label_zh: "导出为 PDF…",
+        label_en: "Export as PDF…",
+        accel: "Shift+Cmd+P",
+        aliases: &[],
+        owner: Owner::Web,
+    },
+    // ⭐ `design/0071` §5.2（阶段 4，2026-11-15）：**新建窗口**。
+    //
+    // ⚠️ `Owner::Menu`：这个动作**整个在后端**（`next_window_label` ＋ 插会话桶 ＋
+    //    `create_window`），前端**不注册**这个键（`INV-SET-04`）——菜单加速键由 AppKit
+    //    直接送进 `on_menu_event`，⛔ 不需要也不许再走一遍 `keydown`。
+    // ⚠️ 它**同时**在 [`PLAIN_MENU_ITEMS`] 的 `File` 组里占一格（`position: 0`）：
+    //    那张表管的是**插在菜单的哪里**，与"有没有原生加速键"是两个维度
+    //    （`⌘F` 是反过来的活样本：进表、归 Web、菜单项无键）。
+    // ⚠️ 位置放在表**末尾**：`install_menu` 的启动自检按"表里 `owner == Menu` 的
+    //    **出现顺序**"核对 `MENU_ITEM_IDS`，所以新项要同时追加到两份清单的末尾。
+    // ⚠️ `⇧⌘N` 是"新建"的跨应用惯例（Finder / Safari / Chrome 的"新建窗口"）。
+    Shortcut {
+        id: WINDOW_NEW_ID,
+        label_zh: "新建窗口",
+        label_en: "New Window",
+        accel: "Cmd+Shift+N",
+        aliases: &[],
+        owner: Owner::Menu,
+    },
+    // ⭐ `design/0083` §2.2（2026-11-15，用户「走 A，cmd + T 按照你的建议执行」）：
+    //    **新建标签页**——同样是"造一个窗口形态"，只是造完并进当前窗口的原生标签组。
+    //
+    // ⚠️ 与 `window.new` 同形：`Owner::Menu`、动作整个在 Rust 里（`open_new_tab`），
+    //    ⛔ 前端不注册这个键（注册了就是按一次开两个窗口）。
+    // ⚠️ `⌘T` 是浏览器 / 编辑器的跨应用惯例；本仓此前**没有人占这个键**
+    //    （`SHORTCUTS` 里没有、`keymap.js` 里也没有）。
+    // ⚠️ 位置放表尾：`MENU_ITEM_IDS` 按本表里 `owner == Menu` 的**出现顺序**核对。
+    Shortcut {
+        id: WINDOW_NEW_TAB_ID,
+        label_zh: "新建标签页",
+        label_en: "New Tab",
+        accel: "Cmd+T",
+        aliases: &[],
+        owner: Owner::Menu,
+    },
 ];
 
 /// ⭐ **本设计新装进菜单的两项**（`design/0010` §2.1 ③）。
@@ -475,6 +797,19 @@ const SHORTCUTS: &[Shortcut] = &[
 /// 而这里是同一份 Rust 表内部的自洽断言。
 const MENU_SETTINGS_ID: &str = "settings.open";
 const MENU_SIDEBAR_ID: &str = "view.toggle-sidebar";
+/// ⭐ `design/0071` §5.2：`File ▸ 新建窗口`（`⇧⌘N`）。**整个动作在 Rust 里**
+/// （见 [`handle_menu_event`] 的第一段），⛔ 不转发前端。
+const WINDOW_NEW_ID: &str = "window.new";
+/// ⭐ `design/0083` §2.2：`File ▸ 新建标签页`（`⌘T`）。同样是**整个动作在 Rust 里**
+/// （`open_new_tab`：先建窗口、再经 FFI 并进聚焦窗口的原生标签组），⛔ 不转发前端。
+const WINDOW_NEW_TAB_ID: &str = "window.new-tab";
+/// ⭐ `design/0083`：**本应用全部窗口共用的标签标识**（`NSWindow.tabbingIdentifier`）。
+///
+/// ⚠️ 它必须**每个窗口都设**：Tauri 只在 `tabbing_identifier` 为空时才把进程级的
+/// "自动标签"关掉（`tauri-runtime-wry-2.12.1/src/lib.rs:4437-4445`）——那是本仓
+/// 2026-11 之前的形态（`create_window` 没设它）⇒ 那时原生标签根本不可能出现。
+/// ⚠️ 标识相同 = 允许并进同一组；`⌘T` 另需显式 `addTabbedWindow:ordered:`。
+const WINDOW_TABBING_IDENTIFIER: &str = "rmd";
 
 /// ⭐ 装进菜单、**且设了原生加速键**的那几项，**按插入顺序**。
 ///
@@ -490,7 +825,12 @@ const MENU_SIDEBAR_ID: &str = "view.toggle-sidebar";
 /// 而它按表是 `Owner::Web`——若仍用旧语义，那条"`Owner::Web` 的 id ⛔ 不许出现在
 /// 菜单里"的断言会**对着一个正确的改动报红**，然后被人当成"改了断言就绿了"。
 /// ⇒ 拆成两个常量：**带键的**（这里）与**不带键的**（[`PLAIN_MENU_ITEM_IDS`]）。
-const MENU_ITEM_IDS: &[&str] = &[MENU_SETTINGS_ID, MENU_SIDEBAR_ID];
+const MENU_ITEM_IDS: &[&str] = &[
+    MENU_SETTINGS_ID,
+    MENU_SIDEBAR_ID,
+    WINDOW_NEW_ID,
+    WINDOW_NEW_TAB_ID,
+];
 
 /// ⭐ 装进菜单、**⛔ 没有原生加速键**的一项（`design/0006` §9.3 第 2 条）。
 ///
@@ -555,7 +895,10 @@ struct PlainMenuItem {
     position: usize,
     /// 分隔线放在这一项的哪一侧。⚠️ 两处惯例**方向相反**，所以不能压成一个常量。
     sep: SepSide,
-    /// 动作 id。⚠️ 必须在 [`SHORTCUTS`] 里、且是 `Owner::Web`（[`tests`] 里那条断言管这个）。
+    /// 动作 id。⚠️ 必须在 [`SHORTCUTS`] 里；**绝大多数是 `Owner::Web`**（[`tests`] 里那条
+    /// 断言管这个）。⚠️ 例外是 `window.new` / `window.new-tab`（`Owner::Menu`，
+    /// `design/0071` §5.2 / `design/0083` §2.2）：它们占这张表只是为了**插在 `File` 的哪儿**，
+    /// 加速键仍由 `install_menu` 装。
     id: &'static str,
 }
 
@@ -568,81 +911,279 @@ enum SepSide {
     After,
     /// ⭐ **没有线**（`design/0038`）：该项与它后面那一项**连成一串**。
     ///
-    /// ⚠️ 它存在的唯一理由是「`打开目录… / 打开文件… / 快速打开…` 三连，只在最后一条后
-    /// 放一条分隔线」——`Before`/`After` 表达不出这个形态（每条各带一条线）。
+    /// ⚠️ 它存在的唯一理由是「`新建文件… / 打开… / 打开文件… / 快速打开…` 连成一串，
+    /// 只在最后一条后放一条分隔线」——`Before`/`After` 表达不出这个形态（每条各带一条线）。
     None,
 }
 
-/// ⭐ 装进菜单、**⛔ 没有原生加速键**的那些项（`design/0006` §9.3 第 2 条 ＋ `design/0011` §9.1 第 2 条）。
+/// ⭐ 装进菜单的那些项（`design/0006` §9.3 第 2 条 ＋ `design/0011` §9.1 第 2 条）。
+///
+/// ⚠️ **它们绝大多数没有原生加速键**（`Owner::Web`）；例外是 `window.new` 与
+/// `window.new-tab`（`Owner::Menu`，`design/0071` §5.2 / `design/0083` §2.2）：
+/// 它们在这张表里只解决"插在 `File` 的哪儿"，加速键由 `install_menu` 按 owner 决定装不装
+/// ——**两个维度别混**。
 ///
 /// ⚠️ `position` 的语义**不是**"原菜单里的下标"：它是**排在这一项前面的「非分隔线元素」个数**
 /// （原菜单项 ＋ 本组里已插入的项）。⚠️ 2026-10-24（`design/0038`）之前它恰好等于
 /// "原菜单下标"，两读法在只有一条分隔线的组里同值 ⇒ 当时看不出差别；
 /// 加了 `SepSide::None` 之后必须按"非分隔线条数"读——见 [`placements`] 的算法。
 const PLAIN_MENU_ITEMS: &[PlainMenuItem] = &[
-    // ⭐ `design/0038` §2.3：`File` 顶部三个打开入口（**都无加速键**，`⌘O`/`⇧⌘O`/`⌘P`
-    //    仍归前端 `keymap.js`）。⚠️ 它们是**同一串**：前两条之间、第二条与第三条之间都没有线，
-    //    只有 `快速打开…` 之后有一条（`SepSide::After`）⇒ `SepSide::None`。
-    // ⚠️ 文案全部来自 `SHORTCUTS` 的 `file.open-directory` / `file.open-file` / `file.quick-open`
-    //    （`menu_label` 就这么查），⛔ 这里一个字面量都没有（`INV-START-06`）。
+    // ⭐ `design/0083` §2.2（2026-11-15）：`File ▸ 新建标签页`（`⌘T`，`Owner::Menu`）。
+    //    ⚠️ 位置 **0**、**无分隔线**（`SepSide::None`）：它与下面那项 `新建窗口`
+    //    是**同一类动作**（造一个窗口形态），两项连成一串，线只放在这一对的末尾。
+    //    ⚠️ 它把 `新建窗口` 从 0 挤到 1，并让后面 9 项**再整体 +1**（1→2 … 9→10）。
     PlainMenuItem {
         submenu: "File",
         position: 0,
         sep: SepSide::None,
-        id: "file.open-directory",
+        id: WINDOW_NEW_TAB_ID,
     },
+    // ⭐ `design/0071` §5.2（阶段 4）：`File ▸ 新建窗口`（`⇧⌘N`，`Owner::Menu`）。
+    //    ⚠️ 位置 **1**、**下**分隔线（`SepSide::After`）：这一对造窗口的项与下面那一串
+    //    打开入口是两类动作（造一个窗口 / 取一份文档），所以要有一条线隔开。
+    //    ⚠️ 阶段 4 加它时它在 0（下面 9 项 +1）；`design/0083` 又在它前面插了
+    //    `新建标签页` ⇒ 现在在 1。
+    //    `position` 数的是"排在前面的非分隔线元素个数"，插进来项就要跟着改；
+    //    ⛔ 只改一项会让两项落到同一格（`同一子菜单里的插入位置互不相同` 的单测会红）。
     PlainMenuItem {
         submenu: "File",
         position: 1,
+        sep: SepSide::After,
+        id: WINDOW_NEW_ID,
+    },
+    // ⭐ `design/0038` §2.3：`File` 顶部三个打开入口（**都无加速键**，`⌘O`/`⇧⌘O`/`⌘P`
+    //    仍归前端 `keymap.js`）。⚠️ 它们是**同一串**：前两条之间、第二条与第三条之间都没有线，
+    //    只有 `快速打开…` 之后有一条（`SepSide::After`）⇒ `SepSide::None`。
+    // ⚠️ 文案全部来自 `SHORTCUTS` 的 `file.new` / `file.open` / `file.open-file` / `file.quick-open`
+    //    （`menu_label` 就这么查），⛔ 这里一个字面量都没有（`INV-START-06`）。
+    // ⭐ `design/0071` §3.2：第一项的 id 改成 `file.open`（文案随表变成「打开…」）。
+    // ⭐ `design/0071` §4.2（阶段 3）：`新建文件…` 插到位置 **1**（`SepSide::None`，与下面三条打开入口
+    //    连成一串——它跟"打开"是同一类动作：**造或取一份文档**）。
+    //    ⚠️ 阶段 4 又整体 +1（`新建窗口` 占 0），`design/0083` 再 +1（`新建标签页` 占 0），现在从 **2** 起。
+    PlainMenuItem {
+        submenu: "File",
+        position: 2,
+        sep: SepSide::None,
+        id: "file.new",
+    },
+    PlainMenuItem {
+        submenu: "File",
+        position: 3,
+        sep: SepSide::None,
+        id: "file.open",
+    },
+    PlainMenuItem {
+        submenu: "File",
+        position: 4,
         sep: SepSide::None,
         id: "file.open-file",
     },
     PlainMenuItem {
         submenu: "File",
-        position: 2,
+        position: 5,
         sep: SepSide::After,
         id: "file.quick-open",
     },
     // ⭐ `design/0012`：`File ▸ 保存`（**无加速键**，与下面 `用外部编辑器打开` 同形；`⌘S` 由前端接）。
     //
-    // ⚠️ 2026-10-24（`design/0038`）它从位置 0 **顺延到 3**：上面多了三条打开入口。
-    //    按"前面有几个非分隔线元素"数 = 三个打开项 ⇒ 3。
+    // ⚠️ 2026-10-24（`design/0038`）它从位置 0 **顺延到 3**（上面多了三条打开入口）；
+    //    ⚠️ `design/0071` §4.2（阶段 3）再**顺延到 4**（`新建文件…` 插到 0）；
+    //    ⚠️ 阶段 4 再**顺延到 5**（`新建窗口` 插到 0），`design/0083` 再**顺延到 6**（`新建标签页` 占 0）。
+    //    按"前面有几个非分隔线元素"数 = 六个同族项 ⇒ 6。
+    // ⚠️ 2026-11-15（`design/0076`）：分隔线由 `After` 改 **`None`**——
+    //    `保存 · 保存为 HTML · 导出为 PDF` 连成一串（三条都是"把当前文档交出去"）。
     PlainMenuItem {
         submenu: "File",
-        position: 3,
-        sep: SepSide::After,
+        position: 6,
+        sep: SepSide::None,
         id: "file.save",
     },
-    // ⚠️ 2026-10-24（`design/0038`）从位置 1 **顺延到 4**（前面有 4 个非分隔线元素）。
-    //    ⚠️ 最终是 `File ▸ [打开目录…, 打开文件…, 快速打开…, ―, 保存, ―, 用外部编辑器打开, ―, 关闭窗口]`。
+    // ⭐ `design/0076`：`File ▸ 保存为 HTML…`（**无加速键**，`⇧⌘S` 由前端接）。
+    //    ⚠️ 与 `保存` 同形：菜单项在、加速键不装原生（`Owner::Web`）。
+    PlainMenuItem {
+        submenu: "File",
+        position: 7,
+        sep: SepSide::None,
+        id: "file.export-html",
+    },
+    // ⭐ `design/0076`：`File ▸ 导出为 PDF…`（**无加速键**，`⇧⌘P` 由前端接）。
+    //    它下面是这条串的结束 ⇒ 带一条下分隔线（`SepSide::After`）。
+    PlainMenuItem {
+        submenu: "File",
+        position: 8,
+        sep: SepSide::After,
+        id: "file.export-pdf",
+    },
+    // ⭐ `design/0057`（2026-10-30）：`File ▸ 收藏 / 取消收藏`（**无加速键**，`⌘D` 由前端接）。
+    //    ⚠️ 排在 `导出为 PDF` 之后、"用外部编辑器打开"之前：它是**文档级**动作，
+    //    与上面那一批"把文档交出去/存下来"同类；⛔ 不开新的一级菜单
+    //    （`install_menu` 只往 `Menu::default` 的既有子菜单里插，一级菜单要另写装配分支）。
+    //    ⚠️ 它下面那条 `file.open-external-editor` 由 4 **顺延到 5**（2026-10-30），
+    //    再 **顺延到 6**（`design/0071` 阶段 3），再 **顺延到 7**（2026-11-15 `design/0076`
+    //    多了 `保存为 HTML…` / `导出为 PDF…` 两格），再 **顺延到 8**（阶段 4 的 `新建窗口`），
+    //    再 **顺延到 9**（`design/0083` 的 `新建标签页`）——
+    //    `position` 数的是"排在前面的非分隔线元素个数"，插进来一个就要一起改，
+    //    否则两项落到同一格（那条"同一子菜单里的插入位置互不相同"的单测会红）。
+    PlainMenuItem {
+        submenu: "File",
+        position: 9,
+        sep: SepSide::After,
+        id: "file.toggle-favorite",
+    },
+    // ⚠️ 2026-10-24（`design/0038`）从位置 1 **顺延到 4**（前面有 4 个非分隔线元素）；
+    //    ⚠️ 2026-10-30（`design/0057`）再**顺延到 5**（多了 `收藏 / 取消收藏`）；
+    //    ⚠️ `design/0071` 阶段 3 再**顺延到 6**（`新建文件…` 插到 0），
+    //    ⚠️ 2026-11-15（`design/0076`）再**顺延到 8**（多了 `保存为 HTML…` / `导出为 PDF…`），
+    //    ⚠️ 阶段 4 再**顺延到 9**（`新建窗口` 插到 0），`design/0083` 再**顺延到 10**（`新建标签页` 占 0）。
+    //    ⚠️ 最终是 `File ▸ [新建标签页, 新建窗口, ―, 新建文件…, 打开…, 打开文件…, 快速打开…, ―, 保存, 保存为 HTML…, 导出为 PDF…, ―, 收藏 / 取消收藏, ―, 用外部编辑器打开, ―, 关闭窗口]`。
     //
     //    ⚠️ **键换过、菜单项没动**（2026-10-16）：它对应的 `file.open-external-editor`
     //       加速键已从 `⌘E` 挪到 `⇧⌘E`（`⌘E` 让给 `edit.toggle`）。⭐ 而**这一项一个字没改**——
     //       它本来就是**无加速键**的，换键前后都只负责把动作送到前端。
     PlainMenuItem {
         submenu: "File",
-        position: 4,
+        position: 10,
         sep: SepSide::After,
         id: "file.open-external-editor",
     },
-    // ⚠️ 位置 **7**：macOS 的 `Edit` 是 `Undo / Redo / ― / Cut / Copy / Paste / Select All`
-    //    共 **7** 项（`kb/0016` §1 那张表）⇒ 排在这一项前面的是 7 个非分隔线元素。
-    //    ⭐ 这不是随手挑的数：Apple 的 `Edit ▸ Find` 就在 `Select All` 之后，
-    //       而且**要有一条分隔线**（`sep: Before` ⇒ 插完是 `[… Select All, ―, 查找…]`）。
+    // ⭐⭐ `bugs/0310`（2026-11-11）：`Edit` 顶部两项**替换掉** `Menu::default` 的预定义
+    //    `Undo` / `Redo`。`install_menu` 先把那两项 `remove_at(0)` 摘掉（它们带着
+    //    `⌘Z`/`⇧⌘Z` 的 NSMenuItem key equivalent ⇒ 把键吞在 AppKit 那一层），
+    //    这里再在**同两个格子**（0、1）放回无加速键的自己人 —— 菜单的项序因此**一个位置都不变**。
+    //    ⚠️ 不加分隔线（`SepSide::None`）：原菜单的线在 `Redo` 之后，仍由上游那条留着。
+    //    ⚠️ 点击路径照旧走 `rmd://menu` → `keymap.dispatch`；⚠️ 就地编辑态里
+    //       `dispatch` 会被 `ctx.editable()` 挡下（隐藏 textarea 是 focused 的可编辑元素）——
+    //       那是既有 `INV-SET-05` 的口径，不在本条范围内；`⌘Z` 的键盘路径由
+    //       `main.js::makeLiveView` 自己认领，不经过 `dispatch`。
+    PlainMenuItem {
+        submenu: "Edit",
+        position: 0,
+        sep: SepSide::None,
+        id: "edit.undo",
+    },
+    PlainMenuItem {
+        submenu: "Edit",
+        position: 1,
+        sep: SepSide::None,
+        id: "edit.redo",
+    },
+    // ⭐⭐ `design/0077`（2026-11-15）：`Select All` 之后是四种复制格式与字面粘贴。
+    //    ⚠️ 位置 **7..=11**：macOS 的 `Edit` 原本是 `Undo / Redo / ― / Cut / Copy / Paste /
+    //    Select All` 共 **7** 项（`kb/0016` §1）；`bugs/0310` 摘掉预定义 Undo/Redo 后又由
+    //    上面两项放回同两个格子 ⇒ 项数不变，这一组从 7 开始。
+    //    ⚠️ 只有组首带一条上分隔线（`Before`），组内四项与「字面粘贴」连成一串（`None`）——
+    //    它们读起来是**一组格式选择**，⛔ 不是六个互不相关的动作。
+    //    ⚠️ 下面的 `edit.find` 因此从 7 顺延到 **12**（前面有 7 个原有元素 ＋ 5 个新元素）。
     PlainMenuItem {
         submenu: "Edit",
         position: 7,
         sep: SepSide::Before,
+        id: "edit.copy-markdown",
+    },
+    PlainMenuItem {
+        submenu: "Edit",
+        position: 8,
+        sep: SepSide::None,
+        id: "edit.copy-html",
+    },
+    PlainMenuItem {
+        submenu: "Edit",
+        position: 9,
+        sep: SepSide::None,
+        id: "edit.copy-plain",
+    },
+    PlainMenuItem {
+        submenu: "Edit",
+        position: 10,
+        sep: SepSide::None,
+        id: "edit.copy-rich",
+    },
+    PlainMenuItem {
+        submenu: "Edit",
+        position: 11,
+        sep: SepSide::None,
+        id: "edit.paste-literal",
+    },
+    // ⚠️ 位置 **12**：前面是 7 个原有元素 ＋ 5 个 `design/0077` 新增项。
+    //    ⭐ Apple 的 `Edit ▸ Find` 惯例仍在 `Select All` 之后（现在隔着复制组），
+    //       且**要有一条分隔线**（`sep: Before` ⇒ 插完是 `[… 字面粘贴, ―, 查找…]`）。
+    PlainMenuItem {
+        submenu: "Edit",
+        position: 12,
+        sep: SepSide::Before,
         id: "edit.find",
+    },
+    // ⭐ `design/0075`：`查找替换…` 紧跟 `查找…`，**同一条分隔线之内**（`SepSide::None`）。
+    //    ⚠️ 位置 **13**：`design/0077` 的复制组插在 7..=11，`edit.find` 顺延到 12
+    //       ⇒ 它自己就是第 13 个（`position` 数的是"排在前面的非分隔线元素"）。
+    //    ⚠️ 文案由 `menu_label` 从 `SHORTCUTS` 派生（`INV-START-06`：⛔ 菜单表里没有字面量）。
+    PlainMenuItem {
+        submenu: "Edit",
+        position: 13,
+        sep: SepSide::None,
+        id: "edit.replace",
+    },
+    // ⭐ `design/0079`（2026-11-14 P2）：**`View` 组的五项**——行号 / 专注 / 缩放三档。
+    //    ⚠️ `View` 在 `Menu::default` 里**只有 Full Screen 一项**（`kb/0016` §1），
+    //    而 `install_menu` 先在该子菜单 index 0 插了「显示/隐藏侧边栏」项
+    //    （`⌘B`，`Owner::Menu`）⇒ 本组 `position` 从 **1** 起算，数的是
+    //    "排在前面的非分隔线元素个数"（侧边栏项 ＋ 本组已插入项）。
+    // ⚠️ 分隔线形态：侧边栏项之后一条（`行号` 用 `SepSide::After`），
+    //    行号与专注 / 缩放不是同一类动作；缩放三档连成一串（`None`），
+    //    最后一条 `缩小` 之后一条（`After`），接 Full Screen。
+    //    ⇒ `侧边栏 ｜ 行号 ｜ ― ｜ 专注 ｜ 实际大小 ｜ 放大 ｜ 缩小 ｜ ― ｜ Full Screen`。
+    // ⚠️ 文案全部由 `menu_label` 从 `SHORTCUTS` 派生（`INV-START-06`：⛔ 菜单表里没有字面量）。
+    PlainMenuItem {
+        submenu: "View",
+        position: 1,
+        sep: SepSide::After,
+        id: "view.toggle-line-numbers",
+    },
+    PlainMenuItem {
+        submenu: "View",
+        position: 2,
+        sep: SepSide::None,
+        id: "view.toggle-zen",
+    },
+    PlainMenuItem {
+        submenu: "View",
+        position: 3,
+        sep: SepSide::None,
+        id: "view.zoom-actual",
+    },
+    PlainMenuItem {
+        submenu: "View",
+        position: 4,
+        sep: SepSide::None,
+        id: "view.zoom-in",
+    },
+    PlainMenuItem {
+        submenu: "View",
+        position: 5,
+        sep: SepSide::After,
+        id: "view.zoom-out",
     },
 ];
 
-/// 本表里的动作 id 集。
+/// 本表里**无原生加速键**那一半的动作 id 集（`Owner::Web`）。
 ///
 /// ⭐ **派生自 [`PLAIN_MENU_ITEMS`]，⛔ 不是第二份字面清单**——
 /// 两份清单并存正是被评审 R3 否掉的"伪互锁"的形态（`MENU_ITEM_IDS` 的注释里也记着这条）。
+///
+/// ⚠️ **为什么按 owner 过滤**（`design/0071` §5.2，2026-11-15）：`File ▸ 新建窗口` /
+/// `新建标签页`（`design/0083`）是 `Owner::Menu`，但它们要**按位置表插进 `File` 的前两格**，
+/// 所以也占这张表的两行。
+/// 它们已经由 [`MENU_ITEM_IDS`] 覆盖（装键 + 重贴），若这里再返回一次，
+/// [`relabel_plan`] 里就会**出现两项**，而 `install_menu`/`tests` 那两条集合等式
+/// 都以"恰好一份"为前提。⇒ 这里只返回**归前端**的那半，
+/// 并把"位置表里 `Owner::Menu` 成员只能是那两个"钉在单测里
+/// （`位置表里唯一的_owner_menu_是新建窗口与新建标签页`）。
 fn plain_menu_ids() -> Vec<&'static str> {
-    PLAIN_MENU_ITEMS.iter().map(|p| p.id).collect()
+    PLAIN_MENU_ITEMS
+        .iter()
+        .map(|p| p.id)
+        .filter(|id| shortcut(id).map(|s| s.owner == Owner::Web).unwrap_or(false))
+        .collect()
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -994,11 +1535,48 @@ fn install_menu(app: &tauri::AppHandle, lang: crate::lang::Lang) -> Result<(), S
         }
     }
 
-    // —— ③ 无加速键的菜单项：外部编辑器进 `File`（`design/0006`）、`⌘F` 进 `Edit`（`design/0011`）——
+    // —— ②.5 `Edit`：摘掉 `Menu::default` 自带的预定义 `Undo` / `Redo`（`bugs/0310`）——
+    //
+    // ⚠️⚠️ **不摘的后果是静默的**：`muda 0.20.0` 给这两项装了 `⌘Z` / `⇧⌘Z`
+    //    （`items/predefined.rs` 的 `Undo`/`Redo` 两条），经 `platform_impl/macos/mod.rs`
+    //    写进 `NSMenuItem` 的 key equivalent ⇒ AppKit 在事件送达 key window **之前**就消费掉，
+    //    前端 `keydown` 一条都收不到（真机：「就地编辑里 `⌘Z` 完全没反应」）。
+    //    所有离屏探针看不见它——它们不经过 AppKit 的菜单加速键。
+    // ⇒ 摘掉后由下面 ③ 里的 `edit.undo` / `edit.redo`（**无加速键**）占回同两个格子。
+    // ⚠️ **必须先摘再插**：`insert` 的下标是"当时那个表状态"下的，顺序反了会插到别处去。
+    match find_submenu(&menu, submenu_titles("Edit")) {
+        Some(sub) => {
+            let n = sub
+                .items()
+                .map_err(|e| format!("读「Edit」子菜单项失败：{e}"))?
+                .len();
+            // ⚠️ 上游布局变了（`Undo`/`Redo` 不在最前面）时**响亮报**，⛔ 不静默继续：
+            //    摘错一项的表现是"菜单里少了 Cut"或"撤销项还在吞键"，两种都看不出根因。
+            if n < 2 {
+                diag!("⛔ 「Edit」子菜单只有 {n} 项（预期 ≥2：Undo / Redo）——Tauri 的默认菜单布局变了？");
+                return Err(format!("Edit 子菜单只有 {n} 项，摘不掉预定义 Undo/Redo"));
+            }
+            for _ in 0..2 {
+                sub.remove_at(0)
+                    .map_err(|e| format!("摘「Edit」预定义项失败：{e}"))?;
+            }
+        }
+        None => {
+            diag!("⛔ 「Edit」子菜单查不到（按标题找的）——Tauri 的默认菜单布局变了？");
+            return Err("Edit 子菜单查不到（它没有稳定的 id，只能按标题找）".to_string());
+        }
+    }
+
+    // —— ③ [`PLAIN_MENU_ITEMS`] 那些项（**绝大多数无加速键**）：外部编辑器进 `File`
+    //    （`design/0006`）、`⌘F` 进 `Edit`（`design/0011`）、`新建窗口` 进 `File`
+    //    （`design/0071` §5.2——它是**唯一带键**的那一项，见下面按 owner 的分支）——
     // ⚠️ **按子菜单标题分组**，⛔ 不是"一张扁平清单全塞进同一个子菜单"：
     //    `⌘F` 按 macOS 惯例归 `Edit`，而 `Edit` 的插入位置是**末尾**（7）、`File` 的是 0，
     //    共用一个 `count++` 会把项插错地方（**不报错**，只是菜单里多出一项在怪位置）。
-    // ⚠️ **不加 `.accelerator(...)`**：外部编辑器与 `⌘F` 都归前端（表里那两行的注释）。
+    // ⚠️ 加速键**按 owner 装**（`design/0071` §5.2）：本组绝大多数是 `Owner::Web`，
+    //    ⛔ 不设 `.accelerator(...)`（外部编辑器与 `⌘F` 都归前端，表里那些行的注释）；
+    //    唯一 `Owner::Menu` 的是 `window.new`——它的动作整在 Rust 里，
+    //    必须由 AppKit 把 `⇧⌘N` 送进 `on_menu_event`。
     //    两条路径都通到同一个动作 id，所以"菜单点了"与"按了键"行为一致（§2.1 ⑧ 的通道）。
     {
         // ⚠️ 分组顺序按**表里的首次出现顺序**（`Vec` + `contains`），⛔ 不用 `BTreeMap`——
@@ -1036,7 +1614,11 @@ fn install_menu(app: &tauri::AppHandle, lang: crate::lang::Lang) -> Result<(), S
                     sub.insert(&sep, at)
                         .map_err(|e| format!("插「{}」的分隔线失败：{e}", s.label(lang)))?;
                 }
-                let item = MenuItemBuilder::with_id(s.id, s.label(lang))
+                let mut builder = MenuItemBuilder::with_id(s.id, s.label(lang));
+                if s.owner == Owner::Menu {
+                    builder = builder.accelerator(s.accel);
+                }
+                let item = builder
                     .build(app)
                     .map_err(|e| format!("建「{}」失败：{e}", s.label(lang)))?;
                 sub.insert(&item, place.item_at)
@@ -1473,16 +2055,18 @@ fn set_language(
     state: tauri::State<'_, AppState>,
     preference: String,
 ) -> SetLanguageReply {
-    let (pref, effective, save_err) = state.with(|s| {
-        s.config.set_language_preference(&preference);
-        let pref = s.config.language_preference();
-        // ⚠️ 取系统语言那一步在 `system` 档才发生，且有 200 ms 预算与 `OnceLock` 缓存
-        //    （`crate::lang`）——这里**不会**卡住命令。
-        let effective = crate::lang::effective(pref);
-        let err = s.config.save(&s.config_path).err();
-        (pref, effective, err)
+    // ⚠️ 配置写入只有**一个**入口（`state.commit`，L1）：⛔ 不再在会话锁里
+    //    `config.save`——`Session.config` 现在是**只读副本**，落盘与副本同步都由
+    //    `AppState` 做（`design/0071` §5.2 的锁序）。
+    //    两段式：`commit` 闭包里只碰 `&mut Config`（⛔ 不做 I/O、⛔ 不碰 `Session`）。
+    let (pref, written) = state.commit(|c| {
+        c.set_language_preference(&preference);
+        c.language_preference()
     });
-    if let Some(e) = save_err {
+    // ⚠️ 取系统语言那一步在 `system` 档才发生，且有 200 ms 预算与 `OnceLock` 缓存
+    //    （`crate::lang`）——这里**不会**卡住命令。
+    let effective = crate::lang::effective(pref);
+    if let Err(e) = written {
         diag_stderr!("⚠️ 界面语言存不下来（本次仍然生效，重启后回到旧偏好）：{e}");
         diag_file!(
             "⚠️ 界面语言存不下来 err_class={} err_len={}",
@@ -1590,11 +2174,57 @@ fn shortcuts_dto() -> Vec<ShortcutDto> {
         .collect()
 }
 
+/// ⭐ **窗口标题**（`design/0083` §2.3）：原生标签的标签名就是窗口标题，
+/// 所以标题必须跟着当前文档走，⛔ 不能再停在硬编码的 `"rmd"`。
+///
+/// # 谁算标题、谁只负责送
+///
+/// **前端算**：它才是"这个窗口现在显示的是哪一份"的持有者（`currentDoc` / 草稿号），
+/// 而后端这边同一件事已经有三处状态（`current_document` / `draft` / 尚未提交的打开请求），
+/// 再在后端拼一次就是**第二个真值**（与 `Session::mode()` 拒绝那种形态同族）。
+/// ⇒ 本命令只做两件事：**清洗**（控制字符 / 长度）与 `set_title`。
+///
+/// ⚠️ 清洗不是可选的：标题来自文件名（用户数据），换行会把标题栏撑成两行；
+/// 超长文件名会挤掉窗口按钮。⇒ 一律去掉控制字符、截到 [`WINDOW_TITLE_MAX_CHARS`]，
+/// 清洗后为空则回落到 `rmd`。
+/// ⚠️ 它**不是写盘命令**、不碰授权、不读文档（`INV-FS-04` 一个字节没动）。
+#[tauri::command]
+fn set_window_title(window: tauri::WebviewWindow, title: String) -> Result<(), String> {
+    window
+        .set_title(&sanitize_window_title(&title))
+        .map_err(|e| e.to_string())
+}
+
+/// 标题最多保留多少个**字符**（⛔ 不是字节：中文文件名按字符数才算得对）。
+const WINDOW_TITLE_MAX_CHARS: usize = 120;
+
+/// [`set_window_title`] 的纯函数那一半（可单测）。
+///
+/// ⚠️ 只去**控制字符**（含换行 / 制表符），⛔ 不动零宽字符与方向控制符——
+/// 后者是文件名里合法存在的东西，删掉会让标题与磁盘上的名字对不上。
+fn sanitize_window_title(raw: &str) -> String {
+    let cleaned: String = raw
+        .chars()
+        .filter(|c| !c.is_control())
+        .take(WINDOW_TITLE_MAX_CHARS)
+        .collect();
+    let trimmed = cleaned.trim();
+    if trimmed.is_empty() {
+        "rmd".to_string()
+    } else {
+        trimmed.to_string()
+    }
+}
+
 /// ⭐ **真的**键位表，喂给 `design/0047` 的离屏探针（`make probe-live-block` 的 Stage A）。
 ///
 /// ⚠️ 存在的唯一理由是：纵向链路（§7.1 `0h`）要按 `⌘S`，而探针的假后端若自己写一份键位，
 /// 那张表会随产品漂移——漂移后的表现是"某个键按不动"，与**产品没接线**长得一模一样。
 /// ⇒ 只此一份，由真表序列化出去（⛔ 探针里不许出现按键字面量）。
+///
+/// ⚠️ **只在测试里编**：唯一的消费者是 `commands/document.rs` 那条
+/// `#[test] #[ignore]` 的夹具导出（`make probe-live-block` 点名跑它）。
+#[cfg(test)]
 pub(crate) fn shortcuts_json() -> serde_json::Value {
     serde_json::to_value(shortcuts_dto()).expect("键位表序列化失败")
 }
@@ -1675,7 +2305,12 @@ fn location_dialog(lang: crate::lang::Lang) -> LocationDialog {
 fn ui_language(app: &tauri::AppHandle) -> crate::lang::Lang {
     use tauri::Manager;
     app.try_state::<AppState>()
-        .map(|s| s.with(|s| crate::lang::effective(s.config.language_preference())))
+        .map(|s| {
+            // ⚠️ 会话是按窗口的（`design/0071` §5.2）⇒ 取"用户此刻在看的那个窗口"的副本。
+            //    ⚠️ 锁序：`active_label()` 拿的是 L1，**先放锁**再进 L2（⛔ 不嵌套）。
+            let label = s.active_label();
+            s.with(&label, |s| crate::lang::effective(s.config.language_preference()))
+        })
         .unwrap_or_else(|| crate::lang::effective("system"))
 }
 
@@ -1764,12 +2399,21 @@ fn cli_tool_run(app: &tauri::AppHandle, loc: Option<cli_tool::Location>) {
 ///
 /// ⚠️ 失败要**响亮**（`.agent/spec.md` 纪律 6）：静默失败的表现是
 /// "点了菜单，状态条一个字都不变"，而 stderr 里什么都没有。
+///
+/// ⚠️ 落点 = **最近聚焦的窗口**（`design/0071` §5.2 的事件表）：安装/卸载入口在
+/// 应用子菜单里，那条通道是**进程级**的，只能落到"用户此刻在看的那个窗口"。
 fn emit_cli_tool(app: &tauri::AppHandle, payload: &cli_tool::Payload) {
-    use tauri::Emitter;
-    if let Err(e) = app.emit("rmd://cli-tool", payload.clone()) {
-        diag_stderr!("⛔ 命令行工具结果发不到前端：{e}");
+    use tauri::{Emitter, Manager};
+    // ⚠️ 拿不到状态（还没 `manage`）时落回主窗口，⛔ 不用 `state()` 免得 panic：
+    //    这条通道可能由后台线程在很早的时序上走到。
+    let target = app
+        .try_state::<AppState>()
+        .map(|s| s.active_label())
+        .unwrap_or_else(|| "main".to_string());
+    if let Err(e) = app.emit_to(target.as_str(), "rmd://cli-tool", payload.clone()) {
+        diag_stderr!("⛔ 命令行工具结果发不到前端（{target}）：{e}");
         diag_file!(
-            "⛔ 命令行工具结果转发失败 err_class={} err_len={}",
+            "⛔ 命令行工具结果转发失败 label={target} err_class={} err_len={}",
             logging::err_class(&e),
             e.to_string().len()
         );
@@ -1794,7 +2438,7 @@ fn log_cli_tool(p: &cli_tool::Payload) {
 ///
 /// ⚠️ **菜单点击不会自动到达前端**：`tauri-2.12.3/src/manager/menu.rs` 全文
 /// **零** `emit`（`kb/0016` §5 的 grep）。菜单是 Rust 建的，事件也只到 Rust。
-/// 所以我们自己建这条通道：`on_menu_event` → `emit("rmd://menu", id)` →
+/// 所以我们自己建这条通道：`on_menu_event` → `emit_to(active, "rmd://menu", id)` →
 /// 前端 `event.listen`。⚠️ 那条 `emit` 走的是 **core 插件命令**，受 ACL 管
 /// （`core:event:allow-listen`）——那是步骤 0 要真机验的第一件事。
 ///
@@ -1820,22 +2464,452 @@ fn handle_menu_event(app: &tauri::AppHandle, id: &str) {
             cli_tool_run(app, None);
             return;
         }
+        // ⭐ `design/0071` §5.2（阶段 4）：**新建窗口**整个在后端，⛔ 不转发前端。
+        //    ⚠️ 它**在** `SHORTCUTS` 里（所以下面那句早退本来也会放过它），
+        //    但这里必须**先**认——否则它会走到末尾的 `rmd://menu`，而前端没有这个动作。
+        WINDOW_NEW_ID => {
+            open_new_window(app);
+            return;
+        }
+        // ⭐ `design/0083` §2.2：**新建标签页**同样是整个动作在后端。
+        //    ⚠️ 也必须**先**认：走到末尾就是 `rmd://menu`，而前端没有这个动作。
+        WINDOW_NEW_TAB_ID => {
+            open_new_tab(app);
+            return;
+        }
         _ => {}
     }
     if shortcut(id).is_none() {
         return;
     }
+    use tauri::Manager;
     use tauri::Emitter;
+    // ⚠️ 菜单是**进程级**的（`MenuEvent` 不带来源窗口）⇒ 落点 = 最近聚焦的那个窗口
+    //    （`WindowEvent::Focused(true)` 记下的 `active`）。
+    let target = app.state::<AppState>().active_label();
     // ⚠️ 失败要**响亮**（`.agent/spec.md` 纪律 6 的同一条精神）：
     //    静默失败的表现是"菜单点下去没反应、stderr 里什么都没有"。
-    if let Err(e) = app.emit("rmd://menu", id) {
-        diag_stderr!("⛔ 菜单事件转发失败（{id}）：{e}");
+    if let Err(e) = app.emit_to(target.as_str(), "rmd://menu", id) {
+        diag_stderr!("⛔ 菜单事件转发失败（{id} → {target}）：{e}");
         diag_file!(
-            "⛔ 菜单事件转发失败 id={id} err_class={} err_len={}",
+            "⛔ 菜单事件转发失败 id={id} label={target} err_class={} err_len={}",
             logging::err_class(&e),
             e.to_string().len()
         );
     }
+}
+
+/// ⭐ `File ▸ 新建窗口`（`design/0071` §5.2）：**整个动作在 Rust 里**。
+///
+/// 三步（与 `commands::open_in_new_window` 同形，`design/0068` §2.1 的生命周期）：
+/// ① `next_window_label`；② **先插会话桶**（页面脚本一起来就调 `get_session`）；
+/// ③ `create_window`，失败则 `remove_window` 回滚。
+///
+/// ⚠️ 新窗口**不继承任何授权**（Q40）：`Session::blank` 给的是空 `grants` / 空树，
+/// 它自己再去要目录或文件。
+fn open_new_window(app: &tauri::AppHandle) {
+    use tauri::Manager;
+
+    let state = app.state::<AppState>();
+    let label = state.next_window_label();
+    // ⚠️ 两次取用**不嵌套加锁**：`config()` 拿的是 L1 的克隆（用完即放），
+    //    `insert_window` 只拿 L0 做一次 insert，`config_path` 不加锁。
+    state.insert_window(
+        &label,
+        Session::blank(state.config(), state.shared().config_path.clone()),
+    );
+    diag!("▶ 新建窗口：{label}");
+    if let Err(e) = create_window(app, &label) {
+        // ⚠️ 建窗失败 ⇒ 回滚那个桶（否则表里留着一个永远没有页面的会话）。
+        state.remove_window(&label);
+        diag_stderr!("⛔ 新建窗口失败（{label}）：{e}");
+        diag_file!("⛔ 新建窗口失败 label={label} err_len={}", e.len());
+    }
+}
+
+/// ⭐ `File ▸ 新建标签页`（`design/0083` §2.2）：**整个动作在 Rust 里**。
+///
+/// 四步，顺序不能换：
+/// ① 取**聚焦窗口**的 label（`active_label`）当锚点——标签要并进"用户正在看的那个"窗口；
+/// ② 与 `open_new_window` 同形地造一个新窗口（label ＋ 会话桶 ＋ `create_window`）；
+/// ③ `addTabbedWindow:ordered:` 把它并进锚点的原生标签组（FFI 见
+///    [`crate::fs::order::foundation::add_tabbed_window`]）；
+/// ④ `set_focus()` **选中**新标签——`addTabbedWindow` 只保证"并进去了"，⛔ 不保证选中。
+///
+/// ⚠️ 失败**不能留半截**：③ 失败 ⇒ `destroy()` 那个新窗口 ＋ `remove_window` 回滚会话桶。
+///    留下的形态会是"一个游离的空窗口 + 表里一个空桶"，而用户以为"什么也没发生"。
+/// ⚠️ 新标签**不继承任何授权**（与 `⇧⌘N` 同一条，Q40）：它就是一张空白的导航页，
+///    用户在新标签里自己去开目录 / 文件。⭐ 这也是 `⌘T` 与"再开一个新窗口"的区别
+///    只在**形态**、不在**语义**的原因——两者拿到的是同一份空会话。
+/// ⚠️ 它**不是**"复制当前文档"：那样会造出两个窗口各持一份同路径的编辑态，
+///    保存时谁覆盖谁没有答案（`INV-EDIT-02` 的"唯一编辑落点"在窗口维度上被破掉）。
+fn open_new_tab(app: &tauri::AppHandle) {
+    use tauri::Manager;
+
+    let state = app.state::<AppState>();
+    let anchor = state.active_label();
+    let label = state.next_window_label();
+    state.insert_window(
+        &label,
+        Session::blank(state.config(), state.shared().config_path.clone()),
+    );
+    diag!("▶ 新建标签页：{label}（并入 {anchor}）");
+    let opened = match create_window(app, &label) {
+        Ok(w) => w,
+        Err(e) => {
+            state.remove_window(&label);
+            diag_stderr!("⛔ 新建标签页失败（建窗 {label}）：{e}");
+            diag_file!("⛔ 新建标签页失败 label={label} err_len={}", e.len());
+            return;
+        }
+    };
+    // ⚠️ 锚点窗口可能在"建新窗口"这一小段时间里被关掉（不常见，但它是用户能做的动作）
+    //    ⇒ 取不到就按失败处理，⛔ 不把新窗口留在屏幕上假装成功。
+    let merged = match app.get_webview_window(&anchor) {
+        Some(anchor_win) => merge_window_as_tab(&anchor_win, &opened),
+        None => Err("锚点窗口已经不在了".to_string()),
+    };
+    if let Err(e) = merged {
+        // ⚠️ 先关窗口、再摘桶：`destroy` 会触发 `Destroyed` 事件，那条路径自己会走
+        //    `remove_window`，但本函数**不依赖**它的时序（上游顺序不是我们的正确性前提）。
+        let _ = opened.destroy();
+        state.remove_window(&label);
+        diag_stderr!("⛔ 新建标签页失败（{label} → {anchor}）：{e}");
+        diag_file!("⛔ 新建标签页并组失败 label={label} anchor={anchor} err_len={}", e.len());
+        return;
+    }
+    // ⭐ 选中新标签：`addTabbedWindow:ordered:` 只把它并进去，⛔ 不切换选中项。
+    if let Err(e) = opened.set_focus() {
+        // ⚠️ 这里**不回滚**：窗口已经并进去了，用户点一下那个标签就能用。
+        //    静默才是问题（表现为"按了 ⌘T，好像什么都没发生"）。
+        diag_stderr!("⛔ 新建标签页没能聚焦（{label}）：{e}");
+        diag_file!("⛔ 新建标签页聚焦失败 label={label} err_len={}", e.to_string().len());
+    }
+}
+
+/// 把一个窗口并进另一个窗口的原生标签组（`design/0083` §2.2）。
+///
+/// ⚠️ 两个 `NSWindow` 指针都从**活着的** Tauri 窗口取；调用点（菜单事件）在事件循环线程上，
+/// 满足 AppKit 的主线程要求。
+#[cfg(target_os = "macos")]
+fn merge_window_as_tab(
+    anchor: &tauri::WebviewWindow,
+    tab: &tauri::WebviewWindow,
+) -> Result<(), String> {
+    let a = anchor
+        .ns_window()
+        .map_err(|e| format!("取锚点窗口的 NSWindow 失败：{e}"))?;
+    let t = tab
+        .ns_window()
+        .map_err(|e| format!("取新窗口的 NSWindow 失败：{e}"))?;
+    if crate::fs::order::foundation::add_tabbed_window(a, t, true) {
+        Ok(())
+    } else {
+        Err("NSWindow 指针为空".to_string())
+    }
+}
+
+/// 非 macOS：原生窗口标签是 AppKit 的东西，⛔ 不假装成功。
+#[cfg(not(target_os = "macos"))]
+fn merge_window_as_tab(
+    _anchor: &tauri::WebviewWindow,
+    _tab: &tauri::WebviewWindow,
+) -> Result<(), String> {
+    Err("只有 macOS 支持原生窗口标签".to_string())
+}
+
+/// ⭐⭐ `bugs/0058`（第二版）：把「这一击想开新窗口 / 想把页面导航走」**交回前端**。
+///
+/// # 为什么必须在这一层
+///
+/// macOS 的 WKWebView 把 **`⌘`-点击 / 中键**当作"用新窗口打开这条链接"，
+/// 由 UI 进程直接处理 ⇒ **页面里的 `click` 委托收不到**。用户实测：把 `owns()`
+/// 改成"`⌘` 也算打开"之后**仍然毫无反应**（2026-11-02），而那正是本条存在的理由——
+/// 在页面里修不到的手势，只能回到它真正露面的地方接。
+///
+/// # 前端拿到什么、不拿到什么
+///
+/// ⚠️ 载荷里的 URL **只用于排查**（写进日志）：相对链接在这一层已经被解析成
+/// `tauri://localhost/…`，**倒推不回文档目录**（倒推错的路径比不打开更糟）。
+/// ⇒ 前端用 DOM 里指针下的那条 `#doc a[href]` 当判据，分类与授权仍旧只走
+/// 后端 `open_link`（`INV-LINK-03/08` 一个字节没动）。
+///
+/// ⛔ 仍然 `Deny`：应用里不开一个没有地址栏的浏览窗口（`design/0026` §2.2 ②）。
+///
+/// ⚠️ `label` 是**触发它的那个窗口**（`design/0071` §5.2 的事件表）：`on_navigation` /
+/// `on_new_window` 的闭包按建窗时捕获的 label 传进来，事件**只投那个窗口**——
+/// ⛔ 别改成 `active`：`⌘`-点击落在哪个窗口，就该由哪个窗口响应。
+fn bridge_link_activation(app: &tauri::AppHandle, label: &str, source: &str, url: &str) {
+    use tauri::Emitter;
+    // ⚠️ 失败要**响亮**：这一条静默的表现就是"⌘-点击毫无反应"，而 stderr 里什么都没有。
+    if let Err(e) = app.emit_to(label, "rmd://link-activation", url.to_string()) {
+        diag_stderr!("⛔ 链接激活事件转发失败（{source} → {label}）：{e}");
+        diag_file!(
+            "⛔ 链接激活事件转发失败 source={source} label={label} err_class={}",
+            logging::err_class(&e)
+        );
+    }
+    // ⚠️ 只记 URL（路径级），⛔ 不记正文。
+    diag_file!("▶ 链接激活请求 source={source} label={label} url_len={} url={url}", url.len());
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// 建窗口的唯一入口（`design/0071` §5.2 / `design/0068` §2.1）
+// ─────────────────────────────────────────────────────────────────────────
+
+/// 新窗口的默认内尺寸（逻辑像素）。⚠️ 只有一处：`create_window` 与级联落点都要用它。
+const WINDOW_INNER_W: f64 = 1000.0;
+const WINDOW_INNER_H: f64 = 800.0;
+
+/// 级联每开一扇窗，往下右各挪的距离（逻辑像素）。
+const CASCADE_STEP: f64 = 28.0;
+
+/// 级联最多试多少格（窗口多到铺满整块可用区时的上限；⛔ 不在 UI 线程里无限找位）。
+const CASCADE_MAX_TRIES: i32 = 64;
+
+/// ⭐ **级联落点**（`design/0081` §2.1 ①；⭐ 纯函数，⛔ 不碰窗口、⛔ 不加锁）。
+///
+/// 为什么要有它：`create_window` 原先是无条件 `.center()`，两扇 `⇧⌘N` 出来的窗口
+/// **逐像素重合**——用户看到的是"按了没反应"（用户 2026-11-15 原话：
+/// 「窗口的位置不能跟以前的一样，完全覆盖，完全不知道是什么」）。
+///
+/// 规则（全部**逻辑像素**，与 `WebviewWindowBuilder::position` 同一口径）：
+/// 1. 先从**基准窗口**（当前聚焦那扇）往右下挪一格 —— 这就是用户看得见的"级联"；
+/// 2. 那一格若已被别的窗口占着（原点相距 < 半格），从可用区左上角按格铺开，取第一个空位；
+/// 3. 结果**夹在工作区内**；窗口比工作区还大就夹到左上角（⛔ 不夹成负数）。
+///
+/// ⚠️ 判"占着"用**半格容差**而不是精确相等：实测里窗口原点会带一两个像素的抖动，
+/// 精确相等会让避让形同虚设。
+/// ⚠️ 参数 `outer` 是**外框**尺寸（含标题栏）——夹取要用外框，⛔ 别拿内尺寸顶替，
+/// 否则窗口下沿会探出可用区。
+fn cascade_origin(
+    base: (f64, f64),
+    outer: (f64, f64),
+    work_pos: (f64, f64),
+    work_size: (f64, f64),
+    occupied: &[(f64, f64)],
+    step: f64,
+) -> (f64, f64) {
+    let step = if step > 0.0 { step } else { 1.0 };
+    let (wx, wy) = work_pos;
+    // ⚠️ `max` 兜住"窗口比工作区还大"：那时夹取区间退化成单点（左上角）。
+    let max_x = (wx + work_size.0 - outer.0).max(wx);
+    let max_y = (wy + work_size.1 - outer.1).max(wy);
+    let clamp = |p: (f64, f64)| (p.0.clamp(wx, max_x), p.1.clamp(wy, max_y));
+    // ⚠️ **基准窗口本身也算"占着"**：夹取可能把第一格拉回它的原点上（基准贴着
+    //    右下角时就是这样），那时"不重合"只能靠这条兜住——⛔ 别指望调用方
+    //    把基准也塞进 `occupied`（那是一条隐式契约，漏了就是两扇窗精确重合）。
+    let near = |a: (f64, f64), b: (f64, f64)| {
+        (a.0 - b.0).abs() < step * 0.5 && (a.1 - b.1).abs() < step * 0.5
+    };
+    let taken =
+        |p: (f64, f64)| near(p, base) || occupied.iter().any(|o| near(*o, p));
+
+    // ① 正常情况：基准窗口右下挪一格。
+    let first = clamp((base.0 + step, base.1 + step));
+    if !taken(first) {
+        return first;
+    }
+    // ② 那一格有人（连续开窗、窗口又被拖过）⇒ 从可用区左上角按格铺开。
+    for k in 1..=CASCADE_MAX_TRIES {
+        let p = clamp((wx + step * f64::from(k), wy + step * f64::from(k)));
+        if !taken(p) {
+            return p;
+        }
+    }
+    // ③ 实在排不下（几十扇窗）⇒ 回到第一格：至少在工作区内，⛔ 不跑到屏幕外。
+    first
+}
+
+/// 把 [`cascade_origin`] 接到真窗口上：拿**当前聚焦窗口**当基准、它所在显示器的
+/// **可用区**当边界、其余窗口的原点当"已占用"。
+///
+/// ⚠️ 拿不到基准（没有聚焦窗口——例如启动时建 `main`）或任一 API 报错 ⇒ `None`，
+///    调用方退回 `.center()`（`INV-WIN-01`：⛔ 不许在 (0,0) 或屏幕外开窗）。
+/// ⚠️ 所有位置都先化成**逻辑像素**再比：不同显示器的 `scale_factor` 可以不同，
+///    物理像素直接跨屏比会错位。`outer_position()` 是物理值，按**该窗口自己的**
+///    scale 折回逻辑值——这正好是 macOS 上那套全局 point 坐标。
+fn cascade_position(app: &tauri::AppHandle, label: &str) -> Option<(f64, f64)> {
+    use tauri::Manager;
+
+    // ⚠️ **不用 `Manager::get_focused_window()`**：它挂在 `#[cfg(feature = "unstable")]`
+    //    下面（`tauri-2.12.3/src/lib.rs:576`），本仓不打开那个 feature。
+    //    ⇒ 用同一份"最近聚焦窗口"记录：`WindowEvent::Focused(true)` 写下的
+    //    `AppState::active_label()`（菜单落点用的也是它，⛔ 别另记一份）。
+    let base_label = app.state::<AppState>().active_label();
+    let base = app.get_webview_window(base_label.as_str())?;
+    let scale = base.scale_factor().ok()?;
+    let pos = base.outer_position().ok()?.to_logical::<f64>(scale);
+    let size = base.outer_size().ok()?.to_logical::<f64>(scale);
+
+    let mon = base
+        .current_monitor()
+        .ok()
+        .flatten()
+        .or_else(|| app.primary_monitor().ok().flatten())?;
+    let mscale = mon.scale_factor();
+    let work = mon.work_area();
+    let work_pos = work.position.to_logical::<f64>(mscale);
+    let work_size = work.size.to_logical::<f64>(mscale);
+
+    // ⚠️ 占用表**排除本窗口自己**：表里可能已经有一份同名 label 的旧条目，把它算进来
+    //    会让第一次级联就"撞上自己"、直接跳到左上角。
+    let occupied: Vec<(f64, f64)> = app
+        .webview_windows()
+        .iter()
+        .filter(|(l, _)| l.as_str() != label)
+        .filter_map(|(_, w)| {
+            let s = w.scale_factor().ok()?;
+            let p = w.outer_position().ok()?.to_logical::<f64>(s);
+            Some((p.x, p.y))
+        })
+        .collect();
+
+    Some(cascade_origin(
+        (pos.x, pos.y),
+        (size.width, size.height),
+        (work_pos.x, work_pos.y),
+        (work_size.width, work_size.height),
+        &occupied,
+        CASCADE_STEP,
+    ))
+}
+
+/// ⭐ **建窗口的唯一函数**：主窗口 `main` 与所有新窗口 `w-<n>` 都走它。
+///
+/// 它负责三件事（两处闭包都**捕获自己的 label**，事件只投本窗口）：
+/// 1. 同一份注入脚本（主题 / 字号 / 测量开关 / 语言）、1000×800、**级联落点**
+///    （`design/0081` §2.1 ①：从聚焦窗口往右下挪一格，⛔ 不再 `.center()`——
+///    那样每扇新窗口都精确盖住上一扇）、背景色；
+/// 2. 导航闸门与新窗口拒绝（`design/0026` §2.2）——被拒的那次交回**本窗口**前端
+///    （`bugs/0058`，见 [`bridge_link_activation`]）；
+/// 3. 拖放事件（`design/0071` §2.2）——投**本窗口**（`rmd://drag` / `rmd://drop-reject` /
+///    `rmd://open-path` / `rmd://root-changed` 的落点都是触发它的窗口）。
+///
+/// ⚠️ **会话桶由调用方先 `insert_window`**（页面脚本一起来就调 `get_session`），
+///    建窗失败由调用方 `remove_window` 回滚——本函数**不碰会话表**。
+/// ⚠️ `Focused(true)` / `Destroyed` **不在这里挂**：它们是应用级的，
+///    由 `run()` 的 `Builder::on_window_event` 挂**一次**（⛔ 同一事件挂两份闭包
+///    = 两份副作用；`design/0068` §2.1）。
+pub(crate) fn create_window(
+    app: &tauri::AppHandle,
+    label: &str,
+) -> Result<tauri::WebviewWindow, String> {
+    use tauri::Manager;
+
+    // ⚠️ 这两样**每个窗口各取一次**：新窗口必须与此刻的主题/字号/语言一致
+    //    （`design/0071` §5.2：新窗口与主窗口共用同一个 `init_script`）。
+    // ⚠️ 会话锁里只做内存读；`lang::effective` 可能短暂 spawn（`system` 档），
+    //    所以放到锁外算（锁序纪律：L2 里不做 I/O）。
+    let state = app
+        .try_state::<AppState>()
+        .ok_or_else(|| "AppState 还没就绪（建窗早于 manage）".to_string())?;
+    let (appearance, pref) = state.with(label, |s| {
+        (s.config.appearance(), s.config.language_preference())
+    });
+    let lang = crate::lang::effective(pref);
+
+    let mut win = tauri::WebviewWindowBuilder::new(
+        app,
+        label,
+        tauri::WebviewUrl::App("index.html".into()),
+    )
+    .title("rmd")
+    .inner_size(WINDOW_INNER_W, WINDOW_INNER_H);
+    // ⭐ `design/0083` §2.1：**给每个窗口同一个标签标识**。
+    //
+    // ⚠️ 这一行不是装饰：`tauri-runtime-wry` 只在标识为 `None` 时把进程级的
+    //    "自动标签"关掉（`lib.rs:4437-4445`）——本仓此前没设 ⇒ 原生标签**不可能**出现。
+    // ⚠️ 标识相同 = 允许并进同一组；`⌘T` 另需显式 `addTabbedWindow:ordered:`（见 `open_new_tab`）。
+    // ⚠️ 它**不会**自动把新窗口并成标签：`tabbingMode` 是 `.automatic`，
+    //    只有用户自己拖 / 应用显式并组才会成组（我们只走后者）。
+    #[cfg(target_os = "macos")]
+    {
+        win = win.tabbing_identifier(WINDOW_TABBING_IDENTIFIER);
+    }
+    // ⭐ `design/0081` §2.1 ①：新窗口**级联**落点，⛔ 不再 `.center()`。
+    //    ⚠️ 拿不到基准（首扇窗口 / 没有聚焦窗口）时退回 `.center()`（`INV-WIN-01`）：
+    //    那样启动时的表现与今天**逐像素相同**。
+    win = match cascade_position(app, label) {
+        Some((x, y)) => win.position(x, y),
+        None => win.center(),
+    };
+    let mut win = win
+    // ⭐ `design/0026` §2.2 ①：**导航闸门**（`INV-LINK-01`）。
+    //    ⛔ 只要不是应用自己的入口页，一律 false ⇒ WebView 不导航。
+    //    ⚠️ 这是 `docs/bugs/0001`（点一下链接**整页重载**、甚至被永久导航走）
+    //       的结构性防线：判据是**精确入口白名单**，⛔ 不是"后缀黑名单"
+    //       （评审 `P1-2`：黑名单挡不住 `tauri://localhost/nope.js`）。
+    //    ⚠️ 它**只**管"别导航走"，⛔ 不管"点击要做点什么"——那在前端的委托里。
+    //    ⭐ `bugs/0058`：被拒的那次**要交回前端**——`⌘`-点击在 WKWebView 里
+    //       可能从这里露面（而不是从页面的 `click`），见 `bridge_link_activation`。
+    .on_navigation({
+        let h = app.clone();
+        let owner = label.to_string();
+        move |url| {
+            let ok = crate::link::is_app_entry(url.as_str());
+            if !ok {
+                bridge_link_activation(&h, &owner, "navigation", url.as_str());
+            }
+            ok
+        }
+    })
+    // ⭐ `design/0026` §2.2 ②：`target="_blank"` / 中键 / ⌘点击 会请求新窗口。
+    //    ⛔ 一律拒：在应用里开一个**没有地址栏的浏览窗口**既不是产品规则
+    //    （外链要交给系统浏览器），也把导航闸门绕过去了。
+    //    ⭐⭐ `bugs/0058`（第二版）：**这里正是 `⌘`-点击真正露面的地方**——
+    //       拒之前先交回前端，落点仍然是「就在这儿打开」。
+    .on_new_window({
+        let h = app.clone();
+        let owner = label.to_string();
+        move |url, _features| {
+            bridge_link_activation(&h, &owner, "new-window", url.as_str());
+            tauri::webview::NewWindowResponse::Deny
+        }
+    })
+    .initialization_script(init_script(
+        &appearance,
+        std::env::var_os("RMD_MEASURE").is_some(),
+        lang,
+    ));
+    if let Some(c) = window_backdrop(&appearance.mode) {
+        win = win.background_color(c);
+    }
+    let built = win
+        .build()
+        .map_err(|e| format!("建窗口 {label} 失败：{e}"))?;
+    // ⭐ `design/0071` §2.2：**拖放由后端接**（`WindowEvent::DragDrop`）。
+    // ⚠️ 用的是 wry 那套拖放 handler（`drag_drop_handler_enabled` 默认开），
+    //    它**同时**会往页面发 `tauri://drag-drop` 一族（带 paths）——
+    //    ⛔ 本仓前端一条都不许订阅它们（`INV-OPEN-01`，源码闸门在
+    //    `tests/js/drop.test.js`）。⚠️ 不能改成 `disable_drag_drop_handler()`：
+    //    那样连这个 `WindowEvent` 也不会来了（`tauri-runtime-wry` 只在
+    //    handler 开着时才转发），拖放就整个失效。
+    // ⚠️ handler 挂在**建好之后**：`DragDrop` 只可能在用户开始拖之后才到。
+    // ⚠️ 拖到哪个窗口，事件就只投哪个窗口（闭包捕获 `label`）。
+    built.on_window_event({
+        let h = app.clone();
+        let owner = label.to_string();
+        move |event| {
+            if let tauri::WindowEvent::DragDrop(dd) = event {
+                handle_drag_event(&h, &owner, dd);
+            }
+        }
+    });
+    // ⚠️ 这一行原来只在主窗口建完时打；新窗口也打**同一形状**的一行
+    //    （多一个 `label=`），排障时"这个窗口是按哪套外观起的"一眼可读。
+    diag!(
+        "▶ 外观：模式={} 字号={}px 行高={} 内容宽={}｜窗口={label}",
+        appearance.mode,
+        appearance.font_size,
+        appearance.line_height,
+        if appearance.content_width == 0.0 {
+            "铺满".to_string()
+        } else {
+            format!("{}px", appearance.content_width)
+        }
+    );
+    Ok(built)
 }
 
 /// 起窗口。`start` 来自 argv（**文件、目录，或什么都没有**）。
@@ -2132,6 +3206,41 @@ pub fn run(start: Option<PathBuf>) -> i32 {
         // ⭐ 菜单事件 → 前端（`design/0010` §2.1 ⑧）。⚠️ 挂**一次**、在 builder 上，
         //    ⛔ 不在 setup 里按窗口挂——菜单是 app 级的，窗口可以不止一个。
         .on_menu_event(|app, event| handle_menu_event(app, event.id().as_ref()))
+        // ⭐⭐ `design/0071` §5.2（阶段 4）：**应用级**窗口生命周期。
+        //
+        // ⚠️ 为什么挂在 `Builder` 上：Tauri 2 只有 `Builder::on_window_event` 这一个
+        //    "应用级"口子（`tauri-2.12.3/src/app.rs`），而它登记的回调会被**每一个**窗口
+        //    在创建时挂上（`manager/window.rs`）——包括 `create_window` 后来建的那些。
+        //    ⇒ 两个职责都放这里：`Focused(true)` 记落点、`Destroyed` 回收会话桶。
+        // ⛔ **别在 `create_window` 里再挂一份**：同一事件两份闭包 = 两份副作用。
+        .on_window_event(|window, event| {
+            use tauri::Manager;
+            let Some(state) = window.app_handle().try_state::<AppState>() else {
+                // ⚠️ 极早（`manage` 之前）/ 极晚（退出过程中）的时序：什么都不做。
+                //    ⛔ 不用 `state()`——那会 panic，而这里在不能 unwind 的回调里。
+                return;
+            };
+            match event {
+                // ⭐ 菜单 / Apple Event 是**进程级**通道（不带来源窗口）
+                //    ⇒ 落点 = 用户此刻在看的那个窗口。
+                tauri::WindowEvent::Focused(true) => state.set_active(window.label()),
+                // ⭐ 关窗回收：先摘桶，再在**锁外** drop。
+                //    ⚠️ `Arc<Mutex<Session>>` 里装着 `watch` / `tree_watch` / `index`，
+                //    drop 会停线程、放句柄——在会话表锁里做会把"关一个窗口"
+                //    变成"卡住所有窗口"（`design/0068` §2.1）。
+                tauri::WindowEvent::Destroyed => {
+                    let label = window.label().to_string();
+                    let removed = state.remove_window(&label);
+                    drop(removed);
+                    // ⭐ 落点不能停在已经不存在的窗口上：否则菜单 / Apple Event 会
+                    //    `emit_to` 一个无主的 label（只打一行日志，动作静默消失）。
+                    //    ⚠️ 依赖"系统会把焦点送给下一个窗口"是**上游行为**，⛔ 不当前提。
+                    state.repoint_active(&label);
+                    diag!("▶ 窗口已关闭：{label}");
+                }
+                _ => {}
+            }
+        })
         .setup(move |app| {
             use tauri::Manager;
 
@@ -2222,6 +3331,10 @@ pub fn run(start: Option<PathBuf>) -> i32 {
                 //    ⚠️ 启动 argv 那条路**不进队列**（它走 `startup_document`，前端引导时
                 //    自己开）。两个入口各走各的通道，但共用同一个授权函数（`INV-APP-02`）。
                 pending_opens: std::collections::VecDeque::new(),
+                // ⭐ `design/0071` §5.2：新窗口的"该打开哪一条"（`open_in_new_window`
+                //    写入、`take_pending_navigation` 取走）。**主窗口启动时没有**——
+                //    它该开什么由 `startup_document` / 启动 argv 决定，⛔ 不进这条队列。
+                pending_navigation: None,
                 // ⚠️ 初值全零：还没渲染过任何东西。`report_status` 会把它打出来，
                 //    「零」在那里是**正确的**（空会话就是零个公式），⛔ 不是缺省填充。
                 last_render_stats: Default::default(),
@@ -2233,6 +3346,12 @@ pub fn run(start: Option<PathBuf>) -> i32 {
                 // ⭐ 打开会话号（`design/0017` §2.2 ①）：启动时还没打开过任何东西，**从 0 开始**。
                 //    ⚠️ 只有 `open_document` 第三段提交会 +1（⛔ 重载不算）。
                 doc_seq: 0,
+                // ⭐ `design/0082`：草稿态那一组，**启动时没有**。⚠️ 与 `current_document`
+                //    互斥（草稿成立 ⇔ `current_document == None`），启动时两者都是 None
+                //    是**正确的空态**（既没打开文档、也没有草稿），⛔ 别在这里预置一个草稿号。
+                draft: None,
+                edit_draft: None,
+                draft_seq: 0,
                 // ⭐ 编辑态那一组（`design/0012`）：**启动时都没有**。
                 //    ⚠️ 启动路径上没有任何密钥/写授权行为，这是同一件事的另一面
                 //    （与"零密钥启动"同源的取向）。⚠️ 尤其 `baseline_bytes` 与
@@ -2273,7 +3392,9 @@ pub fn run(start: Option<PathBuf>) -> i32 {
             //    Apple Event 那条路（`handle_open_urls`）**只接文件、⛔ 不动 roots**，
             //    所以那边不需要（它若打开外部文件，`close_directory` 会自己重建一次）。
             //    ⚠️ 没有授权根时它只打一行日志就返回，⛔ 不是错误。
-            fs_cmd::restart_tree_watch(app.handle(), &app.state::<AppState>());
+            //    ⚠️ `design/0071` §5.2：监视是**按窗口**的（`Watch.owner`），
+            //       所以这里传主窗口的 label。
+            fs_cmd::restart_tree_watch(app.handle(), &app.state::<AppState>(), "main");
 
             // ⭐ 冷启动时到达的 Apple Event（见 `EARLY_OPENS`）：`manage` 之后立刻
             //    走**同一条**授权 + 入队路径。⚠️ 放在建窗口**之前** —— 前端引导的
@@ -2304,7 +3425,7 @@ pub fn run(start: Option<PathBuf>) -> i32 {
             //    表现就是"菜单中文、界面英文"（而**没有任何报错**）。
             // ⚠️ `lang::effective` 在偏好是 `zh`/`en` 时**根本不 spawn**
             //    （`effective_with` 在取系统语言之前短路），所以这条不拖启动。
-            let lang = app.state::<AppState>().with(|s| {
+            let lang = app.state::<AppState>().with("main", |s| {
                 crate::lang::effective(s.config.language_preference())
             });
 
@@ -2328,56 +3449,19 @@ pub fn run(start: Option<PathBuf>) -> i32 {
                 std::process::exit(menu_probe(app.handle(), lang));
             }
 
-            // ⭐ **窗口在这里建，⛔ 不在 `tauri.conf.json` 里声明**。
+            // ⭐ **窗口在这里建，⛔ 不在 `tauri.conf.json` 里声明**；而且只有**一个**建法
+            //    （`design/0071` §5.2）：主窗口 `main` 与所有新窗口 `w-<n>` 都走
+            //    [`create_window`]——同一份注入脚本、同一套导航闸门与拖放接线。
             //
             // 理由只有一条：**注入脚本**。`design/0004` §2.1.3 要求
             // 「在任何样式应用之前」把 `data-theme` 写上——那需要
             // `WebviewWindowBuilder::initialization_script`（已核实可用，见 `kb/0010`），
             // 而 JSON 里声明的窗口**没有**这个口子。
-            // ⇒ 本次把 `app.windows` 从配置里删掉，改在这里建，尺寸/标题照搬原值。
+            // ⇒ 本次把 `app.windows` 从配置里删掉，改在代码里建，尺寸/标题照搬原值。
             //
             // ⚠️ 建在 `manage` **之后**：页面脚本一起来就要调 `get_session`。
             //    （`main.js` 另有 5 次重试兜底，但那不该是正常路径。）
-            let appearance = app.state::<AppState>().with(|s| s.config.appearance());
-            let mut win = tauri::WebviewWindowBuilder::new(
-                app,
-                "main",
-                tauri::WebviewUrl::App("index.html".into()),
-            )
-            .title("rmd")
-            .inner_size(1000.0, 800.0)
-            .center()
-            // ⭐ `design/0026` §2.2 ①：**导航闸门**（`INV-LINK-01`）。
-            //    ⛔ 只要不是应用自己的入口页，一律 false ⇒ WebView 不导航。
-            //    ⚠️ 这是 `docs/bugs/0001`（点一下链接**整页重载**、甚至被永久导航走）
-            //       的结构性防线：判据是**精确入口白名单**，⛔ 不是"后缀黑名单"
-            //       （评审 `P1-2`：黑名单挡不住 `tauri://localhost/nope.js`）。
-            //    ⚠️ 它**只**管"别导航走"，⛔ 不管"点击要做点什么"——那在前端的委托里。
-            .on_navigation(|url| crate::link::is_app_entry(url.as_str()))
-            // ⭐ `design/0026` §2.2 ②：`target="_blank"` / 中键 / ⌘点击 会请求新窗口。
-            //    ⛔ 一律拒：在应用里开一个**没有地址栏的浏览窗口**既不是产品规则
-            //    （外链要交给系统浏览器），也把导航闸门绕过去了。
-            .on_new_window(|_url, _features| tauri::webview::NewWindowResponse::Deny)
-            .initialization_script(init_script(
-                &appearance,
-                std::env::var_os("RMD_MEASURE").is_some(),
-                lang,
-            ));
-            if let Some(c) = window_backdrop(&appearance.mode) {
-                win = win.background_color(c);
-            }
-            win.build()?;
-            diag!(
-                "▶ 外观：模式={} 字号={}px 行高={} 内容宽={}",
-                appearance.mode,
-                appearance.font_size,
-                appearance.line_height,
-                if appearance.content_width == 0.0 {
-                    "铺满".to_string()
-                } else {
-                    format!("{}px", appearance.content_width)
-                }
-            );
+            create_window(app.handle(), "main")?;
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -2394,6 +3478,9 @@ pub fn run(start: Option<PathBuf>) -> i32 {
             //    （`build.rs` / `capabilities/`，`kb/0007`）。
             set_language,
             get_shortcuts,
+            // ⭐ `design/0083` §2.3：窗口标题（原生标签的标签名）。⚠️ 三处清单同批
+            //    （`build.rs` / `capabilities/default.json` / 这里），漏一处 = ACL 静默拒。
+            set_window_title,
             fs_cmd::choose_directory,
             fs_cmd::choose_file,
             fs_cmd::close_directory,
@@ -2403,6 +3490,12 @@ pub fn run(start: Option<PathBuf>) -> i32 {
             // ⭐ `design/0043`：打开一条**收藏**（**授权命令**，`INV-FS-04` 第五处）。
             //    ⚠️ 三处清单同批（`build.rs` / `capabilities/` / 这里，`kb/0007`）。
             fs_cmd::open_favorite,
+            // ⭐ `design/0071` §5（阶段 4 多窗口）：在新窗口里打开一条最近目录 / 收藏。
+            //    ⚠️ **不是授权命令**——只做字面成员检查，授权在新窗口自己的命令里发生。
+            //    ⚠️ 三处清单同批（`build.rs` / `capabilities/` / 这里，`kb/0007`）。
+            commands::open_in_new_window,
+            // ⭐ `design/0071` §5：新窗口取走"我该打开哪一条"（取走即清空）。
+            commands::take_pending_navigation,
             // ⭐ `design/0043`：收藏的**唯一写入口**（**只写 `config.json`**，操作枚举）。
             commands::favorites_apply,
             // ⭐ `design/0045`：最近目录的**唯一写入口**（删一条 / 清空）。
@@ -2429,10 +3522,19 @@ pub fn run(start: Option<PathBuf>) -> i32 {
             fs_cmd::reconcile_disk,
             fs_cmd::retry_tree_watch,
             document::open_document,
+            // ⭐ `design/0082`：未命名文档（⛔ 零写盘）＋ 它的保存（**写命令**，
+            //    落点由后端自己弹的系统面板产生）。⚠️ 三处清单同批
+            //    （`build.rs` / `capabilities/default.json` / 这里），漏一处 = ACL 静默拒。
+            document::new_untitled,
+            edit::save_untitled,
             // ⭐ `design/0006`：重载 / 监视 / 外部编辑器
             document::reload_document,
             document::watch_document,
             document::unwatch_document,
+            // ⭐ `design/0056`：关闭当前文档（⌘0 回导航页；2026-11-11 由 F2 改来、2026-11-16 改为 ⌘0，
+            //    见 `bugs/0097`）。⚠️ 三处清单同批改：
+            //    `build.rs` 的 `commands()` / `capabilities/default.json` / 这里。
+            document::close_document,
             document::open_in_external_editor,
             asset::read_asset,
             // ⭐ `design/0012`：窗口内编辑。⚠️ `edit::save_document` 是**本项目唯一
@@ -2442,6 +3544,10 @@ pub fn run(start: Option<PathBuf>) -> i32 {
             edit::end_edit,
             edit::render_preview,
             edit::save_document,
+            // ⭐ `design/0076`：导出（**写命令**）。⚠️ 三处清单同批加
+            //    （`build.rs` / `capabilities/default.json` / 这里）；漏一处 = ACL 静默拒。
+            export_cmd::export_html,
+            export_cmd::export_pdf,
             // ⭐ `design/0017`：阅读进度写盘（**只写 `config.json`**，⛔ 不改授权）。
             //    ⚠️ 与另两处清单同批加（`build.rs` / `capabilities/`，`kb/0007`）。
             commands::set_reading_progress,
@@ -2455,6 +3561,9 @@ pub fn run(start: Option<PathBuf>) -> i32 {
             // ⭐ 批次 2 的测量回报（`design/0002` §10.4 批 2）。**同样是脚手架**，
             //    ⛔ 不是产品功能；只有 `RMD_MEASURE=1` 时前端才会调它。
             report_measure,
+            // ⭐ `design/0070` §2.7：失败的**诊断出口**（每展示一条失败留一行）。
+            //    ⚠️ 与另两处清单同批加（`build.rs` / `capabilities/`，`kb/0007`）。
+            commands::diag_note,
         ])
         // ⭐ `design/0015` §2.1 ④：**必须**用 `.build()` ＋ `App::run(callback)`，
         //    ⛔ 不能再用 `.run(context)`——后者没有事件回调，macOS 的 `odoc`
@@ -2476,9 +3585,10 @@ pub fn run(start: Option<PathBuf>) -> i32 {
         }
     };
 
-    // ⚠️ 回调里只处理 `Opened`；其余事件原样忽略（tauri 自己会把它们分发给窗口）。
-    // ⚠️ 这里**不抢焦点**：收到打开请求后只换文档，⛔ 不调 `set_focus` / 不 activate
-    //    （`CLAUDE.md` 工作约定 4 的同一精神；§6 的失败模型已登记这条取舍）。
+    // ⚠️ 回调里只处理 `Exit` / `Opened` / `Reopen`；其余事件原样忽略
+    //    （tauri 自己会把它们分发给窗口）。
+    // ⭐ `bugs/0331`：`Opened` 与 `Reopen` 都是**用户发起**的动作 ⇒ 允许把窗口提到前面
+    //    （只在这两条分支里，⛔ 后台路径一律不碰焦点）。
     app.run(|app_handle, event| {
         // ⭐ `design/0016` §2.1 ④：正常退出留一行。
         // ⚠️ 只记固定文案——退出路径上没有需要带出的字段。
@@ -2487,8 +3597,17 @@ pub fn run(start: Option<PathBuf>) -> i32 {
             return;
         }
         #[cfg(target_os = "macos")]
-        if let tauri::RunEvent::Opened { urls } = event {
-            handle_open_urls(app_handle, urls);
+        match event {
+            tauri::RunEvent::Opened { urls } => handle_open_urls(app_handle, urls),
+            // ⭐ 点 Dock 图标（`applicationShouldHandleReopen`）：**没有可见窗口**时
+            //    才唤醒——有可见窗口的那一趟由 AppKit 自己置前，⛔ 不重复动焦点。
+            //    ⚠️ 最小化**不算**不可见 ⇒ 这条覆盖的是"所有窗口都关了/藏了"。
+            tauri::RunEvent::Reopen { has_visible_windows: false, .. } => {
+                let label = front_label(app_handle);
+                diag!("▶ Dock 重开（无可见窗口）⇒ 唤醒 {label}");
+                wake_window(app_handle, &label);
+            }
+            _ => {}
         }
         #[cfg(not(target_os = "macos"))]
         let _ = (app_handle, event);
@@ -2505,6 +3624,270 @@ pub fn run(start: Option<PathBuf>) -> i32 {
 static EARLY_OPENS: std::sync::Mutex<Vec<std::path::PathBuf>> =
     std::sync::Mutex::new(Vec::new());
 
+// ─────────────────────────────────────────────────────────────────────────
+// 从窗口外把路径拿进来（`design/0071` §2）：拖入窗口 ＋ Apple Event
+// ─────────────────────────────────────────────────────────────────────────
+//
+// ⭐ 这一节的**唯一职责**是"判定 + 授权 + 通知"，三条硬约束都在这里落地：
+// 1. ⛔ **路径不进前端**（`INV-OPEN-01`）：发出去的事件只有
+//    `rmd://drag`（载荷 `"enter"|"leave"`）、`rmd://drop-reject`（载荷 = i18n key）、
+//    `rmd://open-path`（无载荷）、`rmd://root-changed`（无载荷）。
+//    ⚠️ Tauri **自带**的 `tauri://drag-drop` 一族确实**会**带 paths，
+//    但它只在**前端注册了同名监听时**才跨到 JS（`tauri::event::listener::emit_js_filter`
+//    按监听器过滤）⇒ 本仓前端一条都不许订阅它们，`tests/js/drop.test.js` 有源码闸门。
+// 2. ⭐ **授权只有两条既有入口**：文件走 [`fs_cmd::authorize_startup`]（与启动 argv /
+//    Apple Event 同一条，`INV-APP-02`），目录走 [`fs_cmd::open_root_from_backend`]
+//    （与 `⌘O` / 最近 / 收藏同一份收尾，`INV-OPEN-02/03`）。
+// 3. ⭐ **判定是纯函数** [`classify_drop`]（只读 `metadata`，无副作用）⇒ 五条分支能单测。
+
+/// 拖入窗口 / Apple Event 的共同判定结果（`design/0071` §2.1）。
+#[derive(Debug, PartialEq, Eq)]
+enum DropIntent {
+    /// 一份 Markdown 文档：走 `authorize_startup` ＋ `pending_opens`。
+    OpenFile(PathBuf),
+    /// 一个目录：走 `open_root_from_backend`（换根）。
+    OpenRoot(PathBuf),
+}
+
+/// [`classify_drop`] 的返回值：既可能"开一个"，也可能"拒绝一句"，
+/// 多个条目时两者**可以同时**成立（设计 §2.1：只处理第一个 ＋ 提示"一次只能打开一份"）。
+#[derive(Debug, PartialEq, Eq)]
+struct DropPlan {
+    intent: Option<DropIntent>,
+    /// ⚠️ **只有 i18n key**，⛔ 绝不拼路径（`INV-OPEN-01` / `INV-FAIL-02` 同一条纪律）。
+    reject: Option<&'static str>,
+}
+
+const DROP_REJECT_EDITING: &str = "drop.reject.editing";
+const DROP_REJECT_MULTI: &str = "drop.reject.multi";
+const DROP_REJECT_NOT_MARKDOWN: &str = "drop.reject.not-markdown";
+const DROP_REJECT_UNREADABLE: &str = "drop.reject.unreadable";
+const DROP_REJECT_ROOT: &str = "drop.reject.root";
+
+/// ⭐ 拖放的**判定**（`design/0071` §2.1 的行为表就是这张表）。
+///
+/// 分支（顺序就是判据）：
+/// - `editing` ⇒ **只**拒绝（`INV-OPEN-04`：编辑态下不静默切换当前文档）；
+/// - 多个条目 ⇒ 处理**第一个**，并附一句 `multi`；
+///   ⚠️ 第一个自己就打不开时，那个**更具体**的拒绝理由优先（说"一次只能开一份"
+///   而撇下"这不是 Markdown"，对用户没有帮助）；
+/// - 单个条目 ⇒ `.md` 文件 / 目录 / 其它。
+///
+/// ⚠️ 前缀判据走 [`crate::commands::link::is_markdown`]（全项目唯一那份），
+/// ⛔ 不在这里再写一遍 `ends_with(".md")`（`INV-SINGLE-01` 的同一条精神）。
+fn classify_drop(paths: &[PathBuf], editing: bool) -> DropPlan {
+    if editing {
+        return DropPlan { intent: None, reject: Some(DROP_REJECT_EDITING) };
+    }
+    let Some(first) = paths.first() else {
+        // 空列表不是用户能造出来的（Drop 至少一个），当作"没有动作"。
+        return DropPlan { intent: None, reject: None };
+    };
+    let (intent, own_reject) = match std::fs::metadata(first) {
+        Ok(md) if md.is_dir() => (Some(DropIntent::OpenRoot(first.clone())), None),
+        Ok(md) if md.is_file() && crate::commands::link::is_markdown(first) => {
+            (Some(DropIntent::OpenFile(first.clone())), None)
+        }
+        Ok(_) => (None, Some(DROP_REJECT_NOT_MARKDOWN)),
+        Err(_) => (None, Some(DROP_REJECT_UNREADABLE)),
+    };
+    let reject = if paths.len() > 1 {
+        Some(own_reject.unwrap_or(DROP_REJECT_MULTI))
+    } else {
+        own_reject
+    };
+    DropPlan { intent, reject }
+}
+
+/// ⭐ 把一份**文件**授权并放进**那个窗口自己的**"待打开"队列（`INV-APP-02` 的唯一实现）。
+///
+/// 调用方只负责自己的诊断行与唤醒信号：Apple Event 打「打开请求（Apple Event）」，
+/// 拖放打「打开请求（拖入窗口）」——⛔ 别把两句话并成一句，
+/// 日志里"这次是拖进来的还是 Apple Event"是排障的第一分叉点。
+///
+/// ⚠️ `label` 是**触发它的那个窗口**（`design/0071` §5.2）：授权与待打开队列都写进
+/// **它自己的会话**（`state.with(label, …)`），⛔ 不写主窗口的——否则拖进 `w-1`
+/// 的文档会在 `main` 里冒出来，而 `w-1` 的授权原地蒸发。
+fn stage_open_file(
+    state: &AppState,
+    label: &str,
+    path: &Path,
+) -> Result<PathBuf, crate::error::Denied> {
+    state.with(label, |s| {
+        fs_cmd::authorize_startup(&mut s.grants, path).map(|(_mode, real)| {
+            s.push_pending_open(real.clone());
+            real
+        })
+    })
+}
+
+/// ⭐ 从窗口外**打开一个目录**（`INV-OPEN-03`）：拖入窗口与 Apple Event 共用这一份。
+///
+/// 三个动作：① `open_root_from_backend`（授权 ＋ 换根，`INV-START-03` 那一份收尾）；
+/// ② 重挂树监视——⚠️ **必须在会话锁之外**（`kb/0020`：摘监视会起线程）；
+/// ③ 发**无载荷**的 `rmd://root-changed`，前端自己 `get_session` 取真值
+/// （`INV-APP-03`：事件只是唤醒信号，⛔ 不带路径）。
+///
+/// ⚠️ `label` = **触发它的那个窗口**（`design/0071` §5.2）：换根写进**它的**会话，
+/// 树监视挂在**它**名下（`DirWatch.owner`），唤醒信号也只投**它**。
+///
+/// @returns 是否真的进了这个目录
+fn open_root_from_window(app: &tauri::AppHandle, label: &str, dir: &Path) -> bool {
+    // ⚠️ `try_state` 是 `Manager` 的方法（`Emitter` 只给 `emit`）——两条都要，⛔ 别删任何一条。
+    use tauri::Manager;
+    use tauri::Emitter;
+
+    let Some(state) = app.try_state::<AppState>() else {
+        // 窗口建在 `manage` 之后 ⇒ 拖放不可能走到这里；Apple Event 的冷启动
+        // 那一路在调用方就先暂存了（`EARLY_OPENS`），不走本函数。
+        return false;
+    };
+    let outcome = state.with(label, |s| {
+        fs_cmd::open_root_from_backend(s, fs_cmd::AuthSource::Picked(dir))
+    });
+    match outcome {
+        Ok(snap) => {
+            // ⚠️ 这一行与「打开请求（Apple Event）」是**同一族**的排障锚点。
+            diag!(
+                "▶ 打开目录（窗口外，代次 {}）：{}｜窗口={label}",
+                snap.generation,
+                dir.display()
+            );
+            // ⭐ `design/0071` §5：`enter_directory` 不再自己写配置（多窗口之后
+            //    `config.json` 只有一个内存真值）⇒ `last_directory` 由调用方在**会话锁外**提交。
+            //    失败只打日志：目录已经进来了，提示下次重来即可（与 `set_sidebar_width` 同取向）。
+            let real = dir.to_path_buf();
+            let (_applied, written) = state.commit(|c| c.set_last_directory(&real));
+            if let Err(e) = written {
+                diag_stderr!("⛔ last_directory 落盘失败（{e}）：{}", real.display());
+                diag_file!(
+                    "⛔ last_directory 落盘失败 label={} err_class={}",
+                    label,
+                    logging::err_class(&e)
+                );
+            }
+            fs_cmd::restart_tree_watch(app, &state, label);
+            if let Err(e) = app.emit_to(label, "rmd://root-changed", ()) {
+                diag_stderr!("⛔ 换根的唤醒信号发不出去：{e}（前端仍可手动刷新）");
+                diag_file!(
+                    "⛔ 换根的唤醒信号发不出去 err_class={} err_len={}",
+                    logging::err_class(&e),
+                    e.to_string().len()
+                );
+            }
+            true
+        }
+        Err(e) => {
+            diag_stderr!("⛔ 从窗口外打开目录被拒（{e}）：{}", dir.display());
+            diag_file!(
+                "⛔ 从窗口外打开目录被拒 label={} err_len={}",
+                e.label(),
+                e.to_string().len()
+            );
+            false
+        }
+    }
+}
+
+/// 发一条**无载荷**（或只带 i18n key 的）事件。`INV-OPEN-01` 的落点。
+///
+/// ⚠️ `label` = **触发它的那个窗口**（`design/0071` §5.2 的事件表）：
+/// `rmd://drag` / `rmd://drop-reject` / `rmd://open-path` 都只投本窗口——
+/// 哪个窗口被拖入，遮罩与拒绝提示就只该在哪个窗口出现。
+fn emit_bare(app: &tauri::AppHandle, label: &str, event: &str, payload: Option<&'static str>) {
+    use tauri::Emitter;
+    let res = match payload {
+        Some(p) => app.emit_to(label, event, p),
+        None => app.emit_to(label, event, ()),
+    };
+    if let Err(e) = res {
+        diag_stderr!("⛔ 事件 {event} 发不出去（{label}）：{e}");
+        diag_file!(
+            "⛔ 事件发不出去 event={event} label={label} err_class={}",
+            logging::err_class(&e)
+        );
+    }
+}
+
+/// 窗口的拖放事件入口（`WindowEvent::DragDrop` → 这里）。
+///
+/// `Enter` / `Over` / `Leave` **只驱动遮罩**（设计 §2.2）：
+/// `Enter` → `"enter"`、`Leave` → `"leave"`；`Over` 不发——
+/// 它按鼠标移动频率触发，发出去只会白占 IPC，而遮罩已经是"显示"态了。
+/// `Drop` → 交给 [`handle_drop_paths`]，随后补一句 `"leave"`（遮罩兜底清空）。
+///
+/// ⚠️ `label` 由建窗时的闭包捕获（[`create_window`]）：事件只投**这个**窗口。
+fn handle_drag_event(app: &tauri::AppHandle, label: &str, event: &tauri::DragDropEvent) {
+    match event {
+        tauri::DragDropEvent::Enter { .. } => emit_bare(app, label, "rmd://drag", Some("enter")),
+        tauri::DragDropEvent::Over { .. } => {}
+        tauri::DragDropEvent::Leave => emit_bare(app, label, "rmd://drag", Some("leave")),
+        tauri::DragDropEvent::Drop { paths, .. } => {
+            handle_drop_paths(app, label, paths);
+            emit_bare(app, label, "rmd://drag", Some("leave"));
+        }
+        // ⚠️ `DragDropEvent` 是 `#[non_exhaustive]`（`tauri-runtime-2.12.1`）⇒ 必须留兜底臂；
+        //    将来上游加变体时**静默忽略**比编译不过更安全（遮罩由 `leave` 兜底清空）。
+        _ => {}
+    }
+}
+
+/// ⭐ 收到一次 `Drop`：判定 → 打开 / 拒绝（`design/0071` §2.1）。
+///
+/// ⚠️ 路径**到此为止**：往下走的是授权对象与队列，前端只会收到
+/// 「有一条打开请求」和「拒绝理由的 key」。
+///
+/// ⚠️ `label` = 被拖入的那个窗口：编辑态判据、授权与队列、四个事件全落在**它的**会话上。
+fn handle_drop_paths(app: &tauri::AppHandle, label: &str, paths: &[PathBuf]) {
+    use tauri::Manager;
+
+    let Some(state) = app.try_state::<AppState>() else {
+        return;
+    };
+    // ⚠️ 编辑态判据取**后端**的 `edit_target`（`INV-OPEN-04`）：前端那份"是不是在编辑"
+    //    只是界面镜像，拿它当闸门等于让可伪造的状态决定要不要切文档。
+    //    ⚠️ 取的是**这个窗口**的编辑态：`w-1` 在编辑，不代表 `main` 在编辑。
+    let editing = state.with(label, |s| s.edit_target.is_some());
+    let plan = classify_drop(paths, editing);
+
+    let mut opened = false;
+    match &plan.intent {
+        Some(DropIntent::OpenFile(p)) => match stage_open_file(&state, label, p) {
+            Ok(real) => {
+                diag!("▶ 打开请求（拖入窗口）：{}｜窗口={label}", real.display());
+                opened = true;
+                emit_bare(app, label, "rmd://open-path", None);
+            }
+            Err(e) => {
+                diag_stderr!("⛔ 拖入的文件不能授权（{e}）：{}", p.display());
+                diag_file!(
+                    "⛔ 拖入的文件不能授权 label={} err_len={}",
+                    e.label(),
+                    e.to_string().len()
+                );
+            }
+        },
+        Some(DropIntent::OpenRoot(p)) => opened = open_root_from_window(app, label, p),
+        None => {}
+    }
+
+    // ⭐ 拒绝理由**只有 key**（`INV-OPEN-01`）：文案在前端字典里，路径一个字节都不过去。
+    // ⚠️ "判定让开、但后端没开成"（授权失败 / 盘上刚被删）也要响——
+    //    否则用户看到的是"拖进去了，什么都没发生"。
+    let reject = plan.reject.or(if plan.intent.is_some() && !opened {
+        Some(if matches!(plan.intent, Some(DropIntent::OpenRoot(_))) {
+            DROP_REJECT_ROOT
+        } else {
+            DROP_REJECT_UNREADABLE
+        })
+    } else {
+        None
+    });
+    if let Some(key) = reject {
+        emit_bare(app, label, "rmd://drop-reject", Some(key));
+    }
+}
+
 /// 处理 macOS 的 Apple Event 打开请求（`design/0015` §2.1 ④）。
 ///
 /// 三条纪律：
@@ -2513,15 +3896,28 @@ static EARLY_OPENS: std::sync::Mutex<Vec<std::path::PathBuf>> =
 /// 2. **路径只进后端队列**，事件只当"有新东西"的唤醒信号（`INV-APP-03`）——
 ///    ⛔ 不把路径塞进 `emit` 的载荷：那会造出第二个真值，而且第一个可伪造。
 /// 3. **失败要响**：拒绝/读不到/不是文件都打一行说明，⛔ 不静默丢（§6 失败模型）。
+///
+/// ⭐ `design/0071` `INV-OPEN-03`：**目录也接**（拖到 Dock 图标 / Finder 的
+/// 「打开方式」都可能给出目录），且走 [`open_root_from_window`]——与拖入窗口同一条，
+/// ⛔ 不在这里再写一份换根收尾。
 #[cfg(target_os = "macos")]
 // ⚠️ 类型写 `tauri::Url`（= `url::Url` 的再导出），⛔ 不写 `url::Url`——
 //    `url` 不是本仓库的直接依赖（`Cargo.toml` 里没有），写它**编译不过**（E0433）。
 fn handle_open_urls(app: &tauri::AppHandle, urls: Vec<tauri::Url>) {
-    use tauri::{Emitter, Manager};
+    use tauri::Manager;
 
     if urls.is_empty() {
         return;
     }
+
+    // ⚠️ Apple Event 是**进程级**通道（不带来源窗口）⇒ 落点 = 最近聚焦的那个窗口
+    //    （`design/0071` §5.2 的事件表）。⚠️ `AppState` 可能还没 `manage`
+    //    （冷启动，见下面 `EARLY_OPENS`）：那时落回 `main`——那几条拒绝事件
+    //    此刻本来也到不了前端，正确性不受影响（路径已暂存或按"普通文件"处理）。
+    let target = app
+        .try_state::<AppState>()
+        .map(|s| s.active_label())
+        .unwrap_or_else(|| "main".to_string());
 
     let mut accepted = 0usize;
     for url in urls {
@@ -2535,17 +3931,15 @@ fn handle_open_urls(app: &tauri::AppHandle, urls: Vec<tauri::Url>) {
             }
         };
 
-        // ⛔ 本期只接文档：目录会把整个会话切成"目录模式"，那条路属于应用内的
-        //    选择器（要重刷树、改 `last_directory`），而 Apple Event 的
-        //    LaunchServices 关联里只有 Markdown 文件（§4 不做多窗口/目录关联）。
-        //    ⚠️ 明确拒绝而不是"顺手支持"——半支持会让模式与界面各说各话。
-        match std::fs::metadata(&path) {
-            Ok(md) if md.is_file() => {}
+        // ⭐ 先看盘上是什么：**文件**走待打开队列，**目录**走换根（`INV-OPEN-03`）。
+        // ⚠️ 两者都在 `AppState` 就绪之后才能做；没就绪就整条暂存，`setup` 里重放
+        //    （重放走的还是本函数 ⇒ 目录也会在那一趟被正确分派）。
+        let kind = match std::fs::metadata(&path) {
+            Ok(md) if md.is_file() => 0u8,
+            Ok(md) if md.is_dir() => 1u8,
             Ok(_) => {
-                diag!(
-                    "⛔ 打开请求是目录或特殊文件，本期只接受文档：{}",
-                    path.display()
-                );
+                diag!("⛔ 打开请求是特殊文件：{}", path.display());
+                emit_bare(app, &target, "rmd://drop-reject", Some(DROP_REJECT_UNREADABLE));
                 continue;
             }
             Err(e) => {
@@ -2556,8 +3950,17 @@ fn handle_open_urls(app: &tauri::AppHandle, urls: Vec<tauri::Url>) {
                     e.to_string().len(),
                     path.display()
                 );
+                emit_bare(app, &target, "rmd://drop-reject", Some(DROP_REJECT_UNREADABLE));
                 continue;
             }
+        };
+
+        // ⭐ 设计 §2.1 最后一行：拖到 Dock 图标与拖入窗口**同结果**——
+        //    非 `.md` 一样拒（`INV-OPEN-03` 的"同一条路"包括拒绝这一半）。
+        if kind == 0 && !crate::commands::link::is_markdown(&path) {
+            diag!("⛔ 打开请求不是 Markdown：{}", path.display());
+            emit_bare(app, &target, "rmd://drop-reject", Some(DROP_REJECT_NOT_MARKDOWN));
+            continue;
         }
 
         let Some(state) = app.try_state::<AppState>() else {
@@ -2574,16 +3977,40 @@ fn handle_open_urls(app: &tauri::AppHandle, urls: Vec<tauri::Url>) {
             continue;
         };
 
-        let outcome = state.with(|s| {
-            fs_cmd::authorize_startup(&mut s.grants, &path).map(|(_mode, real)| {
+        if kind == 1 {
+            // ⭐ 目录：与拖入窗口同一条（`INV-OPEN-03`）。它自己发 `rmd://root-changed`。
+            if open_root_from_window(app, &target, &path) {
+                accepted += 1;
+            } else {
+                // ⚠️ 拒绝同样要**可见**（§2.4「目录授权失败 → 这个目录打不开」）：
+                //    只打日志的话，从 Finder 拖到 Dock 的行为就是"什么都没发生"。
+                emit_bare(app, &target, "rmd://drop-reject", Some(DROP_REJECT_ROOT));
+            }
+            continue;
+        }
+
+        // ⭐ `design/0071` §5.1 **Q42**：同一个文件已经在某个窗口里打开 ⇒
+        //    **聚焦那个窗口**，不再为它开第二份状态（两份 `current_document` 会各存各的
+        //    编辑态与监视，用户改一份、另一份还停在旧内容）。
+        //    ⚠️ 只在"确实是同一份真实文件"时命中：两侧都过 `canonicalize`
+        //    （`current_document` 已是规范化路径），⛔ 别用原串比较。
+        if kind == 0 {
+            if let Ok(real) = std::fs::canonicalize(&path) {
+                if let Some(owner) = window_showing_document(&state, &real) {
+                    diag!("▶ 打开请求已在窗口 {} 里：{}", owner, real.display());
+                    wake_window(app, &owner);
+                    continue;
+                }
+            }
+        }
+
+        match stage_open_file(&state, &target, &path) {
+            Ok(real) => {
                 // ⚠️ 这一行是**冒烟判据的锚点**（§7.1 第 9 条按标记取），也是排障时
-                //    "到底收没收到 Apple Event"的唯一证据。
+                //    "到底收没收到 Apple Event"的唯一证据。⛔ 别改这句话。
                 diag!("▶ 打开请求（Apple Event）：{}", real.display());
-                s.push_pending_open(real);
-            })
-        });
-        match outcome {
-            Ok(()) => accepted += 1,
+                accepted += 1;
+            }
             Err(e) => {
                 diag_stderr!("⛔ 打开请求不能授权（{e}）：{}", path.display());
                 diag_file!(
@@ -2592,6 +4019,7 @@ fn handle_open_urls(app: &tauri::AppHandle, urls: Vec<tauri::Url>) {
                     e.to_string().len(),
                     path.display()
                 );
+                emit_bare(app, &target, "rmd://drop-reject", Some(DROP_REJECT_UNREADABLE));
             }
         }
     }
@@ -2599,17 +4027,78 @@ fn handle_open_urls(app: &tauri::AppHandle, urls: Vec<tauri::Url>) {
     if accepted == 0 {
         return;
     }
+    // ⭐ `bugs/0331`：**用户从外部打开了文档 ⇒ 他就是要看它**。只发唤醒信号不够——
+    //    正文换了、窗口不动，对用户等于"什么都没发生"（`design/0015` §6 原取舍已由本条取代）。
+    //    ⚠️ 放在 `accepted > 0` 之后：全部被拒时⛔ 不把窗口提到前面（那是"没有动作"）。
+    //    ⚠️ 冷启动这一趟取不到窗口（它在 `setup` 里重放，早于 `create_window`）⇒ no-op，
+    //    随后新建的窗口自己会出现在前面。
+    wake_window(app, &target);
     // ⭐ 唤醒信号**不带路径**（`INV-APP-03`）。前端收到后调 `take_pending_open` 取空队列。
     // ⚠️ 冷启动时事件可能早于监听 ⇒ 前端引导阶段还会**主动 drain 一次**；
     //    这里发不出去也不致命（队列还在），但⛔ 仍然要响。
-    if let Err(e) = app.emit("rmd://open-path", ()) {
-        diag_stderr!("⛔ 打开请求的唤醒信号发不出去：{e}（队列还在，前端引导时会取走）");
-        diag_file!(
-            "⛔ 打开请求的唤醒信号发不出去 err_class={} err_len={}",
-            logging::err_class(&e),
-            e.to_string().len()
-        );
+    emit_bare(app, &target, "rmd://open-path", None);
+}
+
+/// 哪个窗口正开着这份文件（`design/0071` §5.1 Q42）。
+///
+/// ⚠️ 只做**内存里的字符串比较**（两侧都已规范化，见调用方），⛔ 不读盘、⛔ 不碰授权。
+/// ⚠️ 逐个窗口 `try_lock` 而不是排队等锁：这条路径跑在 AppKit 的 Apple Event 回调里，
+/// 卡住就是**整个进程**卡住。抢不到锁的窗口只是"这一趟不算它"，下一趟还会重来。
+fn window_showing_document(state: &AppState, real: &Path) -> Option<String> {
+    for (label, arc) in state.windows() {
+        let Ok(guard) = arc.try_lock() else {
+            continue;
+        };
+        if guard.current_document.as_deref() == Some(real) {
+            return Some(label);
+        }
     }
+    None
+}
+
+/// 把窗口**真正**提到用户眼前（`bugs/0331`）。
+///
+/// ⚠️ 这是**用户发起**的动作（在 iTerm / Finder 里打开了一份文件、点了 Dock 图标）带来的提权，
+/// ⛔ 不是后台脚本能自行制造的——与"探针不许抢前台"那条约束无关。
+///
+/// ⚠️⚠️ **顺序是承重的**：tao 的 `set_focus` 在「最小化或不可见」时**直接返回**
+/// （`tao-0.37.1/src/platform_impl/macos/window.rs:675-683`）⇒ 不先恢复就聚不上，
+/// 而且**不报错**。`bugs/0331` 的根因之一就是这里只调了 `set_focus`。
+/// ⚠️ 取不到窗口时**什么都不做**：冷启动重放（`EARLY_OPENS`）就发生在建窗之前。
+#[cfg(target_os = "macos")]
+fn wake_window(app: &tauri::AppHandle, label: &str) {
+    use tauri::Manager;
+    let Some(w) = app.get_webview_window(label) else {
+        return;
+    };
+    let minimized = w.is_minimized().unwrap_or(false);
+    let visible = w.is_visible().unwrap_or(true);
+    diag!("▶ 唤醒窗口 {label}（最小化={minimized} 可见={visible}）");
+    if minimized {
+        if let Err(e) = w.unminimize() {
+            diag_stderr!("⛔ 取消最小化窗口 {label} 失败：{e}");
+        }
+    }
+    if !visible {
+        if let Err(e) = w.show() {
+            diag_stderr!("⛔ 显示窗口 {label} 失败：{e}");
+        }
+    }
+    if let Err(e) = w.set_focus() {
+        diag_stderr!("⛔ 聚焦窗口 {label} 失败：{e}");
+    }
+}
+
+/// 「当前该被唤醒的那个窗口」（`RunEvent::Reopen` 与 Apple Event 的落点）。
+///
+/// ⚠️ 正常路径是 `active_label()`（最近聚焦的窗口，`design/0071` §5.2）；
+/// `AppState` 未就绪（极早/极晚）时回退 `"main"`——与 `handle_open_urls` 同一条判据。
+#[cfg(target_os = "macos")]
+fn front_label(app: &tauri::AppHandle) -> String {
+    use tauri::Manager;
+    app.try_state::<AppState>()
+        .map(|s| s.active_label())
+        .unwrap_or_else(|| "main".to_string())
 }
 
 /// 启动路径的最小检查。
@@ -2856,8 +4345,15 @@ struct FrontendReport {
 /// 用"启动参数是文件、但前端根本没挂上文档"这种失败去测它，它会**推导成 `empty`**，
 /// 于是"单文件必须显示出来"这条判据就被绕过去了（2026-10-13 实测放过一次假 PASS）。
 #[tauri::command]
-fn report_status(app: tauri::AppHandle, report: FrontendReport) -> Result<(), String> {
+fn report_status(
+    app: tauri::AppHandle,
+    // ⚠️ `design/0071` §5.2：会话是**按窗口**的 ⇒ 这个钩子必须问"报的是哪个窗口"。
+    //    由 Tauri 注入，前端 `invoke` 的参数一个字都不用改。
+    window: tauri::WebviewWindow,
+    report: FrontendReport,
+) -> Result<(), String> {
     use tauri::Manager;
+    let label = window.label().to_string();
     // ⚠️ 第一行就打一条：**"到了这里"本身就是一份证据**。
     //    若这条不出现，说明前端根本没走到回报——问题是前端的，不是判据的。
     diag!("▶ report_status 收到回报（ok={}）", report.ok);
@@ -2879,7 +4375,7 @@ fn report_status(app: tauri::AppHandle, report: FrontendReport) -> Result<(), St
     diag_file!("  状态条：长度={} 字节", report.summary.len());
     let backend_mode = {
         use tauri::Manager;
-        app.state::<AppState>().with(|s| s.mode().as_str())
+        app.state::<AppState>().with(&label, |s| s.mode().as_str())
     };
     diag_stderr!(
         "  侧边栏：{}（后端声明 {}）｜树节点 {}（灰显 {}）｜当前项 {}｜未授权态显式={}｜已挂文档={}｜上次目录提示={}",
@@ -2913,10 +4409,10 @@ fn report_status(app: tauri::AppHandle, report: FrontendReport) -> Result<(), St
     //    ⚠️ **标签随之从 `公式渲染：` 改成 `渲染统计：`**（⛔ 不改成"公式渲染"那样的字面承诺，
     //    那会变成一句假话）；旧的 `公式渲染：` 字样**全项目已无脚本依赖**
     //    （`tools/smoke-gui.sh` 的按标记取那张表里**本来就没有它**），见 `design/0007` §10.8。
-    let (render_line, code_note) = app.state::<AppState>().with(|s| {
+    let (render_line, code_note) = app.state::<AppState>().with(&label, |s| {
         let st = s.last_render_stats;
         let over = st.code_unhighlighted();
-        let note = if over > 0 {
+        let mut note = if over > 0 {
             // ⭐ Q22 原话要的就是这一句：**说得准确**——
             //    "未高亮"≠"内容丢了/被跳过了"，这几块是**完整、转义的纯文本**。
             format!(
@@ -2926,6 +4422,16 @@ fn report_status(app: tauri::AppHandle, report: FrontendReport) -> Result<(), St
         } else {
             String::new()
         };
+        // ⭐ `design/0060`：Mermaid 的回退同样要**可见且说准确**。
+        //    ⚠️ 这里**不写"规模限制"**：回退成因有五种（不支持 / 语法错 / 超限 /
+        //    安全拒绝 / 空图），而逐块原因已经在正文那句 `rmd-diagram-note` 里。
+        let un = st.mermaid_unrendered();
+        if un > 0 {
+            note.push_str(&format!(
+                "  ⛔ 部分图表未渲染：{un} / {} 张（原因见文内，原文完整）",
+                st.mermaid_rendered + un
+            ));
+        }
         (st.summary(), note)
     });
     diag!("  渲染统计：{render_line}{code_note}");
@@ -2944,7 +4450,7 @@ fn report_status(app: tauri::AppHandle, report: FrontendReport) -> Result<(), St
     // ── 外观（`design/0004` / `design/0005`）──
     let (want_mode, want_font) = app
         .state::<AppState>()
-        .with(|s| (s.config.appearance().mode, s.config.appearance().font_size));
+        .with(&label, |s| (s.config.appearance().mode, s.config.appearance().font_size));
     diag_stderr!(
         "  外观：生效主题={}（配置模式={}）｜生效正文字号={}px（配置值={}px）",
         if report.theme.is_empty() { "（空）" } else { &report.theme },
@@ -2987,7 +4493,7 @@ fn report_status(app: tauri::AppHandle, report: FrontendReport) -> Result<(), St
 
     // ── 文件监视与自动重载（`design/0006`）──
     // ⭐ 后端那一侧的真值：现在监视的是哪份文件。
-    let (backend_watch, backend_doc) = app.state::<AppState>().with(|s| {
+    let (backend_watch, backend_doc) = app.state::<AppState>().with(&label, |s| {
         (
             s.watch.as_ref().map(|w| (w.seq, w.real.display().to_string())),
             s.current_document.as_ref().map(|p| p.display().to_string()),
@@ -3022,7 +4528,7 @@ fn report_status(app: tauri::AppHandle, report: FrontendReport) -> Result<(), St
     //    ⭐ 排障时要把它与 `▶ 目录监视已建立` 那行 stderr **对着读**：
     //    这里「未建立」而那边有「已建立」⇒ 中途被换根摘掉了（正常）；
     //    两边都没有 ⇒ 建立失败（那一行会写明原因）。
-    let tree_watch = app.state::<AppState>().with(|s| {
+    let tree_watch = app.state::<AppState>().with(&label, |s| {
         s.tree_watch
             .as_ref()
             .map(|w| (w.root.display().to_string(), w.generation))
@@ -3055,7 +4561,7 @@ fn report_status(app: tauri::AppHandle, report: FrontendReport) -> Result<(), St
     // ⭐ 后端那一侧的真值：写授权给没给、基线多大、有没有保存在途、自写指纹记的是什么。
     //    ⚠️ 这四个**只有后端知道**（前端拿到的是"授权成功"这一个事实），
     //    而 §6 那一整张失败模型的排障要的正是它们。
-    let (edit_target, baseline_len, inflight, self_write) = app.state::<AppState>().with(|s| {
+    let (edit_target, baseline_len, inflight, self_write) = app.state::<AppState>().with(&label, |s| {
         (
             s.edit_target.as_ref().map(|p| p.display().to_string()),
             s.baseline_bytes.as_ref().map(|b| b.len()),
@@ -3106,7 +4612,7 @@ fn report_status(app: tauri::AppHandle, report: FrontendReport) -> Result<(), St
         //   ⑥ 当前项高亮**至多一个**（§2.1 的当前项语义）。
         let (mode, last_dir_known) = app
             .state::<AppState>()
-            .with(|s| (s.mode(), s.config.last_directory.is_some()));
+            .with(&label, |s| (s.mode(), s.config.last_directory.is_some()));
         let mode_str = mode.as_str();
         let dir_mode = mode == Mode::Directory;
         let doc_ok = if mode == Mode::SingleFile {
@@ -3363,6 +4869,26 @@ struct MeasureSample {
     /// 这一条不写下来的话，报告里"0"会被当成"不用管"。
     clock_ms: Option<f64>,
 
+    // —— ⭐ `design/0087` S0：**启动分段**（相对页面导航开始，前端时间轴）——
+    //
+    // ⚠️ 六个数**单调不减**，相邻差值就是那一段的耗时；⛔ 它们与 Rust 侧 `t1/t2/t3`
+    //    **不同纪元**，⛔ 不相加（同 `t4` 那条纪律）。⚠️ 未采到是 `None`，⛔ 不写 0：
+    //    "没采到"与"零成本"必须是两个可区分的值（`INV-MEASURE-01` 同族）。
+    // ⚠️ `#[serde(default)]`：老前端（不带这组字段）仍能回报，缺省即 `None`——
+    //    少一层"加字段 ⇒ 反序列化失败 ⇒ 整片数字静默缺席"的坑（`bugs/0003` 的形态）。
+    #[serde(default)]
+    s0_scripts_ms: Option<f64>,
+    #[serde(default)]
+    s0_keys_ms: Option<f64>,
+    #[serde(default)]
+    s0_edit_ms: Option<f64>,
+    #[serde(default)]
+    s0_live_ms: Option<f64>,
+    #[serde(default)]
+    s0_session_ms: Option<f64>,
+    #[serde(default)]
+    s0_content_ms: Option<f64>,
+
     /// `#doc` 里的元素数（`querySelectorAll('*')`）与含文本节点的全树节点数。
     /// ⭐ 这两个才是 §7.2 第 9 条要的"DOM 节点数"（⛔ `childElementCount` 不是，§10.3）。
     doc_elements: u64,
@@ -3392,6 +4918,16 @@ struct MeasureSample {
 /// ⚠️ `RMD_MEASURE_HOLD_MS`：报完之后**再多活一会儿**（默认 0）。
 /// 它的唯一目的是让脚本有时间采样 WebView 进程的内存——**这不属于任何一段被测耗时**
 /// （数字在这一行打印时就已经定型了）。
+/// 把 `Option<f64>` 毫秒格式化成 `（无）` / `12.3`。
+///
+/// ⚠️ `None` **不写 0**——"没采到"与"零成本"必须是两个可区分的值（`INV-MEASURE-01` 同族）。
+fn opt_ms(v: Option<f64>) -> String {
+    match v {
+        Some(x) => format!("{x:.1}"),
+        None => "（无）".to_string(),
+    }
+}
+
 #[tauri::command]
 fn report_measure(app: tauri::AppHandle, sample: MeasureSample) -> Result<(), String> {
     let line = serde_json::to_string(&sample).map_err(|e| format!("序列化测量样本失败：{e}"))?;
@@ -3436,6 +4972,18 @@ fn report_measure(app: tauri::AppHandle, sample: MeasureSample) -> Result<(), St
         },
         sample.doc_elements,
         sample.doc_nodes_total,
+    );
+
+    // ⭐ `design/0087` S0：启动分段单独一行——它回答的是另一个问题（"从页面导航到能看要几步"），
+    //    ⚠️ 与上面那条的 T4/T5 不是同一组数，⛔ 不要混读。
+    diag!(
+        "▶ 启动分段：脚本={} 键位={} 编辑面={} live={} 会话={} 内容={}（ms，相对导航开始）",
+        opt_ms(sample.s0_scripts_ms),
+        opt_ms(sample.s0_keys_ms),
+        opt_ms(sample.s0_edit_ms),
+        opt_ms(sample.s0_live_ms),
+        opt_ms(sample.s0_session_ms),
+        opt_ms(sample.s0_content_ms),
     );
 
     if let Some(path) = std::env::var_os("RMD_MEASURE_OUT") {
@@ -3575,6 +5123,9 @@ mod tests {
         assert_eq!(display("Cmd+0"), "⌘0");
         assert_eq!(display("Cmd+-"), "⌘-");
         assert_eq!(display("Cmd+="), "⌘=");
+        // ⭐ `design/0069`：方括号原样保留（不放宽、不转义）。
+        assert_eq!(display("Cmd+["), "⌘[");
+        assert_eq!(display("Cmd+]"), "⌘]");
         assert_eq!(display("Ctrl+Alt+Shift+Cmd+X"), "⌃⌥⇧⌘X");
         // ⚠️ 别名长什么样**不归它管**：设置界面里列的是 `accel`，⛔ 不列 `Ctrl` 别名。
         assert_eq!(display("Cmd+Ctrl+Z"), "⌃⌘Z");
@@ -3630,6 +5181,8 @@ mod tests {
     /// "**带原生加速键**的"，于是无加速键那半边**没有测试就会漂**——
     /// 最常见的一种漂法是把一个 `Owner::Menu` 的项写进来（那会让它在菜单里
     /// **丢掉加速键**：菜单还能点，但 `⌘X` 突然不灵了，而没有任何报错）。
+    /// ⚠️ `design/0071` §5.2 之后这条只覆盖**派生清单**（`Owner::Web` 那一半）；
+    /// 位置表里那两个 `Owner::Menu` 例外由下一条测试单独钉住。
     #[test]
     fn 无加速键的菜单项必须是_owner_web_且不在带键清单里() {
         for id in plain_menu_ids() {
@@ -3651,6 +5204,31 @@ mod tests {
         }
     }
 
+    /// ⭐ **位置表里 `Owner::Menu` 成员只能是 `window.new-tab` 与 `window.new`**
+    /// （`design/0071` §5.2 / `design/0083` §2.2）。
+    ///
+    /// ⚠️ 它们占位置表只是为了"插在 `File` 的前两格"，加速键仍由 `install_menu` 按 owner 装。
+    /// 别的 `Owner::Menu` 项若也塞进这张表：`plain_menu_ids()` 不会返回它
+    /// （⇒ 重贴计划与上面那条断言都**看不见它**），而 `install_menu` 会把它当普通项装 ——
+    /// 两条通道对同一项的认知分叉，症状是"键按不动"或"菜单那一行切语言后不跟着变"，
+    /// 而且**没有任何报错**。⇒ 把这**两个**钉在这里。
+    #[test]
+    fn 位置表里唯一的_owner_menu_是新建窗口与新建标签页() {
+        let menu_owned: Vec<&str> = PLAIN_MENU_ITEMS
+            .iter()
+            .filter(|p| shortcut(p.id).map(|s| s.owner == Owner::Menu).unwrap_or(false))
+            .map(|p| p.id)
+            .collect();
+        // ⚠️ 顺序 = 位置表里的顺序（`新建标签页` 在 0、`新建窗口` 在 1）。
+        assert_eq!(menu_owned, vec![WINDOW_NEW_TAB_ID, WINDOW_NEW_ID]);
+        // ⚠️ 它们必须**同时**在带键清单里，否则 `install_menu` 不会给它们装加速键。
+        assert!(MENU_ITEM_IDS.contains(&WINDOW_NEW_TAB_ID));
+        assert!(MENU_ITEM_IDS.contains(&WINDOW_NEW_ID));
+        // ⚠️ 而"无键那一半"的派生清单里**不许**有它们——否则重贴计划会重复一项。
+        assert!(!plain_menu_ids().contains(&WINDOW_NEW_TAB_ID));
+        assert!(!plain_menu_ids().contains(&WINDOW_NEW_ID));
+    }
+
     /// ⭐ **无加速键项的插入位置必须落在它那个子菜单的真实范围内**（2026-10-14 加）。
     ///
     /// ⚠️ **为什么值得一条测试**：`install_menu` 用的是 `Submenu::insert(item, position)`，
@@ -3667,7 +5245,12 @@ mod tests {
     fn 无加速键项的插入位置在子菜单的已知范围内() {
         // `kb/0016` §1：macOS 上 Tauri 默认菜单这两个子菜单的确切构成（真机读出来的）。
         // ⚠️ 数字**会随 Tauri 升级变**——变了就该在这里红一次，然后人去读一遍新布局。
-        let known: &[(&str, usize)] = &[("File", 1), ("Edit", 7)];
+        // ⚠️ 2026-11-11（`bugs/0310`）：`Edit` 从 **7** 变成 **5** —— `install_menu` 在插
+        //    无键项**之前**先摘掉预定义 `Undo`/`Redo`（它们带着 `⌘Z`/`⇧⌘Z` 吞键），
+        //    再由本表把它们放回同两个格子。上限按"摘完剩下几项"算。
+        // ⚠️ 2026-11-14（`design/0079`）：`View` = **1**（`kb/0016` §1：只有 Full Screen），
+        //    ⚠️ `install_menu` 先把 `⌘B` 的侧边栏项插在 index 0 ⇒ 本组 `position` 从 1 起。
+        let known: &[(&str, usize)] = &[("File", 1), ("Edit", 5), ("View", 1)];
         for p in PLAIN_MENU_ITEMS {
             let n = known
                 .iter()
@@ -3722,29 +5305,78 @@ mod tests {
         let originals: &[(&str, &[&str])] = &[
             ("File", &["Close Window"]),
             ("Edit", &["Undo", "Redo", "", "Cut", "Copy", "Paste", "Select All"]),
+            // ⚠️ `muda 0.20.0` 的 `PredefinedMenuItem::fullscreen` 文案是 "Toggle Full Screen"
+            //    （`items/predefined.rs:434`）；这一格只是**模拟的初始表状态**，真机由上游给。
+            ("View", &["Toggle Full Screen"]),
         ];
         let want: &[(&str, &[&str])] = &[
-            // ⭐ `File`（`design/0038` §2.3）：三个打开入口连成一串，只有最后一条带线；
-            //    然后才是 `保存`、`用外部编辑器打开`（各自带一条下分隔线）
+            // ⭐ `File`（`design/0038` §2.3 ＋ `design/0071` §4.2/§5.2 ＋ `design/0076`
+            //    ＋ `design/0083` §2.2）：
+            //    `新建标签页 · 新建窗口` 连成一串、独占第一格组（组尾一条线）；
+            //    `新建文件…` 与三条打开入口连成一串
+            //    （都 `SepSide::None`），只有 `快速打开…` 之后带线；
+            //    然后 `保存 · 保存为 HTML · 导出为 PDF` 是**第二串**（三条之间无分隔线，
+            //    只有 `导出为 PDF` 之后有一条）；再往后是 `收藏 / 取消收藏`、
+            //    `用外部编辑器打开`（各自带一条下分隔线）。
             ("File", &[
-                "file.open-directory",
+                "window.new-tab",
+                "window.new",
+                "",
+                "file.new",
+                "file.open",
                 "file.open-file",
                 "file.quick-open",
                 "",
                 "file.save",
+                "file.export-html",
+                "file.export-pdf",
+                "",
+                "file.toggle-favorite",
                 "",
                 "file.open-external-editor",
                 "",
                 "Close Window",
             ]),
-            // ⭐ `Edit`：`查找…` 在 `Select All` 之后，带一条上分隔线（Apple 的惯例）
+            // ⭐ `Edit`：顶部两项是**我们自己的** `edit.undo` / `edit.redo`
+            //    （预定义项已被摘掉，`bugs/0310`）；`design/0077` 的五项复制/粘贴
+            //    在 `Select All` 之后连成一串（组首一条上分隔线）；
+            //    `查找…` 最后，带一条上分隔线（Apple 的惯例），`design/0075` 的
+            //    `查找替换…` 紧跟它（同一条线之内，⛔ 不另起分隔线）。
             ("Edit", &[
-                "Undo", "Redo", "", "Cut", "Copy", "Paste", "Select All", "", "edit.find",
+                "edit.undo", "edit.redo", "", "Cut", "Copy", "Paste", "Select All", "",
+                "edit.copy-markdown", "edit.copy-html", "edit.copy-plain", "edit.copy-rich",
+                "edit.paste-literal", "", "edit.find", "edit.replace",
+            ]),
+            // ⭐ `View`（`design/0079`）：侧边栏项由 `install_menu` 先插 index 0，
+            //    然后是 `行号`（带下分隔线）、`专注` 与缩放三档连成一串、`缩小` 之后再一条线。
+            ("View", &[
+                "view.toggle-sidebar",
+                "view.toggle-line-numbers",
+                "",
+                "view.toggle-zen",
+                "view.zoom-actual",
+                "view.zoom-in",
+                "view.zoom-out",
+                "",
+                "Toggle Full Screen",
             ]),
         ];
         for (title, expected) in want {
             let orig = originals.iter().find(|(t, _)| t == title).expect("子菜单要在表里").1;
             let mut list: Vec<&str> = orig.to_vec();
+            // ⚠️⚠️ `install_menu` 在插无键项**之前**先摘掉 `Menu::default` 自带的
+            //    预定义 `Undo` / `Redo`（`bugs/0310`：它们带着 `⌘Z`/`⇧⌘Z` 的
+            //    NSMenuItem key equivalent，会把键吞在 AppKit 那一层）——
+            //    这里照做，否则模拟出来的落点与真机不是同一个表状态。
+            if *title == "Edit" {
+                list.drain(0..2);
+            }
+            // ⚠️ `install_menu` 在插无键项**之前**先把 `⌘B` 的侧边栏项插到 `View` 的 index 0
+            //    （`design/0010`；`View` 原表只有 Full Screen）——这里照做，
+            //    否则本组的 `position`（从 1 起）会算在错的表状态上。
+            if *title == "View" {
+                list.insert(0, MENU_SIDEBAR_ID);
+            }
             let group: Vec<&PlainMenuItem> =
                 PLAIN_MENU_ITEMS.iter().filter(|p| p.submenu == *title).collect();
             for (p, place) in group.iter().zip(placements(&group)) {
@@ -3946,6 +5578,39 @@ mod tests {
                 assert_eq!(d.label_en, s.label_en, "{} 的 label_en 与表不一致", d.id);
             }
         }
+    }
+
+    /// ⭐ **窗口标题的清洗只做三件事**（`design/0083` §2.3）：
+    /// 去控制字符、截到 [`WINDOW_TITLE_MAX_CHARS`]、空则回落 `rmd`。
+    ///
+    /// ⚠️ 这三条各有一个**真机上看得出来**的后果：换行把标题栏撑成两行、
+    /// 超长文件名把窗口按钮挤到看不见、以及"标题空了"时窗口变成无名字的方块。
+    /// ⛔ 第四条刻画意的**不做**：零宽字符与方向控制符留着——它们在文件名里合法存在。
+    #[test]
+    fn 窗口标题清洗_去控制字符_截长_空回落() {
+        // 换行 / 制表符 / NUL 都属控制字符 ⇒ 抹掉，而不是替换成空格。
+        assert_eq!(sanitize_window_title("a\nb\tc\u{0}d"), "abcd");
+        // 两端空白去掉（文件名本身不会带，但前端可能把空态拼成 `" "`）。
+        assert_eq!(sanitize_window_title("  笔记.md  "), "笔记.md");
+        // 全空 / 全是控制字符 ⇒ 回落，⛔ 不返回空串（空标题会退化成窗口图标）。
+        assert_eq!(sanitize_window_title(""), "rmd");
+        assert_eq!(sanitize_window_title(" \n\t "), "rmd");
+        // 零宽与方向控制符**不属于** `char::is_control` ⇒ 照原样留着。
+        assert_eq!(sanitize_window_title("a\u{200b}b"), "a\u{200b}b");
+    }
+
+    /// ⚠️ 截长的单位是**字符**、⛔ 不是字节：120 个汉字刚好留满，121 个砍掉最后一个。
+    /// 若哪天有人把它改成 `&raw[..120]`（按字节切），中文名会在**第 40 个字**处被腰斩，
+    /// 而且切在多字节边界上还会 panic——本测试就是那条改动的拦网。
+    #[test]
+    fn 窗口标题清洗_按字符截到上限() {
+        let full = "汉".repeat(WINDOW_TITLE_MAX_CHARS);
+        assert_eq!(sanitize_window_title(&full), full);
+
+        let over = "汉".repeat(WINDOW_TITLE_MAX_CHARS + 1);
+        let got = sanitize_window_title(&over);
+        assert_eq!(got.chars().count(), WINDOW_TITLE_MAX_CHARS);
+        assert_eq!(got, full);
     }
 
     /// ⭐ **前端的回报一定收得下**——每一个**计数器**都得能吃下 `-1`。
@@ -4240,5 +5905,290 @@ mod tests {
                 "{tag}：要不要密码必须在**点之前**看得见（说明与按钮各一处）"
             );
         }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // `design/0071` §2.1：拖放的判定表（五个分支）
+    // ─────────────────────────────────────────────────────────────────────
+
+    /// 一个干净的临时目录（判定要读 `metadata`，所以必须落在真盘上）。
+    fn drop_tmp_dir(tag: &str) -> PathBuf {
+        let d = std::env::temp_dir().join(format!("rmd-drop-{}-{tag}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    /// ⭐ 一份 `.md` ⇒ 走 `authorize_startup` 那条（与 Apple Event 同一条）。
+    #[test]
+    fn 拖放判定_单份markdown走文件() {
+        let d = drop_tmp_dir("one-md");
+        let md = d.join("a.md");
+        std::fs::write(&md, "# x").unwrap();
+
+        let plan = classify_drop(&[md.clone()], false);
+        assert_eq!(plan.intent, Some(DropIntent::OpenFile(md)));
+        assert_eq!(plan.reject, None, "单份 markdown 不该附带任何拒绝理由");
+    }
+
+    /// ⭐ 一个大写后缀也算（判据是 `link::is_markdown`，不是 `ends_with(".md")`）。
+    #[test]
+    fn 拖放判定_markdown后缀不分大小写() {
+        let d = drop_tmp_dir("upper-md");
+        let md = d.join("A.MARKDOWN");
+        std::fs::write(&md, "# x").unwrap();
+
+        let plan = classify_drop(&[md.clone()], false);
+        assert_eq!(plan.intent, Some(DropIntent::OpenFile(md)));
+    }
+
+    /// ⭐ 一个目录 ⇒ 换根（`INV-OPEN-03` 的那条路）。
+    #[test]
+    fn 拖放判定_目录走换根() {
+        let d = drop_tmp_dir("one-dir");
+        let sub = d.join("notes");
+        std::fs::create_dir_all(&sub).unwrap();
+
+        let plan = classify_drop(&[sub.clone()], false);
+        assert_eq!(plan.intent, Some(DropIntent::OpenRoot(sub)));
+        assert_eq!(plan.reject, None);
+    }
+
+    /// ⭐ 多个条目 ⇒ **处理第一个** ＋ 一句 `multi`（设计 §2.1 的「只处理第一个」）。
+    #[test]
+    fn 拖放判定_多个条目只开第一个并提示() {
+        let d = drop_tmp_dir("multi");
+        let first = d.join("a.md");
+        let second = d.join("b.md");
+        std::fs::write(&first, "# a").unwrap();
+        std::fs::write(&second, "# b").unwrap();
+
+        let plan = classify_drop(&[first.clone(), second], false);
+        assert_eq!(plan.intent, Some(DropIntent::OpenFile(first)), "只处理第一个");
+        assert_eq!(plan.reject, Some(DROP_REJECT_MULTI));
+    }
+
+    /// ⚠️ 第一个自己就打不开时，**具体**的拒绝理由优先——说"一次只能开一份"
+    /// 而撇下"这不是 Markdown"，对用户没有帮助。
+    #[test]
+    fn 拖放判定_多个条目里第一个不是markdown时报更具体的理由() {
+        let d = drop_tmp_dir("multi-non-md");
+        let first = d.join("a.txt");
+        let second = d.join("b.md");
+        std::fs::write(&first, "x").unwrap();
+        std::fs::write(&second, "# b").unwrap();
+
+        let plan = classify_drop(&[first, second], false);
+        assert_eq!(plan.intent, None);
+        assert_eq!(plan.reject, Some(DROP_REJECT_NOT_MARKDOWN));
+    }
+
+    /// ⭐ 非 `.md` ⇒ 拒绝，且**不进**任何队列。
+    #[test]
+    fn 拖放判定_非markdown拒绝() {
+        let d = drop_tmp_dir("non-md");
+        let txt = d.join("a.txt");
+        std::fs::write(&txt, "x").unwrap();
+
+        let plan = classify_drop(&[txt], false);
+        assert_eq!(plan.intent, None);
+        assert_eq!(plan.reject, Some(DROP_REJECT_NOT_MARKDOWN));
+    }
+
+    /// ⭐ 读不到（不存在）⇒ `unreadable`，⛔ 不是"没有动作"。
+    #[test]
+    fn 拖放判定_读不到拒绝() {
+        let d = drop_tmp_dir("missing");
+        let gone = d.join("nope.md");
+
+        let plan = classify_drop(&[gone], false);
+        assert_eq!(plan.intent, None);
+        assert_eq!(plan.reject, Some(DROP_REJECT_UNREADABLE));
+    }
+
+    /// ⭐ 编辑态 ⇒ **只**拒绝（`INV-OPEN-04`：不静默切换当前文档），
+    /// 哪怕拖进来的是一份完全正常的 Markdown。
+    #[test]
+    fn 拖放判定_编辑态一律拒绝() {
+        let d = drop_tmp_dir("editing");
+        let md = d.join("a.md");
+        std::fs::write(&md, "# x").unwrap();
+
+        let plan = classify_drop(&[md], true);
+        assert_eq!(plan.intent, None, "编辑态下⛔ 不许打开任何东西");
+        assert_eq!(plan.reject, Some(DROP_REJECT_EDITING));
+    }
+
+    /// ⭐ `INV-OPEN-03` 的结构面：拖放与 Apple Event 的「打开目录」必须是**同一个函数**。
+    /// 源码级判据（行为面在 `open_root_from_window` 里，那一半要 `AppHandle`，单测造不出来）：
+    /// 两个入口各调它一次，⛔ 谁都不许自己写第二份换根收尾。
+    #[test]
+    fn 打开目录只有一份实现_拖放与AppleEvent共用() {
+        let src = include_str!("mod.rs");
+        let prod = src.split("mod tests {").next().expect("总有测试模块之前的部分");
+        assert!(
+            prod.matches("open_root_from_window(").count() == 3,
+            "只许：定义 1 处 + handle_drop_paths 里 1 处 + handle_open_urls 里 1 处"
+        );
+        assert!(
+            prod.matches("open_root_from_backend(").count() == 1,
+            "`open_root_from_backend` 只许在 open_root_from_window 里被调一次"
+        );
+    }
+
+    /// ⭐ `design/0071` §5.1 **Q42** 的判定面：同一个文件已经在某个窗口里打开时，
+    /// Apple Event 要找到**那个窗口**，⛔ 不为它开第二份状态。
+    ///
+    /// ⚠️ 只测纯内存判定（`current_document` 的字符串比较）。
+    /// 「聚焦已有窗口」那一步是 `w.set_focus()`——**会抢前台**，
+    /// 所以它**不在自动化里**，登记为人工验收项（`design/0071` §8 第 8 行）。
+    #[test]
+    fn Q42_同一个文件只归属一个窗口_没开过就找不到() {
+        let dir = std::env::temp_dir().join(format!("rmd-q42-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let mut main = Session::blank(Config::default(), dir.join("config.json"));
+        main.current_document = Some(std::path::PathBuf::from("/tmp/q42-a.md"));
+        let state = AppState::new(main);
+        let mut w1 = Session::blank(state.config(), dir.join("config.json"));
+        w1.current_document = Some(std::path::PathBuf::from("/tmp/q42-b.md"));
+        state.insert_window("w-1", w1);
+
+        assert_eq!(
+            window_showing_document(&state, std::path::Path::new("/tmp/q42-a.md")).as_deref(),
+            Some("main"),
+            "A 在 main 里开着"
+        );
+        assert_eq!(
+            window_showing_document(&state, std::path::Path::new("/tmp/q42-b.md")).as_deref(),
+            Some("w-1"),
+            "B 在 w-1 里开着（⛔ 别把所有窗口都算成同一个）"
+        );
+        assert_eq!(
+            window_showing_document(&state, std::path::Path::new("/tmp/q42-c.md")),
+            None,
+            "没开过的文件找不到 ⇒ 走正常打开流程"
+        );
+
+        // 关掉 w-1 之后它那条归属必须消失（否则 Q42 会聚焦一个不存在的窗口）。
+        let _ = state.remove_window("w-1");
+        assert_eq!(
+            window_showing_document(&state, std::path::Path::new("/tmp/q42-b.md")),
+            None
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // ── ⭐ `design/0081` §2.1 ①：新窗口的级联落点（纯函数）──────────────
+
+    /// 常用夹具：工作区 1920×1080、原点 (0,0)；窗口外框 1000×828
+    /// （= 1000×800 内尺寸 ＋ 标题栏；夹取用的是外框）。
+    fn 级联(base: (f64, f64), occupied: &[(f64, f64)]) -> (f64, f64) {
+        cascade_origin(
+            base,
+            (WINDOW_INNER_W, WINDOW_INNER_H + 28.0),
+            (0.0, 0.0),
+            (1920.0, 1080.0),
+            occupied,
+            CASCADE_STEP,
+        )
+    }
+
+    /// 正常情况：从基准窗口往右下挪一格。
+    #[test]
+    fn 级联_从基准窗口往右下挪一格() {
+        assert_eq!(级联((100.0, 100.0), &[]), (128.0, 128.0));
+    }
+
+    /// 靠右时夹在工作区内（⛔ 不许把窗口推到屏幕外）。
+    #[test]
+    fn 级联_夹在可用区内() {
+        // 基准靠右：x 夹到 1920-1000=920（而不是 948）；
+        // y 也夹到 1080-828=252（而不是 328）——两轴都按**外框**尺寸算。
+        assert_eq!(级联((900.0, 300.0), &[]), (920.0, 252.0));
+    }
+
+    /// 基准已经贴着右下角：夹取会把第一格拉回它的原点上 ⇒ 必须改从左上角铺开，
+    /// ⛔ 不许与基准窗口重合（这正是用户报的症状）。
+    #[test]
+    fn 级联_基准贴角时不与它重合() {
+        let base = (920.0, 252.0);
+        let p = 级联(base, &[]);
+        assert_ne!(p, base, "⛔ 新窗口不许精确盖住基准窗口");
+        assert!(
+            p.0 >= 0.0 && p.0 <= 920.0 && p.1 >= 0.0 && p.1 <= 252.0,
+            "落点必须夹在可用区内：{p:?}"
+        );
+    }
+
+    /// 第一格已被别的窗口占着（连续开窗且新窗没被聚焦）⇒ 换一格，⛔ 不重叠。
+    #[test]
+    fn 级联_避开已占用的原点() {
+        let p = 级联((100.0, 100.0), &[(128.0, 128.0)]);
+        assert_ne!(p, (128.0, 128.0));
+        assert!((p.0 - 128.0).abs() >= CASCADE_STEP * 0.5 || (p.1 - 128.0).abs() >= CASCADE_STEP * 0.5);
+    }
+
+    /// 工作区原点不为 (0,0)（第二块屏 / 菜单栏在上）时，夹取以**工作区**为准。
+    #[test]
+    fn 级联_按工作区原点夹取() {
+        let p = cascade_origin(
+            (-1800.0, 200.0),
+            (1000.0, 828.0),
+            (-1920.0, -25.0),
+            (1920.0, 1080.0),
+            &[],
+            CASCADE_STEP,
+        );
+        // x：-1800+28=-1772（未触边）；y：200+28 被夹到 **-25+1080-828=227**
+        //   —— 若错把可用区当成从 0 起，这里会是 252。
+        assert_eq!(p, (-1772.0, 227.0));
+    }
+
+    /// 窗口比工作区还大 ⇒ 夹到左上角（⛔ 不出现负坐标 / 屏幕外）。
+    #[test]
+    fn 级联_窗口比工作区大时退回左上角() {
+        let p = cascade_origin(
+            (100.0, 100.0),
+            (1000.0, 828.0),
+            (0.0, 0.0),
+            (800.0, 600.0),
+            &[],
+            CASCADE_STEP,
+        );
+        assert_eq!(p, (0.0, 0.0));
+    }
+
+    /// 位置全被占满（几十扇窗）⇒ 仍落在可用区内，⛔ 不 panic、⛔ 不跑出屏幕。
+    #[test]
+    fn 级联_排不下时仍在可用区内() {
+        // 整块可用区按格铺满（28 的网格）⇒ 任何候选都撞得上一个已占用原点。
+        let mut occupied = Vec::new();
+        let mut x = 0.0;
+        while x <= 1920.0 {
+            let mut y = 0.0;
+            while y <= 1080.0 {
+                occupied.push((x, y));
+                y += CASCADE_STEP;
+            }
+            x += CASCADE_STEP;
+        }
+        let p = 级联((100.0, 100.0), &occupied);
+        assert!(p.0 >= 0.0 && p.0 <= 920.0 && p.1 >= 0.0 && p.1 <= 252.0, "{p:?}");
+    }
+
+    /// 步长为 0 / 负数 ⇒ 当成 1（⛔ 不除零、⛔ 不死循环）。
+    #[test]
+    fn 级联_步长非法时退化为1() {
+        let p = cascade_origin(
+            (10.0, 10.0),
+            (100.0, 100.0),
+            (0.0, 0.0),
+            (500.0, 500.0),
+            &[],
+            0.0,
+        );
+        assert_eq!(p, (11.0, 11.0));
     }
 }

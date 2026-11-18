@@ -458,6 +458,23 @@ test('⭐ 保存：`written === false`（no-op 短路）时文案是「无改动
   assert.strictEqual(o.清脏数, 1, '⚠️ 仍然要清脏：缓冲与磁盘**确实**一致');
 });
 
+test('⭐ 保存：未命名草稿在系统面板里**取消** ⇒ 「已取消」＋ **不清脏** ＋ 不报错', async function () {
+  // ⚠️ `design/0082`：`save_untitled` 的回包是 `{cancelled:true}`（不是错误、也不是"已保存"）。
+  //    这时磁盘上一个字节没动、字还在缓冲里 ⇒ 清脏就等于把它说成"已经写进磁盘"，
+  //    用户接着关窗/切文档时那道闸就不会再问（一次静默的数据丢失）。
+  const { saver, o } = 造保存器({
+    send: function () { return Promise.resolve({ cancelled: true }); },
+  });
+  const out = await saver.save();
+  assert.strictEqual(out && out.cancelled, true, '回包要原样交回去（调用方靠它决定"不许继续"）');
+  assert.strictEqual(o.清脏数, 0, '⛔ 取消**绝不能**清脏');
+  const 末 = o.状态[o.状态.length - 1];
+  assert.match(末.text, /已取消/, '⭐ 必须说出来 —— 静默取消与"按了没反应"长得一样');
+  assert.doesNotMatch(末.text, /已保存/, '⛔ 取消不是"已保存"');
+  assert.strictEqual(末.isError, false, '⚠️ 取消不是错误：用户自己点的');
+  assert.strictEqual(o.收尾, undefined, '⚠️ 取消也不算 `onDone`（那会把"面板里点取消"当成一次成功的保存回报）');
+});
+
 test('⭐ 保存：失败 ⇒ 可见 ＋ **不清脏**（原文件一个字节没变）', async function () {
   const { saver, o } = 造保存器({
     send: function () {

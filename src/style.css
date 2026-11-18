@@ -194,10 +194,85 @@ body {
   white-space: nowrap;
 }
 
-.status-error {
-  background: var(--ui-danger-bg);
-  color: var(--ui-danger-text);
+/* ════════════════════════════════════════════════════════════════════
+ * ⭐ 全局失败条（`design/0070`，2026-11-13）—— `#fail-bar`
+ *
+ * 用户原话：「报错不能在这里展示，1. 遮蔽了有用信息。」⇒ 失败**不再占**上面那条
+ * `.status`（它是 `design/0002` 的测量行：`nowrap` ＋ `ellipsis`，长文案会把自己截掉，
+ * 也会把测量值挤没）。失败单独一行、**按内容换行**、**不自动消失**（`INV-FAIL-03`）。
+ *
+ * ⚠️ 与 `.disk-bar` / `.reload-bar` 同族（同一层、同一个容器），但**语义不同**：
+ *    这三条是"某件降级正在生效"，这一条是"**一个动作失败了**"，它带重试 / 详情 / 关闭。
+ * ⚠️ 它**不在** `body.chrome-hidden` 的点名里（`INV-CHROME-01`）：失败不是装饰。
+ * ⚠️ 颜色只走语义变量、⛔ 不新增契约变量（`INV-THEME-02`）。
+ *    危险色只用在**文字**上（`--ui-danger-text`），不铺底（`--ui-danger-bg` 是横幅用途）。
+ * ⚠️ 高度由内容决定：长文案换行而不是省略——失败的第一句话必须能读完。
+ * ════════════════════════════════════════════════════════════════════ */
+.fail-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35em 0.75em;
+  padding: 0.3em 0.75em;
+  font-size: 0.8em;
+  background: var(--ui-bg-elevated);
+  border-bottom: var(--reader-rule-width) solid var(--ui-border);
+  color: var(--ui-text-muted);
 }
+
+/* ⚠️ `[hidden]` 必须显式写：UA 那条是元素选择器（0,0,1），压不住
+   `.fail-bar { display: flex }`（0,1,0）——同 `.disk-bar[hidden]` 那个坑。 */
+.fail-bar[hidden] { display: none; }
+
+.fail-text {
+  flex: 1 1 12em;
+  min-width: 0;
+  /* ⭐ 失败文案**换行**，⛔ 不省略（用户投诉的第 1 点就是"遮蔽了有用信息"）。 */
+  overflow-wrap: anywhere;
+}
+
+/* `P0`（数据风险 / 启动阻断）只把**文字**染成危险色（`INV-FAIL-06`）。 */
+.fail-bar[data-level='P0'] .fail-text { color: var(--ui-danger-text); }
+
+.fail-actions {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 0.4em;
+}
+
+.fail-btn,
+.fail-close {
+  flex: 0 0 auto;
+  font: inherit;
+  color: var(--ui-accent);
+  background: transparent;
+  border: var(--reader-rule-width) solid var(--ui-border);
+  border-radius: var(--ui-radius);
+  padding: 1px 8px;
+  cursor: pointer;
+}
+
+.fail-btn:hover:not(:disabled),
+.fail-close:hover { background: var(--ui-hover-bg); }
+
+/* ⚠️ 重试在途时禁用（`design/0070` §7-5：连点只执行一次），⛔ 不摘掉按钮。 */
+.fail-btn:disabled {
+  color: var(--ui-text-muted);
+  cursor: default;
+}
+
+/* 详情：另起一行、等宽字、保留换行（它是路径 / 错误码，⛔ 不是正文）。 */
+.fail-detail {
+  flex: 1 0 100%;
+  min-width: 0;
+  padding-top: 0.2em;
+  border-top: var(--reader-rule-width) solid var(--ui-border);
+  font-family: var(--reader-font-mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.fail-detail[hidden] { display: none; }
 
 /* ════════════════════════════════════════════════════════════════════
  * ⭐ 顶栏折叠（`design/0037`，2026-10-23）
@@ -230,6 +305,33 @@ body.chrome-hidden .status { display: none; }
 }
 
 body.chrome-hidden .chrome-grip { display: flex; }
+
+/* ⭐ `design/0079` §2.2：专注模式（Zen）。
+   ⚠️ 只让出阅读空间：隐掉侧边栏、工具栏、状态条、顶栏抓手与展开按钮，
+      ⛔ **不隐整个 `.topbar`**——`#reload-bar` / `#preview-bar` / `#edit-prompt`
+      必须继续可见（与 `body.chrome-hidden` 同一条纪律：`INV-CHROME-01` / `INV-EXT-04`）。
+   ⚠️ 侧边栏用与折叠**同一套位移 + visibility**（⛔ 不 `display:none`）：
+      这样树与滚动位置原样保留，退出专注后用户回到原来的位置。
+   ⚠️ 选择器特异性高于 `.sidebar.collapsed`（`body.zen .sidebar` = (0,2,1)），
+      因此无论侧边栏此前展开还是折叠，专注态都同样让开。
+   ⚠️ 状态只有一个写入口 `main.js::setZen`；这里只认 `body.zen` 这个结果。 */
+body.zen {
+  padding-left: 0;
+}
+
+body.zen .sidebar {
+  left: -30000px;
+  visibility: hidden;
+  transition: left 0.18s ease, visibility 0s linear 0.18s;
+}
+
+body.zen .toolbar,
+body.zen .status,
+body.zen .chrome-grip,
+body.zen #btn-expand {
+  display: none;
+}
+
 
 .chrome-grip:hover { background: var(--ui-hover-bg); }
 
@@ -353,6 +455,38 @@ body.editing .chrome-btn { display: none; }
   margin: 0 auto;
   padding: calc(var(--reader-font-size) * 1.5) calc(var(--reader-font-size) * 1.5)
            calc(var(--reader-font-size) * 4);
+  /* ⭐ `design/0079`：画布缩放只作用在正文这一棵上（侧边栏 / 顶栏 / 覆盖层不跟着缩）。
+     ⚠️ 值由 `main.js::applyZoom` 写到 `#doc` 的**行内**变量上；这里的 `1` 只是兜底。
+     ⚠️ 它与 `--reader-font-size` 是两条线：字号落盘、缩放只在本次会话。 */
+  zoom: var(--rmd-canvas-zoom, 1);
+}
+
+/* ⭐ `design/0079` §2.1：阅读态行号。
+   ⚠️ 行号由 `services/viewstate.js::applyLineNumbers` 写成 `data-rmd-line` 属性，
+      这里只用伪元素**画**出来 ⇒ ⛔ 不插入文本节点、⛔ 不改块数（`INV-VIEW-03`：
+      `live/blocks.js::topNodes` / `align` 的取法必须照样成立）。
+   ⚠️ 绝对定位放在块左侧的正文内边距里：开关不改变文字排版（`position: relative`
+      只为给伪元素当参照，不参与文档流）。
+   ⚠️ 颜色只走语义变量（`INV-THEME-02`）；字号仍是 `--reader-font-size` 的派生量
+      （`INV-TYPE-02`），⛔ 不写死 px。 */
+.doc.doc-lines [data-rmd-line] {
+  position: relative;
+}
+
+.doc.doc-lines [data-rmd-line]::before {
+  content: attr(data-rmd-line);
+  position: absolute;
+  right: calc(100% + var(--reader-font-size) * 0.85);
+  top: 0;
+  font-family: var(--reader-font-mono);
+  font-size: calc(var(--reader-font-size) * 0.72);
+  line-height: 1.6;
+  color: var(--ui-text-muted);
+  text-align: right;
+  white-space: nowrap;
+  pointer-events: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 /* 正文区空态（打开目录但还没选文件时）。⛔ 不自动打开第一个文件（`0003` §2.1）。 */
@@ -484,6 +618,52 @@ body.editing .chrome-btn { display: none; }
   opacity: 0.6;
 }
 
+/* ⭐ `design/0070` §2.4：启动页的**段级内联失败**（`.start-note`）。
+   ⚠️ 为什么写在这里而不是全局条：失败的**锚点就是这一段**（收藏段 / 最近段），
+      用户的眼睛正在那张表上，抬头看顶栏才会丢掉上下文（`INV-FAIL-01`）。
+   ⚠️ 它挂在**段**上（列表之后），⛔ 不挂在行上：行是"目标"，段是"这次操作"。
+   ⚠️ 不自动消失（`INV-FAIL-03`），带「重试 / 关闭」。 */
+.start-note {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6em;
+  margin-top: 0.4em;
+  padding: 0.3em 0.6em;
+  border-radius: var(--ui-radius);
+  background: var(--ui-hover-bg);
+  color: var(--ui-danger-text);
+  font-size: 0.85em;
+}
+
+.start-note[hidden] { display: none; }
+
+.start-note-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.start-note-btn {
+  flex: 0 0 auto;
+  padding: 0 6px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius);
+  background: transparent;
+  color: var(--ui-accent);
+  font: inherit;
+  font-size: 0.95em;
+  cursor: pointer;
+}
+
+.start-note-btn:hover,
+.start-note-btn:focus-visible {
+  background: var(--ui-bg-elevated);
+  outline: none;
+}
+
+/* ⚠️ 重试在途时禁用（同 `.fail-btn:disabled`）。 */
+.start-note-btn:disabled { color: var(--ui-text-muted); cursor: default; }
+
 /* ════════════════════════════════════════════════════════════════════
  * 启动页 · 收藏段、行菜单与「清空」（`design/0043` §2.6 / `design/0045`）
  *
@@ -492,7 +672,10 @@ body.editing .chrome-btn { display: none; }
  *    它没有的东西：段间距、段标题右边那个「清空」、以及那一层菜单
  *    （⛔ 不复用 `.tree-menu`：它属于侧边栏那张表，两处样式表分层不同）。
  * ⭐ `0045` 起**收藏在前、最近在后**（用户 2026-10-25 点题）⇒ 段间距只加在
- *    "后面那一段"上（`.start-list + .start-head`），⛔ 别再给 `.start-fav-title` 加。
+ *    "后面那一段"上（`.start-list + .start-title` / `.start-list + .start-head`），
+ *    ⛔ 别再给 `.start-fav-title` 加。
+ * ⭐ `design/0081` 起更前面还有「开始」段 ⇒ 段间距那两条选择器**都要留着**：
+ *    收藏段前面如果是「开始」段，紧跟的是 `.start-title` 而不是 `.start-head`。
  * ⚠️ 全部颜色走语义变量（`INV-THEME-02`）、尺度是固定值（`INV-THEME-04`）。
  * ════════════════════════════════════════════════════════════════════ */
 
@@ -510,9 +693,30 @@ body.editing .chrome-btn { display: none; }
   margin: 0;
 }
 
-/* 两段之间：收藏那段列表之后、最近段标题之前。 */
+/* 段与段之间：前一段的列表之后、下一段的标题（或「最近」那行段头）之前。
+   ⚠️ `design/0081` 起有三段（开始 → 收藏 → 最近）⇒ 这两条**都要**：
+   收藏段有标题（`.start-title`），最近段有带头部（`.start-head`）。 */
+.start > .start-list + .start-title,
 .start > .start-list + .start-head {
   margin-top: 1.6em;
+}
+
+/* ⭐ `design/0081` §2.1 ③：导航页「开始」段每行左边的**键位胶囊**
+   （用户要的"有点类似 Vscode 的导航页"）。
+   ⚠️ 宽度不定（`⌘O` / `⇧⌘O` / `⌘P` 长短不同）⇒ 用 `min-width` 把它们对齐，
+   否则三个动作名会各自起在不同的 x 上。
+   ⚠️ 全部颜色走语义变量（`INV-THEME-02`）、尺度是固定值（`INV-THEME-04`）。 */
+.start-key {
+  flex: 0 0 auto;
+  min-width: 3em;
+  padding: 0 0.35em;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius);
+  color: var(--ui-text-muted);
+  font-family: var(--reader-font-mono);
+  font-size: 0.8em;
+  text-align: center;
+  white-space: nowrap;
 }
 
 /* ⭐ `design/0045`（隐私）：段标题右边那个「清空」。
@@ -677,3 +881,194 @@ body.editing .chrome-btn { display: none; }
 
 /* 两轴相交处那个小方块：默认会画成一格底色，⛔ 与"轨道不上色"矛盾。 */
 ::-webkit-scrollbar-corner { background: transparent; }
+
+/* ════════════════════════════════════════════════════════════════════
+ * ⭐ 拖入窗口的遮罩（`design/0071` §2.2，2026-11-14）—— `#drop-overlay`
+ *
+ * 它只回答一件事：「现在有东西悬在窗口上方，松手就会打开它」。
+ * ⚠️ 它**不接收指针事件**（`pointer-events: none`）：拖放的落点始终是下面那些真实元素——
+ *    遮罩一旦吃掉 `dragenter/dragover`，WKWebView 那边的默认行为会跟着变，
+ *    而真正的事件源是 Rust 侧的 `WindowEvent::DragDrop`（遮罩只是它的显示面）。
+ * ⚠️ `z-index` 在本仓的层序（正文 10–30 / 就地编辑 35 / 设置与 ⌘P 40 / 查找 45 /
+ *    看图 50）之上：拖放是**系统级的一次手势**，不是应用的某一层，
+ *    任何一层打开时拖进来都该看见它。⇒ 60，⛔ 别改成"跟着某一层走"。
+ * ⚠️ 颜色只走语义变量（`INV-THEME-02`）：底色是 `--ui-bg` 加透明度，
+ *    ⛔ 不写字面色值、⛔ 不新增契约变量。
+ * ⚠️ 显隐由 `services/drop.js` 贴 `hidden`；`[hidden]` 必须显式写
+ *    （UA 那条是 (0,0,1)，压不住下面 `.drop-overlay` 的 (0,1,0)——同 `.fail-bar[hidden]`）。
+ * ════════════════════════════════════════════════════════════════════ */
+.drop-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  /* ⚠️ 只做"压暗一点"，⛔ 不糊住底下（用户要看得见自己拖到的是哪个窗口）。 */
+  background: color-mix(in srgb, var(--ui-bg) 62%, transparent);
+}
+
+.drop-overlay[hidden] { display: none; }
+
+.drop-overlay-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5em;
+  padding: 1.1em 1.6em;
+  border: 2px dashed var(--ui-accent);
+  border-radius: calc(var(--ui-radius) * 2);
+  background: var(--ui-bg-elevated);
+  color: var(--ui-text-muted);
+  font-size: 0.95em;
+  /* ⚠️ 卡片本身也不吃事件：它正压在落点上。 */
+  pointer-events: none;
+}
+
+/* 只有一个箭头：⛔ 不用 emoji（不同字体下大小与基线都不稳）。 */
+.drop-overlay-icon {
+  font-size: 1.6em;
+  line-height: 1;
+  color: var(--ui-accent);
+}
+
+.drop-overlay-text { white-space: nowrap; }
+
+/* ════════════════════════════════════════════════════════════════════
+ * ⭐ `⌘O` 打开面板（`design/0071` §3，2026-11-14）—— `.openpanel-*`
+ *
+ * 它与 `quickopen` / `settings` / `find` / `image-viewer` 是**同一层**的覆盖层
+ * （`INV-SET-07`：至多一层），所以 `z-index` 与它们同值 40——⛔ 谁高谁低都无所谓，
+ * 它们不会同时出现；⛔ 别给它一个"半层"的值（那会让它在某一层底下消失）。
+ * ⚠️ 颜色只走语义变量（`INV-THEME-02`）：遮罩沿用设置覆盖层那一招
+ *    （`--ui-bg` ＋ `opacity`），⛔ 不写半透明黑的字面量、⛔ 不新增契约变量。
+ * ⚠️ `[hidden]` 必须显式写（UA 那条是 (0,0,1)，压不住 `.openpanel-layer` 的 (0,1,0)
+ *    ——与 `.drop-overlay[hidden]` / `.fail-bar[hidden]` 同一条）。
+ * ════════════════════════════════════════════════════════════════════ */
+.openpanel-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+}
+
+.openpanel-layer[hidden] { display: none; }
+
+.openpanel-scrim {
+  position: absolute;
+  inset: 0;
+  background: var(--ui-bg);
+  opacity: 0.72;
+}
+
+/* 面板贴上方（同 `quickopen` 的重心：列表向下长），但比它窄一点——
+   这一层只有名字与路径两列，600 px 会让路径那一列长出无意义的空白。 */
+.openpanel-panel {
+  position: absolute;
+  top: 10vh;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(520px, 90vw);
+  max-height: 70vh;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  padding: 10px 12px 8px;
+  background: var(--ui-bg-elevated);
+  color: var(--ui-text);
+  border: 1px solid var(--ui-border);
+  border-radius: calc(var(--ui-radius) * 2);
+  box-shadow: 0 12px 36px var(--ui-border);
+  font-size: var(--ui-font-size);
+  outline: none;
+}
+.openpanel-panel:focus-visible { border-color: var(--ui-accent); }
+
+/* ⚠️ 标题**看得见**（与 `quickopen` 刻意不同：那里有输入框的 placeholder 说明用途，
+   这里没有输入框——顶上一行「打开」是这一层唯一的自我说明）。 */
+.openpanel-title {
+  margin: 0;
+  padding: 2px 8px 8px;
+  font-size: var(--ui-font-size);
+  font-weight: 600;
+  color: var(--ui-text);
+}
+
+.openpanel-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;              /* ⚠️ 滚动在**列表**上，⛔ 不是整个面板 */
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.openpanel-section {
+  padding: 4px 8px;
+  color: var(--ui-text-muted);
+  font-size: 0.85em;
+}
+
+.openpanel-sep {
+  height: 1px;
+  margin: 6px 4px;
+  background: var(--ui-border);
+}
+
+.openpanel-item {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-height: var(--ui-row-height);
+  padding: var(--ui-row-pad-top) 8px;
+  border-radius: var(--ui-radius);
+  cursor: default;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.openpanel-item.selected { background: var(--ui-selected-bg); }
+
+/* 行首那个记号：文件 `·` / 目录 `▸`（⛔ 不用 emoji：字体不同基线会飘）。 */
+.openpanel-kind {
+  flex: 0 0 auto;
+  width: 1em;
+  color: var(--ui-text-muted);
+}
+
+/* ⚠️ 名字不缩：它是这一行的主角；路径那一列先让位（与 `quickopen` 同一条）。 */
+.openpanel-name {
+  flex: 0 0 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 路径那一列：灰、可缩、靠右。`direction: rtl` 让长路径**从左侧**截断，
+   好让人看到最后一段（目录名本身已经在名字那一列了）。 */
+.openpanel-dir {
+  flex: 0 1 auto;
+  margin-left: auto;
+  color: var(--ui-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  direction: rtl;
+  text-align: right;
+}
+
+/* 「上次打开」标记。⚠️ 只改底色/边框，⛔ 不改字号层级（它是附加信息，不是标题）。 */
+.openpanel-last {
+  flex: 0 0 auto;
+  padding: 0 4px;
+  border: 1px solid var(--ui-border);
+  border-radius: calc(var(--ui-radius) / 2);
+  color: var(--ui-text-muted);
+  font-size: 0.85em;
+}
+
+.openpanel-empty {
+  padding: 10px 8px;
+  color: var(--ui-text-muted);
+}
+
+/* ⚠️ 面板开着时**正文不再滚动**（同 `quickopen` / `settings`：
+   滚轮会滚到后面那层文档，而用户以为滚的是列表）。 */
+body.openpanel-open #doc { overflow: hidden; }

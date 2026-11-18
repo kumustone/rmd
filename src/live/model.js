@@ -145,6 +145,12 @@
   function createCommitStack(limit) {
     const cap = Number.isInteger(limit) && limit > 0 ? limit : COMMIT_STACK_LIMIT;
     let entries = [];
+    // ⭐ **重做栈**（`bugs/0020` §8，2026-11-02）：用户 `⌘Z` 撤下来的条目按**弹出的顺序**存这儿，
+    //    `⇧⌘Z` 就按相反方向还回去。⛔ 它不是第二份提交历史，只装"**被用户撤销过**"的那些。
+    //    ⚠️ 一条**新提交**会让它整栈作废（文本分叉了，旧的重做目标在新文本里不成立）。
+    //    ⚠️ 内部回滚（`popEdit()`：提交失败回退、`revertTo()`）**不进这里**——
+    //       那不是用户的撤销，⛔ 不能让 `⇧⌘Z` 把它"重做"回来。
+    let redoEntries = [];
     const listeners = [];
 
     function emit() {
@@ -167,6 +173,8 @@
         }
         entries.push(e);
         if (entries.length > cap) entries.shift();
+        // ⚠️ 新提交 ⇒ 重做栈清空：内容已经分叉，旧的"重做目标"在新文本里不成立。
+        redoEntries = [];
         emit();
         return entries.length;
       },
@@ -175,8 +183,57 @@
         return entries.length;
       },
 
+      /** 重做栈深度（`⇧⌘Z` 能不能用）。 */
+      redoSize() {
+        return redoEntries.length;
+      },
+
       peek() {
         return entries.length ? entries[entries.length - 1] : null;
+      },
+
+      /**
+       * ⭐ **看一眼"撤销会做什么"，但⛔ 不动栈**（`design/0058` T1）。
+       *
+       * ⚠️ 有了它，"撤销 / 重做"也能走**先造候选、后改真值**的统一协议：
+       *    以前只能先 `undoEdit()` 改真值、再渲染复核，失败就靠调用方 `revert()`。
+       * @returns {{range:{from:number,to:number}, next:string[]}|null}
+       */
+      peekUndoEdit() {
+        const e = entries.length ? entries[entries.length - 1] : null;
+        if (!e) return null;
+        return { range: { from: e.from, to: e.from + e.after.length }, next: e.before };
+      },
+
+      /**
+       * ⭐ **看一眼"重做会做什么"**（`⇧⌘Z`）。
+       * @returns {{range:{from:number,to:number}, next:string[]}|null}
+       */
+      peekRedoEdit() {
+        const e = redoEntries.length ? redoEntries[redoEntries.length - 1] : null;
+        if (!e) return null;
+        return { range: { from: e.from, to: e.from + e.before.length }, next: e.after };
+      },
+
+      /**
+       * ⭐⭐ **两侧栈的完整快照**（`design/0058` §2.2 的回滚范围：条目**与分组边界**）。
+       *
+       * ⚠️ 只存数组引用，⛔ 不深拷条目：条目本身是**不可变**的（`push` 之后没人改它），
+       *    深拷只会让"回滚之后还是不是同一条"变得难以判断。
+       * ⚠️ 必须**两侧都存**：只退 `entries` 会让"提交后回滚"吞掉用户撤销过的那些条目
+       *    （`redoEntries` 在 `push` 时被清空过）。
+       */
+      snapshotState() {
+        return { entries: entries.slice(), redoEntries: redoEntries.slice() };
+      },
+
+      /** 按快照原样还原两侧栈（回滚用；⛔ 不是"清空"）。 */
+      restoreState(s) {
+        if (!s) return false;
+        entries = (s.entries || []).slice();
+        redoEntries = (s.redoEntries || []).slice();
+        emit();
+        return true;
       },
 
       /**
@@ -191,9 +248,59 @@
         return { range: { from: e.from, to: e.from + e.after.length }, next: e.before };
       },
 
-      /** 清空（换文档 / 外部重载时，§2.5 的表）。 */
+      /**
+       * ⭐ **用户的撤销**（`Viewing` 态的 `⌘Z`）：与 [`popEdit`] 的应用结果完全一样，
+       * 但**把条目记进重做栈**——那是唯一一处"撤销是可逆的"。
+       * ⚠️ 内部回滚继续用 `popEdit()`（⛔ 别换成这个，否则 `⇧⌘Z` 会把失败回退重做回来）。
+       */
+      undoEdit() {
+        const e = entries.pop();
+        if (!e) return null;
+        redoEntries.push(e);
+        emit();
+        return { range: { from: e.from, to: e.from + e.after.length }, next: e.before };
+      },
+
+      /**
+       * ⭐ **用户的重做**（`⇧⌘Z`）：把最近一次撤销的条目换回 `after`。
+       * ⚠️ `to` 用**条目自己记的 `before.length`**——撤销之后文本里占着的位置就是它。
+       * @returns {{range:{from:number,to:number},next:string[]}|null} 没有可重做的 ⇒ `null`
+       */
+      redoEdit() {
+        const e = redoEntries.pop();
+        if (!e) return null;
+        entries.push(e);
+        emit();
+        return { range: { from: e.from, to: e.from + e.before.length }, next: e.after };
+      },
+
+      /**
+       * ⭐⭐ **撤销的回滚**（只走 `userEdit` 的 `revert`）：把 `undoEdit` 挪走的条目放回提交栈。
+       * ⚠️ 只动栈、⛔ 不动文本——文本由 `revert` 还原快照（回滚本身⛔ 不再算一次编辑）。
+       */
+      undoRollback() {
+        const e = redoEntries.pop();
+        if (!e) return false;
+        entries.push(e);
+        emit();
+        return true;
+      },
+
+      /**
+       * ⭐⭐ **重做的回滚**：把 `redoEdit` 放回提交栈的条目挪回重做栈。
+       */
+      redoRollback() {
+        const e = entries.pop();
+        if (!e) return false;
+        redoEntries.push(e);
+        emit();
+        return true;
+      },
+
+      /** 清空（换文档 / 外部重载时，§2.5 的表）。两侧一起清——重做栈说的是**同一份文本**。 */
       clear() {
         entries = [];
+        redoEntries = [];
         emit();
       },
 
@@ -276,6 +383,135 @@
     });
     const stack = createCommitStack(src.limit);
 
+    /**
+     * ⭐ **事务序号**（`design/0058` §2.2）：每次改真值（提交 / 撤销 / 重做 / 内部回退）都往前推。
+     * ⚠️ 它是**回滚句柄的所有权凭证**：旧事务拿着过期的 `txId` 回来时，句柄一挡就什么都不做。
+     */
+    let txSeq = 0;
+
+    /** 这一份文本的**修订标识**（给事务载荷与选区用，⛔ 不是身份四件套的替代）。 */
+    function revisionOf(id) {
+      return {
+        docSeq: id.docSeq,
+        generation: id.generation,
+        commitSeq: id.commitSeq,
+        lineCount: id.lineCount,
+      };
+    }
+
+    /**
+     * ⭐⭐ **整份会话的快照**（`design/0058` §2.2 的回滚范围）。
+     *
+     * 覆盖：全文、身份、**撤销与重做两侧的条目及分组边界**。
+     * ⚠️ `lines` 存的是**数组引用**（`applyEdit` 返回新数组、⛔ 不改旧数组）⇒ 快照天然不可变。
+     */
+    function snapshot() {
+      return {
+        lines: lines,
+        ident: ident,
+        stack: stack.snapshotState(),
+      };
+    }
+
+    /** 按快照还原（回滚用）。⚠️ 只在统一事务入口里调，⛔ 不是"用户的撤销"。 */
+    function restore(snap) {
+      if (!snap) return false;
+      lines = snap.lines;
+      ident = snap.ident;
+      stack.restoreState(snap.stack);
+      return true;
+    }
+
+    /**
+     * 回滚句柄的**唯一**构造点（`design/0058` §2.2）：带 `txId`、修订校验、幂等。
+     *
+     * ⚠️ 只有**回到了发起前那一份**才算成功；期间已有更新的提交 ⇒ 返回
+     * `{ok:false, why:'newer'}` 并且**什么都不退**（⛔ 不许覆盖新状态）。
+     *
+     * @param {{txId:number, revision:object, restore:function():void}} o
+     */
+    function handleOf(o) {
+      let used = false;
+      return function revert(claim) {
+        if (used) return { ok: true, already: true, why: '' };
+        const c = claim || {};
+        if (c.txId !== undefined && c.txId !== null && c.txId !== o.txId) {
+          return { ok: false, already: false, why: 'not-owner' };
+        }
+        // 修订校验：期间有别的提交/撤销/换文档 ⇒ 这次回滚会把**新的**状态退回旧值。
+        // ⚠️ `docSeq` 一起比：`rebind()` 会把 `commitSeq` 重新归零，只比 commitSeq 时
+        //    一份**上一个文档**的旧句柄会在这里"对上了"。
+        if (ident.commitSeq !== o.revision.commitSeq
+          || String(ident.docSeq) !== String(o.revision.docSeq)) {
+          return { ok: false, already: false, why: 'newer' };
+        }
+        used = true;
+        o.restore();
+        return { ok: true, already: false, why: '' };
+      };
+    }
+
+    /**
+     * 把栈给的一条编辑落到当前文本上（撤销 / 重做共用）。
+     * ⚠️ **撤销 / 重做也是文本变化** ⇒ `commitSeq` 要往前走：
+     *    在途的预览回包说的是变化之前那份文本，⛔ 不能被当成当前结果。
+     */
+    function applyStackEdit(edit) {
+      lines = applyEdit(lines, edit.range, edit.next);
+      ident = advanceIdentity(ident, lines.length);
+      return {
+        lines: lines,
+        fullText: joinLines(lines),
+        lineCount: lines.length,
+        identity: ident,
+      };
+    }
+
+    /**
+     * ⭐⭐ **用户撤销 / 重做的一次事务**（`bugs/0020` 评审 P0，2026-11-02）。
+     *
+     * ⚠️⚠️ 撤销/重做与"改字"一样**要过渲染与身份复核**：预览可能失败、回包可能被判 stale。
+     *    旧写法先同步把真值与两侧栈改掉、再 `await submit()`，失败时**什么都不还原**
+     *    ⇒ 屏幕还是旧文本、模型已经换了 ⇒ 之后按 `⌘S` 会把**屏幕上没显示过**的内容写盘。
+     *    ⇒ 这里把"改真值"与"回滚能力"绑在同一次调用里：调用方在提交失败时
+     *      **必须**调 `revert()`（控制器 `undo()` / `redo()` 已经这样接）。
+     *
+     * ⚠️ 回滚是**还原快照**，⛔ 不是反向再调一次 `undoEdit`/`redoEdit`：
+     *    反向调用会再推进一次 `commitSeq`（还会再动一次栈），失败现场就不再是原样。
+     *
+     * @param {'undo'|'redo'} direction
+     * @returns {{direction:'undo'|'redo', txId:number, revision:object,
+     *   lines:string[], fullText:string, lineCount:number, identity:object,
+     *   revert:function}|null} `null` = 没有可撤/可重做的条目
+     */
+    function userEdit(direction) {
+      const snap = snapshot();
+      const edit = direction === 'undo' ? stack.undoEdit() : stack.redoEdit();
+      if (!edit) return null;
+      const res = applyStackEdit(edit);
+      const txId = ++txSeq;
+      const revision = revisionOf(ident);
+      return {
+        direction: direction,
+        txId: txId,
+        revision: revision,
+        lines: res.lines,
+        fullText: res.fullText,
+        lineCount: res.lineCount,
+        identity: res.identity,
+        revert: handleOf({
+          txId: txId,
+          revision: revision,
+          // ⚠️ 还原**整份快照**（全文 ＋ 身份 ＋ 两侧栈）：反向再调一次
+          //    `undoRollback()`/`redoRollback()` 只动栈、⛔ 不动 `redoEntries`
+          //    在 `commit` 里被清空过的那一半（`design/0058` §2.2）。
+          restore: function () {
+            restore(snap);
+          },
+        }),
+      };
+    }
+
     return {
       /** 当前全文（恒 LF）。 */
       lines() {
@@ -298,9 +534,11 @@
        * ⭐ **提交**：把 `range` 那段换成 `nextLines`，压一条撤销条目，推进身份。
        *
        * ⚠️ **提交 ≠ 保存**（§2.5）：这里只改内存，⛔ 一个字节都不写盘。
-       * @returns {{entry:object, lines:string[], fullText:string, lineCount:number, identity:object}}
+       * @returns {{entry:object, txId:number, revision:object, lines:string[],
+       *   fullText:string, lineCount:number, identity:object, revert:function}}
        */
       commit(range, nextLines) {
+        const snap = snapshot();
         const before = lines.slice(range.from, range.to);
         const next = nextLines || [];
         lines = applyEdit(lines, range, next);
@@ -313,32 +551,95 @@
         };
         stack.push(entry);
         ident = advanceIdentity(ident, lines.length);
+        const txId = ++txSeq;
+        const revision = revisionOf(ident);
         return {
           entry: entry,
+          txId: txId,
+          revision: revision,
           lines: lines,
           fullText: joinLines(lines),
           lineCount: lines.length,
           identity: ident,
+          // ⭐ `design/0058` §2.2：**提交也必须给得出怎么退**。
+          //    ⛔ 不许再让调用方"知道自己刚提交、但拿不到回滚句柄"（任务打勾那条路的根因）。
+          revert: handleOf({
+            txId: txId,
+            revision: revision,
+            restore: function () {
+              restore(snap);
+            },
+          }),
         };
       },
 
       /**
-       * 撤一条提交（`Viewing` 态的 `⌘Z`）。
-       * @returns {{lines:string[], fullText:string, lineCount:number, identity:object}|null}
+       * 撤一条提交（**内部回滚**：提交失败 / 丢空段落 / 退出编辑态回退）。
+       * ⚠️ 用户按 `⌘Z` ⛔ 不走这里——那条走 [`undoEdit`]，否则 `⇧⌘Z` 没有东西可重做。
+       * @returns {{lines:string[], fullText:string, lineCount:number, identity:object,
+       *   txId:number, revision:object, revert:function}|null}
        */
       undo() {
+        const snap = snapshot();
         const edit = stack.popEdit();
         if (!edit) return null;
-        lines = applyEdit(lines, edit.range, edit.next);
-        // ⚠️ 撤销**也是一次文本变化** ⇒ `commitSeq` 要往前走：
-        //    在途的预览回包说的是撤销之前那份文本，⛔ 不能被当成当前结果。
-        ident = advanceIdentity(ident, lines.length);
+        const res = applyStackEdit(edit);
+        const txId = ++txSeq;
+        const revision = revisionOf(ident);
         return {
-          lines: lines,
-          fullText: joinLines(lines),
-          lineCount: lines.length,
-          identity: ident,
+          txId: txId,
+          revision: revision,
+          lines: res.lines,
+          fullText: res.fullText,
+          lineCount: res.lineCount,
+          identity: res.identity,
+          revert: handleOf({
+            txId: txId,
+            revision: revision,
+            restore: function () {
+              restore(snap);
+            },
+          }),
         };
+      },
+
+      /** ⭐ 看一眼"撤销会做什么"（T1 造候选用，⛔ 不动真值）。 */
+      peekUndo() {
+        return stack.peekUndoEdit();
+      },
+
+      /** ⭐ 看一眼"重做会做什么"（同上）。 */
+      peekRedo() {
+        return stack.peekRedoEdit();
+      },
+
+      /** 这份文本的修订标识（`design/0058` §2.5：选区要绑修订）。 */
+      revision: function () {
+        return revisionOf(ident);
+      },
+
+      /** ⭐ 整份快照 / 还原（统一事务入口的 T0 与回滚用）。 */
+      snapshot: snapshot,
+      restore: restore,
+
+      /**
+       * ⭐ **用户的撤销**（`Viewing` 态的 `⌘Z`，`bugs/0020` §8）：撤最近一次提交，
+       * 并把条目记进重做栈。文本结果与 [`undo`] 完全一样。
+       * ⚠️ 返回结果带 `revert`（见 [`userEdit`]）：**提交失败时必须调它**。
+       * @returns {{lines:string[], fullText:string, lineCount:number, identity:object,
+       *   revert:function}|null}
+       */
+      undoEdit() {
+        return userEdit('undo');
+      },
+
+      /**
+       * ⭐ **用户的重做**（`⇧⌘Z`）：把最近一次撤销换回来，条目回到提交栈顶。
+       * @returns {{lines:string[], fullText:string, lineCount:number, identity:object,
+       *   revert:function}|null}
+       */
+      redo() {
+        return userEdit('redo');
       },
 
       /** 外部重载 / 换文档：文本与身份换新、栈清空（§2.5 的表）。 */

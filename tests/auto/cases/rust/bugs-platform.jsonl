@@ -1,0 +1,565 @@
+# navigation 闸门不可直接观测；这里钉住危险 scheme 的分类与渲染改写，任何放松都会红。
+# 源自 docs/bugs/0001（点击链接导致应用自行重载）
+{"id":"bugplat-0001-空串","family":"bugs-platform","check":"link","input":{"href":""},"expect":{"kind":"empty"}}
+{"id":"bugplat-0001-纯空白","family":"bugs-platform","check":"link","input":{"href":"   "},"expect":{"kind":"empty"}}
+{"id":"bugplat-0001-空白与换行","family":"bugs-platform","check":"link","input":{"href":"\n\t "},"expect":{"kind":"empty"}}
+{"id":"bugplat-0001-锚点","family":"bugs-platform","check":"link","input":{"href":"#install"},"expect":{"kind":"anchor","fragment":"install"}}
+{"id":"bugplat-0001-单井号","family":"bugs-platform","check":"link","input":{"href":"#"},"expect":{"kind":"anchor","fragment":""}}
+{"id":"bugplat-0001-锚点空格编码","family":"bugs-platform","check":"link","input":{"href":"#a%20b"},"expect":{"kind":"anchor","fragment":"a b"}}
+{"id":"bugplat-0001-锚点中文编码","family":"bugs-platform","check":"link","input":{"href":"#%E4%B8%AD"},"expect":{"kind":"anchor","fragment":"中"}}
+{"id":"bugplat-0001-锚点双重编码","family":"bugs-platform","check":"link","input":{"href":"#a%2520b"},"expect":{"kind":"anchor","fragment":"a%20b"}}
+{"id":"bugplat-0001-javascript","family":"bugs-platform","check":"link","input":{"href":"javascript:alert(1)"},"expect":{"kind":"unsupported","scheme":"javascript"}}
+{"id":"bugplat-0001-javascript大写","family":"bugs-platform","check":"link","input":{"href":"JavaScript:alert(1)"},"expect":{"kind":"unsupported","scheme":"javascript"}}
+{"id":"bugplat-0001-data","family":"bugs-platform","check":"link","input":{"href":"data:text/html,<b>x</b>"},"expect":{"kind":"unsupported","scheme":"data"}}
+{"id":"bugplat-0001-vbscript","family":"bugs-platform","check":"link","input":{"href":"vbscript:msgbox(1)"},"expect":{"kind":"unsupported","scheme":"vbscript"}}
+{"id":"bugplat-0001-file绝对","family":"bugs-platform","check":"link","input":{"href":"file:///tmp/a.md"},"expect":{"kind":"local_file","path":"/tmp/a.md","fragment":null}}
+{"id":"bugplat-0001-file本机主机","family":"bugs-platform","check":"link","input":{"href":"file://localhost/tmp/a.md"},"expect":{"kind":"local_file","path":"/tmp/a.md","fragment":null}}
+{"id":"bugplat-0001-file片段","family":"bugs-platform","check":"link","input":{"href":"file:///tmp/a.md#sec"},"expect":{"kind":"local_file","path":"/tmp/a.md","fragment":"sec"}}
+{"id":"bugplat-0001-file查询","family":"bugs-platform","check":"link","input":{"href":"file:///tmp/a.md?x=1"},"expect":{"kind":"local_query"}}
+{"id":"bugplat-0001-file远端主机","family":"bugs-platform","check":"link","input":{"href":"file://evil/share/a.md"},"expect":{"kind":"unsupported","scheme":"file"}}
+{"id":"bugplat-0001-file相对路径","family":"bugs-platform","check":"link","input":{"href":"file:relative.md"},"expect":{"kind":"unsupported","scheme":"file"}}
+{"id":"bugplat-0001-file空格","family":"bugs-platform","check":"link","input":{"href":"file:///tmp/a%20b.md"},"expect":{"kind":"local_file","path":"/tmp/a b.md","fragment":null}}
+{"id":"bugplat-0001-rmd-unsupported还原","family":"bugs-platform","check":"link","input":{"href":"rmd-unsupported:javascript"},"expect":{"kind":"unsupported","scheme":"javascript"}}
+{"id":"bugplat-0001-rmd-unsupported空","family":"bugs-platform","check":"link","input":{"href":"rmd-unsupported:"},"expect":{"kind":"unsupported","scheme":"?"}}
+{"id":"bugplat-0001-协议相对","family":"bugs-platform","check":"link","input":{"href":"//example.com/x"},"expect":{"kind":"external","url":"https://example.com/x"}}
+{"id":"bugplat-0001-协议相对空主机","family":"bugs-platform","check":"link","input":{"href":"//"},"expect":{"kind":"unsupported","scheme":"https"}}
+{"id":"bugplat-0001-协议相对账号","family":"bugs-platform","check":"link","input":{"href":"//user@example.com/x"},"expect":{"kind":"unsupported","scheme":"https"}}
+{"id":"bugplat-0001-单斜杠本地","family":"bugs-platform","check":"link","input":{"href":"/example.com/x"},"expect":{"kind":"local_path","path":"/example.com/x","fragment":null}}
+{"id":"bugplat-0001-相对片段","family":"bugs-platform","check":"link","input":{"href":"notes/a.md#sec"},"expect":{"kind":"local_path","path":"notes/a.md","fragment":"sec"}}
+{"id":"bugplat-0001-相对查询","family":"bugs-platform","check":"link","input":{"href":"notes/a.md?raw=1"},"expect":{"kind":"local_query"}}
+{"id":"bugplat-0001-下划线不是scheme","family":"bugs-platform","check":"link","input":{"href":"a_b:c"},"expect":{"kind":"local_path","path":"a_b:c","fragment":null}}
+{"id":"bugplat-0001-盘符","family":"bugs-platform","check":"link","input":{"href":"C:/Users/a.md"},"expect":{"kind":"unsupported","scheme":"c"}}
+{"id":"bugplat-0001-中文冒号路径","family":"bugs-platform","check":"link","input":{"href":"注意：../a.md"},"expect":{"kind":"local_path","path":"注意：../a.md","fragment":null}}
+{"id":"bugplat-0001-中文空格路径","family":"bugs-platform","check":"link","input":{"href":"中文 文件.md"},"expect":{"kind":"local_path","path":"中文 文件.md","fragment":null}}
+{"id":"bugplat-0001-https大写","family":"bugs-platform","check":"link","input":{"href":"HTTPS://Example.COM/X"},"expect":{"kind":"external","url":"HTTPS://Example.COM/X"}}
+{"id":"bugplat-0001-http主机含空格","family":"bugs-platform","check":"link","input":{"href":"https://exa mple.com/x"},"expect":{"kind":"unsupported","scheme":"https"}}
+{"id":"bugplat-0001-http含换行","family":"bugs-platform","check":"link","input":{"href":"https://example.com/a\nb"},"expect":{"kind":"unsupported","scheme":"https"}}
+{"id":"bugplat-0001-http主机含反斜杠","family":"bugs-platform","check":"link","input":{"href":"https://example.com\\evil"},"expect":{"kind":"unsupported","scheme":"https"}}
+{"id":"bugplat-0001-改写javascript","family":"bugs-platform","check":"html","input":{"md":"[x](javascript:alert(1))"},"expect":{"contains":["href=\"rmd-unsupported:javascript\""],"not_contains":["href=\"javascript:"]}}
+{"id":"bugplat-0001-改写JavaScript","family":"bugs-platform","check":"html","input":{"md":"[x](JavaScript:alert(1))"},"expect":{"contains":["href=\"rmd-unsupported:javascript\""],"not_contains":["href=\"JavaScript:"]}}
+{"id":"bugplat-0001-改写data","family":"bugs-platform","check":"html","input":{"md":"[x](data:text/plain,hi)"},"expect":{"contains":["href=\"rmd-unsupported:data\""],"not_contains":["href=\"data:"]}}
+{"id":"bugplat-0001-改写vbscript","family":"bugs-platform","check":"html","input":{"md":"[x](vbscript:msgbox(1))"},"expect":{"contains":["href=\"rmd-unsupported:vbscript\""],"not_contains":["href=\"vbscript:"]}}
+{"id":"bugplat-0001-改写file","family":"bugs-platform","check":"html","input":{"md":"[x](file:///tmp/a.md)"},"expect":{"contains":["href=\"rmd-file:/tmp/a.md\""],"not_contains":["href=\"file:"]}}
+{"id":"bugplat-0001-改写file空格","family":"bugs-platform","check":"html","input":{"md":"[x](file:///tmp/a%20b.md)"},"expect":{"contains":["href=\"rmd-file:/tmp/a%20b.md\""]}}
+{"id":"bugplat-0001-改写file查询","family":"bugs-platform","check":"html","input":{"md":"[x](file:///tmp/a.md?x=1)"},"expect":{"contains":["href=\"rmd-unsupported:file\""],"not_contains":["href=\"file:"]}}
+{"id":"bugplat-0001-改写file远端主机","family":"bugs-platform","check":"html","input":{"md":"[x](file://evil/share/a.md)"},"expect":{"contains":["href=\"rmd-unsupported:file\""],"not_contains":["href=\"file:"]}}
+{"id":"bugplat-0001-改写file归一","family":"bugs-platform","check":"html","input":{"md":"[x](file:///a/../b.md)"},"expect":{"contains":["href=\"rmd-file:/b.md\""]}}
+{"id":"bugplat-0001-改写file中文","family":"bugs-platform","check":"html","input":{"md":"[x](file:///tmp/%E4%B8%AD.md)"},"expect":{"contains":["href=\"rmd-file:/tmp/%E4%B8%AD.md\""]}}
+# 命令清单/ACL 不可由这些检查器观测；这里钉住写盘前必须经过的夹取边界。
+# 源自 docs/bugs/0002（外观设置永不落盘）
+{"id":"bugplat-0002-字号00","family":"bugs-platform","check":"config","input":{"fn":"clamp_num","v":12,"lo":12,"hi":28,"fallback":14},"expect":{"value":12.0}}
+{"id":"bugplat-0002-字号01","family":"bugs-platform","check":"config","input":{"fn":"clamp_num","v":12.0,"lo":12,"hi":28,"fallback":14},"expect":{"value":12.0}}
+{"id":"bugplat-0002-字号02","family":"bugs-platform","check":"config","input":{"fn":"clamp_num","v":13,"lo":12,"hi":28,"fallback":14},"expect":{"value":13.0}}
+{"id":"bugplat-0002-字号03","family":"bugs-platform","check":"config","input":{"fn":"clamp_num","v":14,"lo":12,"hi":28,"fallback":14},"expect":{"value":14.0}}
+{"id":"bugplat-0002-字号04","family":"bugs-platform","check":"config","input":{"fn":"clamp_num","v":18,"lo":12,"hi":28,"fallback":14},"expect":{"value":18.0}}
+{"id":"bugplat-0002-字号05","family":"bugs-platform","check":"config","input":{"fn":"clamp_num","v":27.9,"lo":12,"hi":28,"fallback":14},"expect":{"value":27.9}}
+{"id":"bugplat-0002-字号06","family":"bugs-platform","check":"config","input":{"fn":"clamp_num","v":28,"lo":12,"hi":28,"fallback":14},"expect":{"value":28.0}}
+{"id":"bugplat-0002-字号07","family":"bugs-platform","check":"config","input":{"fn":"clamp_num","v":11.9,"lo":12,"hi":28,"fallback":14},"expect":{"value":12.0}}
+{"id":"bugplat-0002-字号08","family":"bugs-platform","check":"config","input":{"fn":"clamp_num","v":11,"lo":12,"hi":28,"fallback":14},"expect":{"value":12.0}}
+{"id":"bugplat-0002-字号09","family":"bugs-platform","check":"config","input":{"fn":"clamp_num","v":0,"lo":12,"hi":28,"fallback":14},"expect":{"value":12.0}}
+{"id":"bugplat-0002-字号10","family":"bugs-platform","check":"config","input":{"fn":"clamp_num","v":-5,"lo":12,"hi":28,"fallback":14},"expect":{"value":12.0}}
+{"id":"bugplat-0002-字号11","family":"bugs-platform","check":"config","input":{"fn":"clamp_num","v":100,"lo":12,"hi":28,"fallback":14},"expect":{"value":28.0}}
+{"id":"bugplat-0002-字号12","family":"bugs-platform","check":"config","input":{"fn":"clamp_num","v":12.5,"lo":12,"hi":28,"fallback":14},"expect":{"value":12.5}}
+{"id":"bugplat-0002-字号13","family":"bugs-platform","check":"config","input":{"fn":"clamp_num","v":13.25,"lo":12,"hi":28,"fallback":14},"expect":{"value":13.25}}
+{"id":"bugplat-0002-字号14","family":"bugs-platform","check":"config","input":{"fn":"clamp_num","v":27.999,"lo":12,"hi":28,"fallback":14},"expect":{"value":27.999}}
+{"id":"bugplat-0002-行高00","family":"bugs-platform","check":"config","input":{"fn":"clamp_num","v":1.2,"lo":1.2,"hi":2.0,"fallback":1.6},"expect":{"value":1.2}}
+{"id":"bugplat-0002-行高01","family":"bugs-platform","check":"config","input":{"fn":"clamp_num","v":1.3,"lo":1.2,"hi":2.0,"fallback":1.6},"expect":{"value":1.3}}
+{"id":"bugplat-0002-行高02","family":"bugs-platform","check":"config","input":{"fn":"clamp_num","v":1.6,"lo":1.2,"hi":2.0,"fallback":1.6},"expect":{"value":1.6}}
+{"id":"bugplat-0002-行高03","family":"bugs-platform","check":"config","input":{"fn":"clamp_num","v":1.75,"lo":1.2,"hi":2.0,"fallback":1.6},"expect":{"value":1.75}}
+{"id":"bugplat-0002-行高04","family":"bugs-platform","check":"config","input":{"fn":"clamp_num","v":1.99,"lo":1.2,"hi":2.0,"fallback":1.6},"expect":{"value":1.99}}
+{"id":"bugplat-0002-行高05","family":"bugs-platform","check":"config","input":{"fn":"clamp_num","v":2.0,"lo":1.2,"hi":2.0,"fallback":1.6},"expect":{"value":2.0}}
+{"id":"bugplat-0002-行高06","family":"bugs-platform","check":"config","input":{"fn":"clamp_num","v":1.1,"lo":1.2,"hi":2.0,"fallback":1.6},"expect":{"value":1.2}}
+{"id":"bugplat-0002-行高07","family":"bugs-platform","check":"config","input":{"fn":"clamp_num","v":0,"lo":1.2,"hi":2.0,"fallback":1.6},"expect":{"value":1.2}}
+{"id":"bugplat-0002-行高08","family":"bugs-platform","check":"config","input":{"fn":"clamp_num","v":-1,"lo":1.2,"hi":2.0,"fallback":1.6},"expect":{"value":1.2}}
+{"id":"bugplat-0002-行高09","family":"bugs-platform","check":"config","input":{"fn":"clamp_num","v":2.1,"lo":1.2,"hi":2.0,"fallback":1.6},"expect":{"value":2.0}}
+{"id":"bugplat-0002-行高10","family":"bugs-platform","check":"config","input":{"fn":"clamp_num","v":5,"lo":1.2,"hi":2.0,"fallback":1.6},"expect":{"value":2.0}}
+{"id":"bugplat-0002-内容宽00","family":"bugs-platform","check":"config","input":{"fn":"clamp_content_width","v":0},"expect":{"value":0.0}}
+{"id":"bugplat-0002-内容宽01","family":"bugs-platform","check":"config","input":{"fn":"clamp_content_width","v":-0.0},"expect":{"value":0.0}}
+{"id":"bugplat-0002-内容宽02","family":"bugs-platform","check":"config","input":{"fn":"clamp_content_width","v":-1},"expect":{"value":480.0}}
+{"id":"bugplat-0002-内容宽03","family":"bugs-platform","check":"config","input":{"fn":"clamp_content_width","v":1},"expect":{"value":480.0}}
+{"id":"bugplat-0002-内容宽04","family":"bugs-platform","check":"config","input":{"fn":"clamp_content_width","v":479.9},"expect":{"value":480.0}}
+{"id":"bugplat-0002-内容宽05","family":"bugs-platform","check":"config","input":{"fn":"clamp_content_width","v":480},"expect":{"value":480.0}}
+{"id":"bugplat-0002-内容宽06","family":"bugs-platform","check":"config","input":{"fn":"clamp_content_width","v":900},"expect":{"value":900.0}}
+{"id":"bugplat-0002-内容宽07","family":"bugs-platform","check":"config","input":{"fn":"clamp_content_width","v":1200},"expect":{"value":1200.0}}
+{"id":"bugplat-0002-内容宽08","family":"bugs-platform","check":"config","input":{"fn":"clamp_content_width","v":2399.9},"expect":{"value":2399.9}}
+{"id":"bugplat-0002-内容宽09","family":"bugs-platform","check":"config","input":{"fn":"clamp_content_width","v":2400},"expect":{"value":2400.0}}
+{"id":"bugplat-0002-内容宽10","family":"bugs-platform","check":"config","input":{"fn":"clamp_content_width","v":2401},"expect":{"value":2400.0}}
+{"id":"bugplat-0002-内容宽11","family":"bugs-platform","check":"config","input":{"fn":"clamp_content_width","v":1000000},"expect":{"value":2400.0}}
+{"id":"bugplat-0002-有限值优先于fallback","family":"bugs-platform","check":"config","input":{"fn":"clamp_num","v":20,"lo":12,"hi":28,"fallback":14},"expect":{"value":20.0}}
+{"id":"bugplat-0002-上下界相等","family":"bugs-platform","check":"config","input":{"fn":"clamp_num","v":5,"lo":3,"hi":3,"fallback":1},"expect":{"value":3.0}}
+{"id":"bugplat-0002-负区间下限","family":"bugs-platform","check":"config","input":{"fn":"clamp_num","v":-10,"lo":-5,"hi":5,"fallback":0},"expect":{"value":-5.0}}
+{"id":"bugplat-0002-负区间上限","family":"bugs-platform","check":"config","input":{"fn":"clamp_num","v":10,"lo":-5,"hi":5,"fallback":0},"expect":{"value":5.0}}
+{"id":"bugplat-0002-零是铺满不是下限","family":"bugs-platform","check":"config","input":{"fn":"clamp_content_width","v":0.0},"expect":{"value":0.0}}
+{"id":"bugplat-0002-负零仍是零","family":"bugs-platform","check":"config","input":{"fn":"clamp_content_width","v":-0.0},"expect":{"value":0.0}}
+{"id":"bugplat-0002-默认宽在区间内","family":"bugs-platform","check":"config","input":{"fn":"clamp_content_width","v":1200.0},"expect":{"value":1200.0}}
+# serde 字段映射不在检查器覆盖内；这里钉住合法持久值不得被出厂默认值静默替换。
+# 源自 docs/bugs/0007（外观只存住了主题）
+{"id":"bugplat-0007-字号13不被14替换","family":"bugs-platform","check":"config","input":{"fn":"clamp_num","v":13,"lo":12,"hi":28,"fallback":14},"expect":{"value":13.0}}
+{"id":"bugplat-0007-字号18不被14替换","family":"bugs-platform","check":"config","input":{"fn":"clamp_num","v":18,"lo":12,"hi":28,"fallback":14},"expect":{"value":18.0}}
+{"id":"bugplat-0007-字号20","family":"bugs-platform","check":"config","input":{"fn":"clamp_num","v":20,"lo":12,"hi":28,"fallback":14},"expect":{"value":20.0}}
+{"id":"bugplat-0007-字号26","family":"bugs-platform","check":"config","input":{"fn":"clamp_num","v":26,"lo":12,"hi":28,"fallback":14},"expect":{"value":26.0}}
+{"id":"bugplat-0007-行高1.6","family":"bugs-platform","check":"config","input":{"fn":"clamp_num","v":1.6,"lo":1.2,"hi":2.0,"fallback":1.6},"expect":{"value":1.6}}
+{"id":"bugplat-0007-行高1.75不被1.6替换","family":"bugs-platform","check":"config","input":{"fn":"clamp_num","v":1.75,"lo":1.2,"hi":2.0,"fallback":1.6},"expect":{"value":1.75}}
+{"id":"bugplat-0007-行高1.9","family":"bugs-platform","check":"config","input":{"fn":"clamp_num","v":1.9,"lo":1.2,"hi":2.0,"fallback":1.6},"expect":{"value":1.9}}
+{"id":"bugplat-0007-内容宽1200","family":"bugs-platform","check":"config","input":{"fn":"clamp_content_width","v":1200},"expect":{"value":1200.0}}
+{"id":"bugplat-0007-内容宽0是合法值","family":"bugs-platform","check":"config","input":{"fn":"clamp_content_width","v":0},"expect":{"value":0.0}}
+{"id":"bugplat-0007-内容宽960","family":"bugs-platform","check":"config","input":{"fn":"clamp_content_width","v":960},"expect":{"value":960.0}}
+{"id":"bugplat-0007-内容宽1600","family":"bugs-platform","check":"config","input":{"fn":"clamp_content_width","v":1600},"expect":{"value":1600.0}}
+{"id":"bugplat-0007-有限值不被fallback覆盖","family":"bugs-platform","check":"config","input":{"fn":"clamp_num","v":28,"lo":12,"hi":20,"fallback":14},"expect":{"value":20.0}}
+{"id":"bugplat-0007-有限值低于界","family":"bugs-platform","check":"config","input":{"fn":"clamp_num","v":5,"lo":12,"hi":28,"fallback":14},"expect":{"value":12.0}}
+{"id":"bugplat-0007-有限值高于界","family":"bugs-platform","check":"config","input":{"fn":"clamp_num","v":99,"lo":12,"hi":28,"fallback":14},"expect":{"value":28.0}}
+{"id":"bugplat-0007-行高低于界","family":"bugs-platform","check":"config","input":{"fn":"clamp_num","v":0.5,"lo":1.2,"hi":2.0,"fallback":1.6},"expect":{"value":1.2}}
+{"id":"bugplat-0007-行高高于界","family":"bugs-platform","check":"config","input":{"fn":"clamp_num","v":9.0,"lo":1.2,"hi":2.0,"fallback":1.6},"expect":{"value":2.0}}
+{"id":"bugplat-0007-宽低于界","family":"bugs-platform","check":"config","input":{"fn":"clamp_content_width","v":100},"expect":{"value":480.0}}
+{"id":"bugplat-0007-宽高于界","family":"bugs-platform","check":"config","input":{"fn":"clamp_content_width","v":5000},"expect":{"value":2400.0}}
+{"id":"bugplat-0007-字号默认值14","family":"bugs-platform","check":"config","input":{"fn":"clamp_num","v":14,"lo":12,"hi":28,"fallback":14},"expect":{"value":14.0}}
+{"id":"bugplat-0007-行高默认值1.6","family":"bugs-platform","check":"config","input":{"fn":"clamp_num","v":1.6,"lo":1.2,"hi":2.0,"fallback":1.6},"expect":{"value":1.6}}
+{"id":"bugplat-0007-字号小数","family":"bugs-platform","check":"config","input":{"fn":"clamp_num","v":13.5,"lo":12,"hi":28,"fallback":14},"expect":{"value":13.5}}
+{"id":"bugplat-0007-行高小数","family":"bugs-platform","check":"config","input":{"fn":"clamp_num","v":1.65,"lo":1.2,"hi":2.0,"fallback":1.6},"expect":{"value":1.65}}
+{"id":"bugplat-0007-宽小数","family":"bugs-platform","check":"config","input":{"fn":"clamp_content_width","v":1201.5},"expect":{"value":1201.5}}
+{"id":"bugplat-0007-字号上界","family":"bugs-platform","check":"config","input":{"fn":"clamp_num","v":28.0,"lo":12,"hi":28,"fallback":14},"expect":{"value":28.0}}
+{"id":"bugplat-0007-行高上界","family":"bugs-platform","check":"config","input":{"fn":"clamp_num","v":2.0,"lo":1.2,"hi":2.0,"fallback":1.6},"expect":{"value":2.0}}
+{"id":"bugplat-0007-宽上界","family":"bugs-platform","check":"config","input":{"fn":"clamp_content_width","v":2400.0},"expect":{"value":2400.0}}
+{"id":"bugplat-0007-字号下界","family":"bugs-platform","check":"config","input":{"fn":"clamp_num","v":12.0,"lo":12,"hi":28,"fallback":14},"expect":{"value":12.0}}
+{"id":"bugplat-0007-行高下界","family":"bugs-platform","check":"config","input":{"fn":"clamp_num","v":1.2,"lo":1.2,"hi":2.0,"fallback":1.6},"expect":{"value":1.2}}
+{"id":"bugplat-0007-宽下界","family":"bugs-platform","check":"config","input":{"fn":"clamp_content_width","v":480.0},"expect":{"value":480.0}}
+{"id":"bugplat-0007-整数夹取不取整","family":"bugs-platform","check":"config","input":{"fn":"clamp_num","v":20.5,"lo":12,"hi":28,"fallback":14},"expect":{"value":20.5}}
+# 手势层不可由检查器观测；这里钉住 followLink 之前的分类与编解码边界。
+# 源自 docs/bugs/0058（Cmd-点击链接不打开）
+{"id":"bugplat-0058-点路径","family":"bugs-platform","check":"link","input":{"href":"."},"expect":{"kind":"local_path","path":".","fragment":null}}
+{"id":"bugplat-0058-点斜杠","family":"bugs-platform","check":"link","input":{"href":"./a.md"},"expect":{"kind":"local_path","path":"./a.md","fragment":null}}
+{"id":"bugplat-0058-父目录","family":"bugs-platform","check":"link","input":{"href":"../a.md"},"expect":{"kind":"local_path","path":"../a.md","fragment":null}}
+{"id":"bugplat-0058-子目录","family":"bugs-platform","check":"link","input":{"href":"sub/a.md"},"expect":{"kind":"local_path","path":"sub/a.md","fragment":null}}
+{"id":"bugplat-0058-子目录空格","family":"bugs-platform","check":"link","input":{"href":"sub/a b.md"},"expect":{"kind":"local_path","path":"sub/a b.md","fragment":null}}
+{"id":"bugplat-0058-绝对路径","family":"bugs-platform","check":"link","input":{"href":"/abs/a.md"},"expect":{"kind":"local_path","path":"/abs/a.md","fragment":null}}
+{"id":"bugplat-0058-波浪号路径","family":"bugs-platform","check":"link","input":{"href":"~/a.md"},"expect":{"kind":"local_path","path":"~/a.md","fragment":null}}
+{"id":"bugplat-0058-片段","family":"bugs-platform","check":"link","input":{"href":"a.md#frag"},"expect":{"kind":"local_path","path":"a.md","fragment":"frag"}}
+{"id":"bugplat-0058-片段空格编码","family":"bugs-platform","check":"link","input":{"href":"a.md#a%20b"},"expect":{"kind":"local_path","path":"a.md","fragment":"a b"}}
+{"id":"bugplat-0058-片段中文编码","family":"bugs-platform","check":"link","input":{"href":"a.md#%E4%B8%AD"},"expect":{"kind":"local_path","path":"a.md","fragment":"中"}}
+{"id":"bugplat-0058-空片段","family":"bugs-platform","check":"link","input":{"href":"a.md#"},"expect":{"kind":"local_path","path":"a.md","fragment":null}}
+{"id":"bugplat-0058-查询","family":"bugs-platform","check":"link","input":{"href":"a.md?x=1"},"expect":{"kind":"local_query"}}
+{"id":"bugplat-0058-空查询","family":"bugs-platform","check":"link","input":{"href":"a.md?"},"expect":{"kind":"local_query"}}
+{"id":"bugplat-0058-查询空片段","family":"bugs-platform","check":"link","input":{"href":"a.md?#frag"},"expect":{"kind":"local_query"}}
+{"id":"bugplat-0058-纯查询","family":"bugs-platform","check":"link","input":{"href":"?q=1"},"expect":{"kind":"local_query"}}
+{"id":"bugplat-0058-路径空格编码","family":"bugs-platform","check":"link","input":{"href":"a%20b.md"},"expect":{"kind":"local_path","path":"a b.md","fragment":null}}
+{"id":"bugplat-0058-路径斜杠编码","family":"bugs-platform","check":"link","input":{"href":"a%2Fb.md"},"expect":{"kind":"local_path","path":"a/b.md","fragment":null}}
+{"id":"bugplat-0058-路径井号编码","family":"bugs-platform","check":"link","input":{"href":"a%23b.md"},"expect":{"kind":"local_path","path":"a#b.md","fragment":null}}
+{"id":"bugplat-0058-路径问号编码","family":"bugs-platform","check":"link","input":{"href":"a%3Fb.md"},"expect":{"kind":"local_path","path":"a?b.md","fragment":null}}
+{"id":"bugplat-0058-片段问号编码","family":"bugs-platform","check":"link","input":{"href":"a.md#x%3Fy"},"expect":{"kind":"local_path","path":"a.md","fragment":"x?y"}}
+{"id":"bugplat-0058-片段井号编码","family":"bugs-platform","check":"link","input":{"href":"a.md#x%23y"},"expect":{"kind":"local_path","path":"a.md","fragment":"x#y"}}
+{"id":"bugplat-0058-片段短编码","family":"bugs-platform","check":"link","input":{"href":"a.md#%4"},"expect":{"kind":"local_path","path":"a.md","fragment":"%4"}}
+{"id":"bugplat-0058-片段裸百分号","family":"bugs-platform","check":"link","input":{"href":"a.md#%"},"expect":{"kind":"local_path","path":"a.md","fragment":"%"}}
+{"id":"bugplat-0058-片段非法UTF8","family":"bugs-platform","check":"link","input":{"href":"a.md#%FF"},"expect":{"kind":"local_path","path":"a.md","fragment":"�"}}
+{"id":"bugplat-0058-片段加号","family":"bugs-platform","check":"link","input":{"href":"a.md#a+b"},"expect":{"kind":"local_path","path":"a.md","fragment":"a+b"}}
+{"id":"bugplat-0058-锚点","family":"bugs-platform","check":"link","input":{"href":"#top"},"expect":{"kind":"anchor","fragment":"top"}}
+{"id":"bugplat-0058-https","family":"bugs-platform","check":"link","input":{"href":"https://example.com"},"expect":{"kind":"external","url":"https://example.com"}}
+{"id":"bugplat-0058-http端口","family":"bugs-platform","check":"link","input":{"href":"http://example.com:8080/x"},"expect":{"kind":"external","url":"http://example.com:8080/x"}}
+{"id":"bugplat-0058-协议相对主机","family":"bugs-platform","check":"link","input":{"href":"//host/x"},"expect":{"kind":"external","url":"https://host/x"}}
+{"id":"bugplat-0058-mailto","family":"bugs-platform","check":"link","input":{"href":"mailto:a@b"},"expect":{"kind":"unsupported","scheme":"mailto"}}
+{"id":"bugplat-0058-tel","family":"bugs-platform","check":"link","input":{"href":"tel:123"},"expect":{"kind":"unsupported","scheme":"tel"}}
+{"id":"bugplat-0058-ftp","family":"bugs-platform","check":"link","input":{"href":"ftp://example.com/x"},"expect":{"kind":"unsupported","scheme":"ftp"}}
+{"id":"bugplat-0058-ssh","family":"bugs-platform","check":"link","input":{"href":"ssh://host/x"},"expect":{"kind":"unsupported","scheme":"ssh"}}
+{"id":"bugplat-0058-git-ssh","family":"bugs-platform","check":"link","input":{"href":"git+ssh://host/x"},"expect":{"kind":"unsupported","scheme":"git+ssh"}}
+{"id":"bugplat-0058-反斜杠盘符","family":"bugs-platform","check":"link","input":{"href":"C:\\Users\\a.md"},"expect":{"kind":"unsupported","scheme":"c"}}
+{"id":"bugplat-0058-小写盘符","family":"bugs-platform","check":"link","input":{"href":"c:/x"},"expect":{"kind":"unsupported","scheme":"c"}}
+{"id":"bugplat-0058-rmd文件","family":"bugs-platform","check":"link","input":{"href":"rmd-file:/tmp/a.md"},"expect":{"kind":"local_file","path":"/tmp/a.md","fragment":null}}
+{"id":"bugplat-0058-rmd相对文件","family":"bugs-platform","check":"link","input":{"href":"rmd-file:relative.md"},"expect":{"kind":"local_file","path":"relative.md","fragment":null}}
+{"id":"bugplat-0058-rmd查询","family":"bugs-platform","check":"link","input":{"href":"rmd-file:/a?x=1"},"expect":{"kind":"local_query"}}
+{"id":"bugplat-0058-file中文解码","family":"bugs-platform","check":"link","input":{"href":"file:///tmp/%E4%B8%AD.md"},"expect":{"kind":"local_file","path":"/tmp/中.md","fragment":null}}
+{"id":"bugplat-0058-file空片段","family":"bugs-platform","check":"link","input":{"href":"file:///tmp/a.md#"},"expect":{"kind":"local_file","path":"/tmp/a.md","fragment":null}}
+{"id":"bugplat-0058-file只主机","family":"bugs-platform","check":"link","input":{"href":"file://localhost"},"expect":{"kind":"unsupported","scheme":"file"}}
+{"id":"bugplat-0058-file单斜杠","family":"bugs-platform","check":"link","input":{"href":"file:/tmp/a.md"},"expect":{"kind":"local_file","path":"/tmp/a.md","fragment":null}}
+{"id":"bugplat-0058-file大写本机","family":"bugs-platform","check":"link","input":{"href":"FILE://localhost/tmp/x.md"},"expect":{"kind":"local_file","path":"/tmp/x.md","fragment":null}}
+{"id":"bugplat-0058-编码空串","family":"bugs-platform","check":"link_codec","input":{"fn":"encode","s":""},"expect":{"value":""}}
+{"id":"bugplat-0058-编码unreserved","family":"bugs-platform","check":"link_codec","input":{"fn":"encode","s":"abcXYZ019-_.~/"},"expect":{"value":"abcXYZ019-_.~/"}}
+{"id":"bugplat-0058-编码空格","family":"bugs-platform","check":"link_codec","input":{"fn":"encode","s":" "},"expect":{"value":"%20"}}
+{"id":"bugplat-0058-编码中文","family":"bugs-platform","check":"link_codec","input":{"fn":"encode","s":"中"},"expect":{"value":"%E4%B8%AD"}}
+{"id":"bugplat-0058-编码符号","family":"bugs-platform","check":"link_codec","input":{"fn":"encode","s":"%#?&=+"},"expect":{"value":"%25%23%3F%26%3D%2B"}}
+{"id":"bugplat-0058-解码中文","family":"bugs-platform","check":"link_codec","input":{"fn":"decode","s":"%E4%B8%AD"},"expect":{"value":"中"}}
+{"id":"bugplat-0058-解码裸百分号","family":"bugs-platform","check":"link_codec","input":{"fn":"decode","s":"%%20"},"expect":{"value":"% "}}
+{"id":"bugplat-0058-解码短序列","family":"bugs-platform","check":"link_codec","input":{"fn":"decode","s":"%4"},"expect":{"value":"%4"}}
+{"id":"bugplat-0058-解码非法UTF8","family":"bugs-platform","check":"link_codec","input":{"fn":"decode","s":"%FF"},"expect":{"value":"�"}}
+{"id":"bugplat-0058-解码双重编码一次","family":"bugs-platform","check":"link_codec","input":{"fn":"decode","s":"%2520"},"expect":{"value":"%20"}}
+{"id":"bugplat-0058-归一父目录","family":"bugs-platform","check":"link_codec","input":{"fn":"normalize","s":"a/../../x"},"expect":{"value":"../x"}}
+{"id":"bugplat-0058-归一不越根","family":"bugs-platform","check":"link_codec","input":{"fn":"normalize","s":"/a/b/c/../../.."},"expect":{"value":"/"}}
+{"id":"bugplat-0058-归一点与双斜杠","family":"bugs-platform","check":"link_codec","input":{"fn":"normalize","s":"a//b/./c"},"expect":{"value":"a/b/c"}}
+{"id":"bugplat-0058-归一保留开头父目录","family":"bugs-platform","check":"link_codec","input":{"fn":"normalize","s":"../../x"},"expect":{"value":"../../x"}}
+{"id":"bugplat-0058-归一绝对根","family":"bugs-platform","check":"link_codec","input":{"fn":"normalize","s":"/a/.."},"expect":{"value":"/"}}
+{"id":"bugplat-0058-归一父目录双斜杠","family":"bugs-platform","check":"link_codec","input":{"fn":"normalize","s":"..//x"},"expect":{"value":"../x"}}
+{"id":"bugplat-0058-归一中文","family":"bugs-platform","check":"link_codec","input":{"fn":"normalize","s":"中文//文件/../目录"},"expect":{"value":"中文/目录"}}
+{"id":"bugplat-0058-归一全斜杠","family":"bugs-platform","check":"link_codec","input":{"fn":"normalize","s":"//"},"expect":{"value":"/"}}
+{"id":"bugplat-0058-归一绝对父目录","family":"bugs-platform","check":"link_codec","input":{"fn":"normalize","s":"/../x"},"expect":{"value":"/x"}}
+# 覆盖缺口：手势层（阅读态点击进入编辑）不可由检查器观测；这里钉住内部链接的分类输入。
+# 源自 docs/bugs/0059（点链接进入编辑态）
+{"id":"bugplat-0059-文档","family":"bugs-platform","check":"link","input":{"href":"a.md"},"expect":{"kind":"local_path","path":"a.md","fragment":null}}
+{"id":"bugplat-0059-文档片段","family":"bugs-platform","check":"link","input":{"href":"a.md#x"},"expect":{"kind":"local_path","path":"a.md","fragment":"x"}}
+{"id":"bugplat-0059-父文档片段","family":"bugs-platform","check":"link","input":{"href":"../a.md#x"},"expect":{"kind":"local_path","path":"../a.md","fragment":"x"}}
+{"id":"bugplat-0059-文档中文","family":"bugs-platform","check":"link","input":{"href":"中文.md"},"expect":{"kind":"local_path","path":"中文.md","fragment":null}}
+{"id":"bugplat-0059-文档中文空格","family":"bugs-platform","check":"link","input":{"href":"sub/中文 文件.md"},"expect":{"kind":"local_path","path":"sub/中文 文件.md","fragment":null}}
+{"id":"bugplat-0059-文档空格编码","family":"bugs-platform","check":"link","input":{"href":"a%20b.md"},"expect":{"kind":"local_path","path":"a b.md","fragment":null}}
+{"id":"bugplat-0059-锚点","family":"bugs-platform","check":"link","input":{"href":"#x"},"expect":{"kind":"anchor","fragment":"x"}}
+{"id":"bugplat-0059-空锚点","family":"bugs-platform","check":"link","input":{"href":"#"},"expect":{"kind":"anchor","fragment":""}}
+{"id":"bugplat-0059-锚点中文","family":"bugs-platform","check":"link","input":{"href":"#%E4%B8%AD"},"expect":{"kind":"anchor","fragment":"中"}}
+{"id":"bugplat-0059-绝对文档","family":"bugs-platform","check":"link","input":{"href":"/a.md"},"expect":{"kind":"local_path","path":"/a.md","fragment":null}}
+{"id":"bugplat-0059-文档查询","family":"bugs-platform","check":"link","input":{"href":"a.md?x"},"expect":{"kind":"local_query"}}
+{"id":"bugplat-0059-文档片段编码","family":"bugs-platform","check":"link","input":{"href":"a.md#%E4%B8%AD"},"expect":{"kind":"local_path","path":"a.md","fragment":"中"}}
+{"id":"bugplat-0059-rmd文件","family":"bugs-platform","check":"link","input":{"href":"rmd-file:/tmp/a.md"},"expect":{"kind":"local_file","path":"/tmp/a.md","fragment":null}}
+{"id":"bugplat-0059-rmd文件片段","family":"bugs-platform","check":"link","input":{"href":"rmd-file:/tmp/a.md#x"},"expect":{"kind":"local_file","path":"/tmp/a.md","fragment":"x"}}
+{"id":"bugplat-0059-file绝对","family":"bugs-platform","check":"link","input":{"href":"file:///tmp/a.md"},"expect":{"kind":"local_file","path":"/tmp/a.md","fragment":null}}
+{"id":"bugplat-0059-外部","family":"bugs-platform","check":"link","input":{"href":"https://example.com/a"},"expect":{"kind":"external","url":"https://example.com/a"}}
+{"id":"bugplat-0059-外部锚点","family":"bugs-platform","check":"link","input":{"href":"https://example.com/a#x"},"expect":{"kind":"external","url":"https://example.com/a#x"}}
+{"id":"bugplat-0059-危险协议","family":"bugs-platform","check":"link","input":{"href":"javascript:void(0)"},"expect":{"kind":"unsupported","scheme":"javascript"}}
+{"id":"bugplat-0059-未知协议","family":"bugs-platform","check":"link","input":{"href":"obsidian://open?vault=x"},"expect":{"kind":"unsupported","scheme":"obsidian"}}
+{"id":"bugplat-0059-文档编码问号","family":"bugs-platform","check":"link","input":{"href":"a.md#x%3Fy"},"expect":{"kind":"local_path","path":"a.md","fragment":"x?y"}}
+{"id":"bugplat-0059-文档编码井号","family":"bugs-platform","check":"link","input":{"href":"a.md#x%23y"},"expect":{"kind":"local_path","path":"a.md","fragment":"x#y"}}
+{"id":"bugplat-0059-锚点不被改写","family":"bugs-platform","check":"html","input":{"md":"[x](#sec)"},"expect":{"contains":["href=\"#sec\""],"not_contains":["rmd-file:"]}}
+{"id":"bugplat-0059-相对链接不被改写","family":"bugs-platform","check":"html","input":{"md":"[x](../a.md)"},"expect":{"contains":["href=\"../a.md\""],"not_contains":["rmd-file:"]}}
+{"id":"bugplat-0059-外部链接不被改写","family":"bugs-platform","check":"html","input":{"md":"[x](https://example.com/a)"},"expect":{"contains":["href=\"https://example.com/a\""],"not_contains":["rmd-file:"]}}
+{"id":"bugplat-0059-中文相对链接","family":"bugs-platform","check":"html","input":{"md":"[x](中文.md)"},"expect":{"contains":["href=\"%E4%B8%AD%E6%96%87.md\""]}}
+# 翻译层必须逐字透传实体码；解码发生在 Mermaid 入引擎前（下方 html 用例钉住）。
+# 源自 docs/bugs/0074（Mermaid-命名实体码原样显示）
+{"id":"bugplat-0074-实体透传00","family":"bugs-platform","check":"diagram","input":{"kind":"flow","src":"a=>start: A #quot; B\nb=>end\na->b"},"expect":{"ok":true,"out_contains":["n0([A #quot; B])"]}}
+{"id":"bugplat-0074-实体透传01","family":"bugs-platform","check":"diagram","input":{"kind":"flow","src":"a=>start: A #amp; B\nb=>end\na->b"},"expect":{"ok":true,"out_contains":["n0([A #amp; B])"]}}
+{"id":"bugplat-0074-实体透传02","family":"bugs-platform","check":"diagram","input":{"kind":"flow","src":"a=>start: A #lt; B\nb=>end\na->b"},"expect":{"ok":true,"out_contains":["n0([A #lt; B])"]}}
+{"id":"bugplat-0074-实体透传03","family":"bugs-platform","check":"diagram","input":{"kind":"flow","src":"a=>start: A #gt; B\nb=>end\na->b"},"expect":{"ok":true,"out_contains":["n0([A #gt; B])"]}}
+{"id":"bugplat-0074-实体透传04","family":"bugs-platform","check":"diagram","input":{"kind":"flow","src":"a=>start: A #nbsp; B\nb=>end\na->b"},"expect":{"ok":true,"out_contains":["n0([A #nbsp; B])"]}}
+{"id":"bugplat-0074-实体透传05","family":"bugs-platform","check":"diagram","input":{"kind":"flow","src":"a=>start: A #period; B\nb=>end\na->b"},"expect":{"ok":true,"out_contains":["n0([A #period; B])"]}}
+{"id":"bugplat-0074-实体透传06","family":"bugs-platform","check":"diagram","input":{"kind":"flow","src":"a=>start: A #comma; B\nb=>end\na->b"},"expect":{"ok":true,"out_contains":["n0([A #comma; B])"]}}
+{"id":"bugplat-0074-实体透传07","family":"bugs-platform","check":"diagram","input":{"kind":"flow","src":"a=>start: A #colon; B\nb=>end\na->b"},"expect":{"ok":true,"out_contains":["n0([A #colon; B])"]}}
+{"id":"bugplat-0074-实体透传08","family":"bugs-platform","check":"diagram","input":{"kind":"flow","src":"a=>start: A #semi; B\nb=>end\na->b"},"expect":{"ok":true,"out_contains":["n0([A #semi; B])"]}}
+{"id":"bugplat-0074-实体透传09","family":"bugs-platform","check":"diagram","input":{"kind":"flow","src":"a=>start: A #plus; B\nb=>end\na->b"},"expect":{"ok":true,"out_contains":["n0([A #plus; B])"]}}
+{"id":"bugplat-0074-实体透传10","family":"bugs-platform","check":"diagram","input":{"kind":"flow","src":"a=>start: A #minus; B\nb=>end\na->b"},"expect":{"ok":true,"out_contains":["n0([A #minus; B])"]}}
+{"id":"bugplat-0074-实体透传11","family":"bugs-platform","check":"diagram","input":{"kind":"flow","src":"a=>start: A #sol; B\nb=>end\na->b"},"expect":{"ok":true,"out_contains":["n0([A #sol; B])"]}}
+{"id":"bugplat-0074-实体透传12","family":"bugs-platform","check":"diagram","input":{"kind":"flow","src":"a=>start: A #backslash; B\nb=>end\na->b"},"expect":{"ok":true,"out_contains":["n0([A #backslash; B])"]}}
+{"id":"bugplat-0074-实体透传13","family":"bugs-platform","check":"diagram","input":{"kind":"flow","src":"a=>start: A #lpar; B\nb=>end\na->b"},"expect":{"ok":true,"out_contains":["n0([A #lpar; B])"]}}
+{"id":"bugplat-0074-实体透传14","family":"bugs-platform","check":"diagram","input":{"kind":"flow","src":"a=>start: A #rpar; B\nb=>end\na->b"},"expect":{"ok":true,"out_contains":["n0([A #rpar; B])"]}}
+{"id":"bugplat-0074-实体透传15","family":"bugs-platform","check":"diagram","input":{"kind":"flow","src":"a=>start: A #lbrace; B\nb=>end\na->b"},"expect":{"ok":true,"out_contains":["n0([A #lbrace; B])"]}}
+{"id":"bugplat-0074-实体透传16","family":"bugs-platform","check":"diagram","input":{"kind":"flow","src":"a=>start: A #rbrace; B\nb=>end\na->b"},"expect":{"ok":true,"out_contains":["n0([A #rbrace; B])"]}}
+{"id":"bugplat-0074-实体透传17","family":"bugs-platform","check":"diagram","input":{"kind":"flow","src":"a=>start: A #lbrack; B\nb=>end\na->b"},"expect":{"ok":true,"out_contains":["n0([A #lbrack; B])"]}}
+{"id":"bugplat-0074-实体透传18","family":"bugs-platform","check":"diagram","input":{"kind":"flow","src":"a=>start: A #rbrack; B\nb=>end\na->b"},"expect":{"ok":true,"out_contains":["n0([A #rbrack; B])"]}}
+{"id":"bugplat-0074-实体透传19","family":"bugs-platform","check":"diagram","input":{"kind":"flow","src":"a=>start: A #equals; B\nb=>end\na->b"},"expect":{"ok":true,"out_contains":["n0([A #equals; B])"]}}
+{"id":"bugplat-0074-实体透传20","family":"bugs-platform","check":"diagram","input":{"kind":"flow","src":"a=>start: A #tilde; B\nb=>end\na->b"},"expect":{"ok":true,"out_contains":["n0([A #tilde; B])"]}}
+{"id":"bugplat-0074-实体透传21","family":"bugs-platform","check":"diagram","input":{"kind":"flow","src":"a=>start: A #grave; B\nb=>end\na->b"},"expect":{"ok":true,"out_contains":["n0([A #grave; B])"]}}
+{"id":"bugplat-0074-实体透传22","family":"bugs-platform","check":"diagram","input":{"kind":"flow","src":"a=>start: A #num; B\nb=>end\na->b"},"expect":{"ok":true,"out_contains":["n0([A #num; B])"]}}
+{"id":"bugplat-0074-实体透传23","family":"bugs-platform","check":"diagram","input":{"kind":"flow","src":"a=>start: A #excl; B\nb=>end\na->b"},"expect":{"ok":true,"out_contains":["n0([A #excl; B])"]}}
+{"id":"bugplat-0074-实体透传24","family":"bugs-platform","check":"diagram","input":{"kind":"flow","src":"a=>start: A #at; B\nb=>end\na->b"},"expect":{"ok":true,"out_contains":["n0([A #at; B])"]}}
+{"id":"bugplat-0074-实体透传25","family":"bugs-platform","check":"diagram","input":{"kind":"flow","src":"a=>start: A #dollar; B\nb=>end\na->b"},"expect":{"ok":true,"out_contains":["n0([A #dollar; B])"]}}
+{"id":"bugplat-0074-实体透传26","family":"bugs-platform","check":"diagram","input":{"kind":"flow","src":"a=>start: A #percnt; B\nb=>end\na->b"},"expect":{"ok":true,"out_contains":["n0([A #percnt; B])"]}}
+{"id":"bugplat-0074-实体透传27","family":"bugs-platform","check":"diagram","input":{"kind":"flow","src":"a=>start: A #ast; B\nb=>end\na->b"},"expect":{"ok":true,"out_contains":["n0([A #ast; B])"]}}
+{"id":"bugplat-0074-实体透传28","family":"bugs-platform","check":"diagram","input":{"kind":"flow","src":"a=>start: A #quest; B\nb=>end\na->b"},"expect":{"ok":true,"out_contains":["n0([A #quest; B])"]}}
+{"id":"bugplat-0074-实体透传29","family":"bugs-platform","check":"diagram","input":{"kind":"flow","src":"a=>start: A #apos; B\nb=>end\na->b"},"expect":{"ok":true,"out_contains":["n0([A #apos; B])"]}}
+{"id":"bugplat-0074-数字实体透传","family":"bugs-platform","check":"diagram","input":{"kind":"flow","src":"a=>start: A #60; B\nb=>end\na->b"},"expect":{"ok":true,"out_contains":["n0([A #60; B])"]}}
+{"id":"bugplat-0074-XML实体透传","family":"bugs-platform","check":"diagram","input":{"kind":"flow","src":"a=>start: A &lt; B\nb=>end\na->b"},"expect":{"ok":true,"out_contains":["n0([A &lt; B])"]}}
+{"id":"bugplat-0074-组合实体透传","family":"bugs-platform","check":"diagram","input":{"kind":"flow","src":"a=>start: #lt;div#gt;\nb=>end\na->b"},"expect":{"ok":true,"out_contains":["n0([#lt;div#gt;])"]}}
+{"id":"bugplat-0074-单趟不解二次","family":"bugs-platform","check":"diagram","input":{"kind":"flow","src":"a=>start: #num;lt;\nb=>end\na->b"},"expect":{"ok":true,"out_contains":["n0([#num;lt;])"]}}
+{"id":"bugplat-0074-渲染前解码lt","family":"bugs-platform","check":"html","input":{"md":"```mermaid\nflowchart TD\n    A[\"x #lt; y\"]\n```"},"expect":{"contains":["rmd-diagram"],"not_contains":["#lt;"]}}
+{"id":"bugplat-0074-渲染前解码gt","family":"bugs-platform","check":"html","input":{"md":"```mermaid\nflowchart TD\n    A[\"x #gt; y\"]\n```"},"expect":{"contains":["rmd-diagram"],"not_contains":["#gt;"]}}
+{"id":"bugplat-0074-渲染前解码amp","family":"bugs-platform","check":"html","input":{"md":"```mermaid\nflowchart TD\n    A[\"x #amp; y\"]\n```"},"expect":{"contains":["rmd-diagram"],"not_contains":["#amp;"]}}
+{"id":"bugplat-0074-渲染前解码quot","family":"bugs-platform","check":"html","input":{"md":"```mermaid\nflowchart TD\n    A[\"x #quot; y\"]\n```"},"expect":{"contains":["rmd-diagram"],"not_contains":["#quot;"]}}
+{"id":"bugplat-0074-单趟保留字面","family":"bugs-platform","check":"html","input":{"md":"```mermaid\nflowchart TD\n    A[\"x #num;lt; y\"]\n```"},"expect":{"contains":["rmd-diagram","#lt;"]}}
+# classify 的 Debug 负载保留完整 token；真正给用户的提示在 Reject::text() 里截到 200 字节。
+# 源自 docs/bugs/0075（超长图类型把回退提示撑到-900-字节）
+{"id":"bugplat-0075-未知短类型00","family":"bugs-platform","check":"mermaid_class","input":{"src":"x"},"expect":{"ok":false,"reject":"UnknownKind(\"x\")"}}
+{"id":"bugplat-0075-未知短类型01","family":"bugs-platform","check":"mermaid_class","input":{"src":"ab"},"expect":{"ok":false,"reject":"UnknownKind(\"ab\")"}}
+{"id":"bugplat-0075-未知短类型02","family":"bugs-platform","check":"mermaid_class","input":{"src":"flowchartx"},"expect":{"ok":false,"reject":"UnknownKind(\"flowchartx\")"}}
+{"id":"bugplat-0075-未知短类型03","family":"bugs-platform","check":"mermaid_class","input":{"src":"mermaid"},"expect":{"ok":false,"reject":"UnknownKind(\"mermaid\")"}}
+{"id":"bugplat-0075-未知短类型04","family":"bugs-platform","check":"mermaid_class","input":{"src":"123"},"expect":{"ok":false,"reject":"UnknownKind(\"123\")"}}
+{"id":"bugplat-0075-未知短类型05","family":"bugs-platform","check":"mermaid_class","input":{"src":"x-y"},"expect":{"ok":false,"reject":"UnknownKind(\"x-y\")"}}
+{"id":"bugplat-0075-未知短类型06","family":"bugs-platform","check":"mermaid_class","input":{"src":"x.y"},"expect":{"ok":false,"reject":"UnknownKind(\"x.y\")"}}
+{"id":"bugplat-0075-已知不支持gantt","family":"bugs-platform","check":"mermaid_class","input":{"src":"gantt"},"expect":{"ok":false,"reject":"UnsupportedKind(\"gantt\")"}}
+{"id":"bugplat-0075-大小写敏感","family":"bugs-platform","check":"mermaid_class","input":{"src":"Gantt"},"expect":{"ok":false,"reject":"UnknownKind(\"Gantt\")"}}
+{"id":"bugplat-0075-未知带方向","family":"bugs-platform","check":"mermaid_class","input":{"src":"flowchartx TD"},"expect":{"ok":false,"reject":"UnknownKind(\"flowchartx\")"}}
+{"id":"bugplat-0075-尾冒号剥一次","family":"bugs-platform","check":"mermaid_class","input":{"src":"x:"},"expect":{"ok":false,"reject":"UnknownKind(\"x\")"}}
+{"id":"bugplat-0075-双冒号只剥一次","family":"bugs-platform","check":"mermaid_class","input":{"src":"x::"},"expect":{"ok":false,"reject":"UnknownKind(\"x:\")"}}
+{"id":"bugplat-0075-前后空白","family":"bugs-platform","check":"mermaid_class","input":{"src":"  x  "},"expect":{"ok":false,"reject":"UnknownKind(\"x\")"}}
+{"id":"bugplat-0075-前导空行","family":"bugs-platform","check":"mermaid_class","input":{"src":"\n\nx"},"expect":{"ok":false,"reject":"UnknownKind(\"x\")"}}
+{"id":"bugplat-0075-注释后首行","family":"bugs-platform","check":"mermaid_class","input":{"src":"%% note\nx"},"expect":{"ok":false,"reject":"UnknownKind(\"x\")"}}
+{"id":"bugplat-0075-超长ASCII10","family":"bugs-platform","check":"mermaid_class","input":{"src":"aaaaaaaaaa"},"expect":{"ok":false,"reject":"UnknownKind(\"aaaaaaaaaa\")"}}
+{"id":"bugplat-0075-超长ASCII50","family":"bugs-platform","check":"mermaid_class","input":{"src":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"expect":{"ok":false,"reject":"UnknownKind(\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\")"}}
+{"id":"bugplat-0075-超长ASCII100","family":"bugs-platform","check":"mermaid_class","input":{"src":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"expect":{"ok":false,"reject":"UnknownKind(\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\")"}}
+{"id":"bugplat-0075-超长ASCII199","family":"bugs-platform","check":"mermaid_class","input":{"src":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"expect":{"ok":false,"reject":"UnknownKind(\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\")"}}
+{"id":"bugplat-0075-超长ASCII200","family":"bugs-platform","check":"mermaid_class","input":{"src":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"expect":{"ok":false,"reject":"UnknownKind(\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\")"}}
+{"id":"bugplat-0075-超长ASCII201","family":"bugs-platform","check":"mermaid_class","input":{"src":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"expect":{"ok":false,"reject":"UnknownKind(\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\")"}}
+{"id":"bugplat-0075-超长ASCII300","family":"bugs-platform","check":"mermaid_class","input":{"src":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"expect":{"ok":false,"reject":"UnknownKind(\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\")"}}
+{"id":"bugplat-0075-超长ASCII900","family":"bugs-platform","check":"mermaid_class","input":{"src":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"expect":{"ok":false,"reject":"UnknownKind(\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\")"}}
+{"id":"bugplat-0075-超长中文50","family":"bugs-platform","check":"mermaid_class","input":{"src":"图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图"},"expect":{"ok":false,"reject":"UnknownKind(\"图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图\")"}}
+{"id":"bugplat-0075-超长中文300","family":"bugs-platform","check":"mermaid_class","input":{"src":"图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图"},"expect":{"ok":false,"reject":"UnknownKind(\"图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图图\")"}}
+{"id":"bugplat-0075-BOM前缀","family":"bugs-platform","check":"mermaid_class","input":{"src":"﻿x"},"expect":{"ok":false,"reject":"UnknownKind(\"x\")"}}
+{"id":"bugplat-0075-配置指令优先","family":"bugs-platform","check":"mermaid_class","input":{"src":"%%{init: {}}%%\nx"},"expect":{"ok":false,"reject":"Config"}}
+# 源自 docs/bugs/0076（合法的-Mermaid-写法被判成语法错误）
+{"id":"bugplat-0076-flowchart","family":"bugs-platform","check":"mermaid_class","input":{"src":"flowchart TD"},"expect":{"ok":true,"kind":"flowchart"}}
+{"id":"bugplat-0076-graph","family":"bugs-platform","check":"mermaid_class","input":{"src":"graph LR"},"expect":{"ok":true,"kind":"graph"}}
+{"id":"bugplat-0076-sequence","family":"bugs-platform","check":"mermaid_class","input":{"src":"sequenceDiagram"},"expect":{"ok":true,"kind":"sequenceDiagram"}}
+{"id":"bugplat-0076-class","family":"bugs-platform","check":"mermaid_class","input":{"src":"classDiagram"},"expect":{"ok":true,"kind":"classDiagram"}}
+{"id":"bugplat-0076-state-v2","family":"bugs-platform","check":"mermaid_class","input":{"src":"stateDiagram-v2"},"expect":{"ok":true,"kind":"stateDiagram-v2"}}
+{"id":"bugplat-0076-state","family":"bugs-platform","check":"mermaid_class","input":{"src":"stateDiagram"},"expect":{"ok":true,"kind":"stateDiagram"}}
+{"id":"bugplat-0076-er","family":"bugs-platform","check":"mermaid_class","input":{"src":"erDiagram"},"expect":{"ok":true,"kind":"erDiagram"}}
+{"id":"bugplat-0076-pie","family":"bugs-platform","check":"mermaid_class","input":{"src":"pie title X"},"expect":{"ok":true,"kind":"pie"}}
+{"id":"bugplat-0076-mindmap","family":"bugs-platform","check":"mermaid_class","input":{"src":"mindmap"},"expect":{"ok":true,"kind":"mindmap"}}
+{"id":"bugplat-0076-journey","family":"bugs-platform","check":"mermaid_class","input":{"src":"journey"},"expect":{"ok":true,"kind":"journey"}}
+{"id":"bugplat-0076-gitgraph","family":"bugs-platform","check":"mermaid_class","input":{"src":"gitGraph:"},"expect":{"ok":true,"kind":"gitGraph"}}
+{"id":"bugplat-0076-timeline","family":"bugs-platform","check":"mermaid_class","input":{"src":"timeline"},"expect":{"ok":true,"kind":"timeline"}}
+{"id":"bugplat-0076-sankey-beta","family":"bugs-platform","check":"mermaid_class","input":{"src":"sankey-beta"},"expect":{"ok":true,"kind":"sankey-beta"}}
+{"id":"bugplat-0076-architecture","family":"bugs-platform","check":"mermaid_class","input":{"src":"architecture-beta"},"expect":{"ok":true,"kind":"architecture-beta"}}
+{"id":"bugplat-0076-gantt","family":"bugs-platform","check":"mermaid_class","input":{"src":"gantt"},"expect":{"ok":false,"reject":"UnsupportedKind(\"gantt\")"}}
+{"id":"bugplat-0076-kanban","family":"bugs-platform","check":"mermaid_class","input":{"src":"kanban"},"expect":{"ok":false,"reject":"UnsupportedKind(\"kanban\")"}}
+{"id":"bugplat-0076-xychart","family":"bugs-platform","check":"mermaid_class","input":{"src":"xychart-beta"},"expect":{"ok":false,"reject":"UnsupportedKind(\"xychart-beta\")"}}
+{"id":"bugplat-0076-requirement","family":"bugs-platform","check":"mermaid_class","input":{"src":"requirementDiagram"},"expect":{"ok":false,"reject":"UnsupportedKind(\"requirementDiagram\")"}}
+{"id":"bugplat-0076-block","family":"bugs-platform","check":"mermaid_class","input":{"src":"block-beta"},"expect":{"ok":false,"reject":"UnsupportedKind(\"block-beta\")"}}
+{"id":"bugplat-0076-packet","family":"bugs-platform","check":"mermaid_class","input":{"src":"packet-beta"},"expect":{"ok":false,"reject":"UnsupportedKind(\"packet-beta\")"}}
+{"id":"bugplat-0076-radar","family":"bugs-platform","check":"mermaid_class","input":{"src":"radar-beta"},"expect":{"ok":false,"reject":"UnsupportedKind(\"radar-beta\")"}}
+{"id":"bugplat-0076-c4","family":"bugs-platform","check":"mermaid_class","input":{"src":"C4Container"},"expect":{"ok":false,"reject":"UnsupportedKind(\"C4Container\")"}}
+{"id":"bugplat-0076-zenuml","family":"bugs-platform","check":"mermaid_class","input":{"src":"zenuml"},"expect":{"ok":false,"reject":"UnsupportedKind(\"zenuml\")"}}
+{"id":"bugplat-0076-swimlane","family":"bugs-platform","check":"mermaid_class","input":{"src":"swimlane-beta"},"expect":{"ok":false,"reject":"UnsupportedKind(\"swimlane-beta\")"}}
+{"id":"bugplat-0076-未知mermaid","family":"bugs-platform","check":"mermaid_class","input":{"src":"mermaid"},"expect":{"ok":false,"reject":"UnknownKind(\"mermaid\")"}}
+{"id":"bugplat-0076-大小写flowchart","family":"bugs-platform","check":"mermaid_class","input":{"src":"Flowchart TD"},"expect":{"ok":false,"reject":"UnknownKind(\"Flowchart\")"}}
+{"id":"bugplat-0076-拆词flow","family":"bugs-platform","check":"mermaid_class","input":{"src":"flow chart"},"expect":{"ok":false,"reject":"UnknownKind(\"flow\")"}}
+{"id":"bugplat-0076-frontmatter","family":"bugs-platform","check":"mermaid_class","input":{"src":"---\na: 1\n---\nflowchart TD"},"expect":{"ok":false,"reject":"Frontmatter"}}
+{"id":"bugplat-0076-frontmatter未闭合","family":"bugs-platform","check":"mermaid_class","input":{"src":"---\nflowchart TD"},"expect":{"ok":false,"reject":"FrontmatterUnclosed"}}
+{"id":"bugplat-0076-单横线","family":"bugs-platform","check":"mermaid_class","input":{"src":"---"},"expect":{"ok":false,"reject":"FrontmatterUnclosed"}}
+{"id":"bugplat-0076-配置指令","family":"bugs-platform","check":"mermaid_class","input":{"src":"%%{init: {'theme':'dark'}}%%\nflowchart TD"},"expect":{"ok":false,"reject":"Config"}}
+{"id":"bugplat-0076-配置指令在表头后","family":"bugs-platform","check":"mermaid_class","input":{"src":"flowchart TD\n%%{init: {}}%%"},"expect":{"ok":false,"reject":"Config"}}
+{"id":"bugplat-0076-只有注释","family":"bugs-platform","check":"mermaid_class","input":{"src":"%% only\n"},"expect":{"ok":false,"reject":"Empty"}}
+{"id":"bugplat-0076-空","family":"bugs-platform","check":"mermaid_class","input":{"src":""},"expect":{"ok":false,"reject":"Empty"}}
+{"id":"bugplat-0076-空白","family":"bugs-platform","check":"mermaid_class","input":{"src":" \n\t\n"},"expect":{"ok":false,"reject":"Empty"}}
+{"id":"bugplat-0076-BOM","family":"bugs-platform","check":"mermaid_class","input":{"src":"﻿flowchart TD"},"expect":{"ok":true,"kind":"flowchart"}}
+{"id":"bugplat-0076-BOM横线","family":"bugs-platform","check":"mermaid_class","input":{"src":"﻿---"},"expect":{"ok":false,"reject":"FrontmatterUnclosed"}}
+{"id":"bugplat-0076-gitgraph空格冒号","family":"bugs-platform","check":"mermaid_class","input":{"src":"gitGraph :"},"expect":{"ok":true,"kind":"gitGraph"}}
+{"id":"bugplat-0076-pie冒号","family":"bugs-platform","check":"mermaid_class","input":{"src":"pie:"},"expect":{"ok":true,"kind":"pie"}}
+{"id":"bugplat-0076-无空格flowchart","family":"bugs-platform","check":"mermaid_class","input":{"src":"flowchartTD"},"expect":{"ok":false,"reject":"UnknownKind(\"flowchartTD\")"}}
+{"id":"bugplat-0076-序列rect","family":"bugs-platform","check":"html","input":{"md":"```mermaid\nsequenceDiagram\nrect rgb(200, 220, 255)\nAlice->>Bob: hi\nend\n```"},"expect":{"contains":["这类写法暂不支持"],"not_contains":["语法错误"]}}
+{"id":"bugplat-0076-类namespace","family":"bugs-platform","check":"html","input":{"md":"```mermaid\nclassDiagram\nnamespace 模型 {\nclass User\n}\n```"},"expect":{"contains":["这类写法暂不支持"],"not_contains":["语法错误"]}}
+{"id":"bugplat-0076-类cssClass","family":"bugs-platform","check":"html","input":{"md":"```mermaid\nclassDiagram\nclass A\ncssClass \"A\" red\n```"},"expect":{"contains":["这类写法暂不支持"],"not_contains":["语法错误"]}}
+{"id":"bugplat-0076-类独立interface","family":"bugs-platform","check":"html","input":{"md":"```mermaid\nclassDiagram\nclass A\n<<interface>> Box\n```"},"expect":{"contains":["这类写法暂不支持"],"not_contains":["语法错误"]}}
+{"id":"bugplat-0076-状态并发","family":"bugs-platform","check":"html","input":{"md":"```mermaid\nstateDiagram-v2\nA --> B\n--\nC --> D\n```"},"expect":{"contains":["这类写法暂不支持"],"not_contains":["语法错误"]}}
+# 产品契约：编辑缓冲恒 LF/无 BOM；保存时还原原行尾与 BOM；混合行尾标记 lossy。
+# 源自 docs/bugs/0081（假后端不归一化行尾和BOM导致探针假红）
+{"id":"bugplat-0081-空","family":"bugs-platform","check":"envelope","input":{"raw":""},"expect":{"bom":false,"eol":"lf","lossy":false,"normalized":"","restored":[]}}
+{"id":"bugplat-0081-无换行","family":"bugs-platform","check":"envelope","input":{"raw":"abc"},"expect":{"bom":false,"eol":"lf","lossy":false,"normalized":"abc","restored":[97,98,99]}}
+{"id":"bugplat-0081-单LF","family":"bugs-platform","check":"envelope","input":{"raw":"\n"},"expect":{"bom":false,"eol":"lf","lossy":false,"normalized":"\n","restored":[10]}}
+{"id":"bugplat-0081-LF正文","family":"bugs-platform","check":"envelope","input":{"raw":"a\nb\n"},"expect":{"bom":false,"eol":"lf","lossy":false,"normalized":"a\nb\n","restored":[97,10,98,10]}}
+{"id":"bugplat-0081-双LF","family":"bugs-platform","check":"envelope","input":{"raw":"\n\n"},"expect":{"bom":false,"eol":"lf","lossy":false,"normalized":"\n\n","restored":[10,10]}}
+{"id":"bugplat-0081-单CRLF","family":"bugs-platform","check":"envelope","input":{"raw":"\r\n"},"expect":{"bom":false,"eol":"crlf","lossy":false,"normalized":"\n","restored":[13,10]}}
+{"id":"bugplat-0081-双CRLF","family":"bugs-platform","check":"envelope","input":{"raw":"\r\n\r\n"},"expect":{"bom":false,"eol":"crlf","lossy":false,"normalized":"\n\n","restored":[13,10,13,10]}}
+{"id":"bugplat-0081-CRLF正文","family":"bugs-platform","check":"envelope","input":{"raw":"a\r\nb\r\n"},"expect":{"bom":false,"eol":"crlf","lossy":false,"normalized":"a\nb\n","restored":[97,13,10,98,13,10]}}
+{"id":"bugplat-0081-CRLF无尾","family":"bugs-platform","check":"envelope","input":{"raw":"a\r\nb"},"expect":{"bom":false,"eol":"crlf","lossy":false,"normalized":"a\nb","restored":[97,13,10,98]}}
+{"id":"bugplat-0081-CRLF空行","family":"bugs-platform","check":"envelope","input":{"raw":"a\r\n\r\nb"},"expect":{"bom":false,"eol":"crlf","lossy":false,"normalized":"a\n\nb","restored":[97,13,10,13,10,98]}}
+{"id":"bugplat-0081-裸CR","family":"bugs-platform","check":"envelope","input":{"raw":"a\r"},"expect":{"bom":false,"eol":"other","lossy":true,"normalized":"a\n","restored":[97,10]}}
+{"id":"bugplat-0081-单裸CR","family":"bugs-platform","check":"envelope","input":{"raw":"\r"},"expect":{"bom":false,"eol":"other","lossy":true,"normalized":"\n","restored":[10]}}
+{"id":"bugplat-0081-中间裸CR","family":"bugs-platform","check":"envelope","input":{"raw":"a\rb"},"expect":{"bom":false,"eol":"other","lossy":true,"normalized":"a\nb","restored":[97,10,98]}}
+{"id":"bugplat-0081-混合CRLF后LF","family":"bugs-platform","check":"envelope","input":{"raw":"a\r\nb\nc"},"expect":{"bom":false,"eol":"other","lossy":true,"normalized":"a\nb\nc","restored":[97,10,98,10,99]}}
+{"id":"bugplat-0081-混合LF后CRLF","family":"bugs-platform","check":"envelope","input":{"raw":"a\nb\r\n"},"expect":{"bom":false,"eol":"other","lossy":true,"normalized":"a\nb\n","restored":[97,10,98,10]}}
+{"id":"bugplat-0081-CRCRLF","family":"bugs-platform","check":"envelope","input":{"raw":"a\r\r\nb"},"expect":{"bom":false,"eol":"other","lossy":true,"normalized":"a\n\nb","restored":[97,10,10,98]}}
+{"id":"bugplat-0081-双裸CR","family":"bugs-platform","check":"envelope","input":{"raw":"\r\r"},"expect":{"bom":false,"eol":"other","lossy":true,"normalized":"\n\n","restored":[10,10]}}
+{"id":"bugplat-0081-LF后裸CR","family":"bugs-platform","check":"envelope","input":{"raw":"\n\r"},"expect":{"bom":false,"eol":"other","lossy":true,"normalized":"\n\n","restored":[10,10]}}
+{"id":"bugplat-0081-CRLF后裸CR","family":"bugs-platform","check":"envelope","input":{"raw":"a\r\n\rb"},"expect":{"bom":false,"eol":"other","lossy":true,"normalized":"a\n\nb","restored":[97,10,10,98]}}
+{"id":"bugplat-0081-LFCRLF","family":"bugs-platform","check":"envelope","input":{"raw":"a\n\r\nb"},"expect":{"bom":false,"eol":"other","lossy":true,"normalized":"a\n\nb","restored":[97,10,10,98]}}
+{"id":"bugplat-0081-CRLF双LF","family":"bugs-platform","check":"envelope","input":{"raw":"\r\n\n"},"expect":{"bom":false,"eol":"other","lossy":true,"normalized":"\n\n","restored":[10,10]}}
+{"id":"bugplat-0081-含制表符","family":"bugs-platform","check":"envelope","input":{"raw":"a\tb\n"},"expect":{"bom":false,"eol":"lf","lossy":false,"normalized":"a\tb\n","restored":[97,9,98,10]}}
+{"id":"bugplat-0081-行分隔符U2028","family":"bugs-platform","check":"envelope","input":{"raw":"a\u2028b\n"},"expect":{"bom":false,"eol":"lf","lossy":false,"normalized":"a\u2028b\n","restored":[97,226,128,168,98,10]}}
+{"id":"bugplat-0081-段分隔符U2029","family":"bugs-platform","check":"envelope","input":{"raw":"a\u2029b\n"},"expect":{"bom":false,"eol":"lf","lossy":false,"normalized":"a\u2029b\n","restored":[97,226,128,169,98,10]}}
+{"id":"bugplat-0081-NUL","family":"bugs-platform","check":"envelope","input":{"raw":"a\u0000b\n"},"expect":{"bom":false,"eol":"lf","lossy":false,"normalized":"a\u0000b\n","restored":[97,0,98,10]}}
+{"id":"bugplat-0081-CRLF还原字节","family":"bugs-platform","check":"envelope","input":{"raw":"a\r\nb\r\n"},"expect":{"bom":false,"eol":"crlf","lossy":false,"normalized":"a\nb\n","restored":[97,13,10,98,13,10]}}
+{"id":"bugplat-0081-CRLF无尾还原","family":"bugs-platform","check":"envelope","input":{"raw":"a\r\nb"},"expect":{"eol":"crlf","normalized":"a\nb","restored":[97,13,10,98]}}
+{"id":"bugplat-0081-裸CR归一","family":"bugs-platform","check":"envelope","input":{"raw":"a\r"},"expect":{"eol":"other","normalized":"a\n","restored":[97,10]}}
+{"id":"bugplat-0081-混合归LF","family":"bugs-platform","check":"envelope","input":{"raw":"a\r\nb\nc"},"expect":{"eol":"other","lossy":true,"normalized":"a\nb\nc","restored":[97,10,98,10,99]}}
+{"id":"bugplat-0081-BOM-LF","family":"bugs-platform","check":"envelope","input":{"raw":"﻿a\nb"},"expect":{"bom":true,"eol":"lf","lossy":false,"normalized":"a\nb","restored":[239,187,191,97,10,98]}}
+{"id":"bugplat-0081-BOM-CRLF","family":"bugs-platform","check":"envelope","input":{"raw":"﻿a\r\nb"},"expect":{"bom":true,"eol":"crlf","lossy":false,"normalized":"a\nb","restored":[239,187,191,97,13,10,98]}}
+{"id":"bugplat-0081-BOM-空","family":"bugs-platform","check":"envelope","input":{"raw":"﻿"},"expect":{"bom":true,"eol":"lf","normalized":"","restored":[239,187,191]}}
+{"id":"bugplat-0081-BOM-混合","family":"bugs-platform","check":"envelope","input":{"raw":"﻿a\r\nb\nc"},"expect":{"bom":true,"eol":"other","lossy":true,"normalized":"a\nb\nc","restored":[239,187,191,97,10,98,10,99]}}
+{"id":"bugplat-0081-BOM-CRLF空行","family":"bugs-platform","check":"envelope","input":{"raw":"﻿\r\n"},"expect":{"bom":true,"eol":"crlf","normalized":"\n","restored":[239,187,191,13,10]}}
+{"id":"bugplat-0081-中文CRLF","family":"bugs-platform","check":"envelope","input":{"raw":"中\r\n文\r\n"},"expect":{"eol":"crlf","normalized":"中\n文\n","restored":[228,184,173,13,10,230,150,135,13,10]}}
+{"id":"bugplat-0081-中文LF","family":"bugs-platform","check":"envelope","input":{"raw":"中\n文\n"},"expect":{"eol":"lf","normalized":"中\n文\n","restored":[228,184,173,10,230,150,135,10]}}
+{"id":"bugplat-0081-中文裸CR","family":"bugs-platform","check":"envelope","input":{"raw":"中\r文"},"expect":{"eol":"other","lossy":true,"normalized":"中\n文","restored":[228,184,173,10,230,150,135]}}
+{"id":"bugplat-0081-Emoji-CRLF","family":"bugs-platform","check":"envelope","input":{"raw":"😀\r\n🙂\r\n"},"expect":{"eol":"crlf","normalized":"😀\n🙂\n","restored":[240,159,152,128,13,10,240,159,153,130,13,10]}}
+{"id":"bugplat-0081-Emoji-混合","family":"bugs-platform","check":"envelope","input":{"raw":"😀\r\n🙂\n"},"expect":{"eol":"other","lossy":true,"normalized":"😀\n🙂\n","restored":[240,159,152,128,10,240,159,153,130,10]}}
+{"id":"bugplat-0081-BOM中文CRLF","family":"bugs-platform","check":"envelope","input":{"raw":"﻿中\r\n文\r\n"},"expect":{"bom":true,"eol":"crlf","normalized":"中\n文\n","restored":[239,187,191,228,184,173,13,10,230,150,135,13,10]}}
+{"id":"bugplat-0081-BOM-Emoji-CRLF","family":"bugs-platform","check":"envelope","input":{"raw":"﻿😀\r\n🙂"},"expect":{"bom":true,"eol":"crlf","normalized":"😀\n🙂","restored":[239,187,191,240,159,152,128,13,10,240,159,153,130]}}
+{"id":"bugplat-0081-长混合","family":"bugs-platform","check":"envelope","input":{"raw":"a\r\nb\r\nc\nd\re"},"expect":{"eol":"other","lossy":true,"normalized":"a\nb\nc\nd\ne","restored":[97,10,98,10,99,10,100,10,101]}}
+{"id":"bugplat-0081-还原收敛裸CR","family":"bugs-platform","check":"envelope","input":{"raw":"a\nb\r\nc"},"expect":{"eol":"other","lossy":true,"normalized":"a\nb\nc","restored":[97,10,98,10,99]}}
+{"id":"bugplat-0081-LF快路径","family":"bugs-platform","check":"envelope","input":{"raw":"a\nb\nc"},"expect":{"eol":"lf","normalized":"a\nb\nc","restored":[97,10,98,10,99]}}
+{"id":"bugplat-0081-末尾裸CR","family":"bugs-platform","check":"envelope","input":{"raw":"abc\r"},"expect":{"eol":"other","lossy":true,"normalized":"abc\n","restored":[97,98,99,10]}}
+{"id":"bugplat-0081-末尾CRLF","family":"bugs-platform","check":"envelope","input":{"raw":"abc\r\n"},"expect":{"eol":"crlf","normalized":"abc\n","restored":[97,98,99,13,10]}}
+{"id":"bugplat-0081-CRLF中文无尾","family":"bugs-platform","check":"envelope","input":{"raw":"中\r\n文"},"expect":{"eol":"crlf","normalized":"中\n文","restored":[228,184,173,13,10,230,150,135]}}
+{"id":"bugplat-0081-多字节裸CR","family":"bugs-platform","check":"envelope","input":{"raw":"😀\r🙂"},"expect":{"eol":"other","lossy":true,"normalized":"😀\n🙂","restored":[240,159,152,128,10,240,159,153,130]}}
+{"id":"bugplat-0081-BOM-CRLF中文无尾","family":"bugs-platform","check":"envelope","input":{"raw":"﻿中\r\n文"},"expect":{"bom":true,"eol":"crlf","normalized":"中\n文","restored":[239,187,191,228,184,173,13,10,230,150,135]}}
+{"id":"bugplat-0081-BOM后仅裸CR","family":"bugs-platform","check":"envelope","input":{"raw":"﻿\r"},"expect":{"bom":true,"eol":"other","lossy":true,"normalized":"\n","restored":[239,187,191,10]}}
+{"id":"bugplat-0081-纯空格","family":"bugs-platform","check":"envelope","input":{"raw":"   "},"expect":{"eol":"lf","normalized":"   ","restored":[32,32,32]}}
+{"id":"bugplat-0081-制表符CRLF","family":"bugs-platform","check":"envelope","input":{"raw":"\t\r\n"},"expect":{"eol":"crlf","normalized":"\t\n","restored":[9,13,10]}}
+{"id":"bugplat-0081-换行混合三种","family":"bugs-platform","check":"envelope","input":{"raw":"a\nb\r\nc\rd"},"expect":{"eol":"other","lossy":true,"normalized":"a\nb\nc\nd","restored":[97,10,98,10,99,10,100]}}
+# 覆盖缺口：IPC 参数键名不在这些检查器里；这里钉住 open_link 收到 href 后的分类结果。
+# 源自 docs/bugs/0088（三条命令的IPC参数键写成snake_case导致静默失败）
+{"id":"bugplat-0088-内部锚点","family":"bugs-platform","check":"link","input":{"href":"#sec"},"expect":{"kind":"anchor","fragment":"sec"}}
+{"id":"bugplat-0088-内部文档","family":"bugs-platform","check":"link","input":{"href":"a.md"},"expect":{"kind":"local_path","path":"a.md","fragment":null}}
+{"id":"bugplat-0088-内部文档片段","family":"bugs-platform","check":"link","input":{"href":"a.md#x"},"expect":{"kind":"local_path","path":"a.md","fragment":"x"}}
+{"id":"bugplat-0088-子目录文档","family":"bugs-platform","check":"link","input":{"href":"sub/a.md"},"expect":{"kind":"local_path","path":"sub/a.md","fragment":null}}
+{"id":"bugplat-0088-父目录文档","family":"bugs-platform","check":"link","input":{"href":"../a.md"},"expect":{"kind":"local_path","path":"../a.md","fragment":null}}
+{"id":"bugplat-0088-绝对文档","family":"bugs-platform","check":"link","input":{"href":"/tmp/a.md"},"expect":{"kind":"local_path","path":"/tmp/a.md","fragment":null}}
+{"id":"bugplat-0088-中文文档","family":"bugs-platform","check":"link","input":{"href":"中文.md"},"expect":{"kind":"local_path","path":"中文.md","fragment":null}}
+{"id":"bugplat-0088-file文档","family":"bugs-platform","check":"link","input":{"href":"file:///tmp/a.md"},"expect":{"kind":"local_file","path":"/tmp/a.md","fragment":null}}
+{"id":"bugplat-0088-rmd文档","family":"bugs-platform","check":"link","input":{"href":"rmd-file:/tmp/a.md"},"expect":{"kind":"local_file","path":"/tmp/a.md","fragment":null}}
+{"id":"bugplat-0088-http","family":"bugs-platform","check":"link","input":{"href":"http://example.com/a"},"expect":{"kind":"external","url":"http://example.com/a"}}
+{"id":"bugplat-0088-https","family":"bugs-platform","check":"link","input":{"href":"https://example.com/a"},"expect":{"kind":"external","url":"https://example.com/a"}}
+{"id":"bugplat-0088-协议相对","family":"bugs-platform","check":"link","input":{"href":"//example.com/a"},"expect":{"kind":"external","url":"https://example.com/a"}}
+{"id":"bugplat-0088-mailto","family":"bugs-platform","check":"link","input":{"href":"mailto:a@b"},"expect":{"kind":"unsupported","scheme":"mailto"}}
+{"id":"bugplat-0088-javascript","family":"bugs-platform","check":"link","input":{"href":"javascript:alert(1)"},"expect":{"kind":"unsupported","scheme":"javascript"}}
+{"id":"bugplat-0088-空","family":"bugs-platform","check":"link","input":{"href":""},"expect":{"kind":"empty"}}
+{"id":"bugplat-0088-查询","family":"bugs-platform","check":"link","input":{"href":"a.md?x=1"},"expect":{"kind":"local_query"}}
+{"id":"bugplat-0088-编码空格","family":"bugs-platform","check":"link","input":{"href":"a%20b.md"},"expect":{"kind":"local_path","path":"a b.md","fragment":null}}
+{"id":"bugplat-0088-编码中文","family":"bugs-platform","check":"link","input":{"href":"a%2F%E4%B8%AD.md"},"expect":{"kind":"local_path","path":"a/中.md","fragment":null}}
+{"id":"bugplat-0088-片段中文","family":"bugs-platform","check":"link","input":{"href":"a.md#%E4%B8%AD"},"expect":{"kind":"local_path","path":"a.md","fragment":"中"}}
+{"id":"bugplat-0088-外部片段","family":"bugs-platform","check":"link","input":{"href":"https://example.com/a#x"},"expect":{"kind":"external","url":"https://example.com/a#x"}}
+{"id":"bugplat-0088-盘符","family":"bugs-platform","check":"link","input":{"href":"C:/x"},"expect":{"kind":"unsupported","scheme":"c"}}
+{"id":"bugplat-0088-未知协议","family":"bugs-platform","check":"link","input":{"href":"zotero://select/items/1"},"expect":{"kind":"unsupported","scheme":"zotero"}}
+# 源自 docs/bugs/0193（L2语言写死zh且不进产物）
+{"id":"bugplat-0193-偏好00","family":"bugs-platform","check":"lang","input":{"preference":"zh","system":"en"},"expect":"zh"}
+{"id":"bugplat-0193-偏好01","family":"bugs-platform","check":"lang","input":{"preference":"en","system":"zh"},"expect":"en"}
+{"id":"bugplat-0193-偏好02","family":"bugs-platform","check":"lang","input":{"preference":"ZH","system":"en"},"expect":"zh"}
+{"id":"bugplat-0193-偏好03","family":"bugs-platform","check":"lang","input":{"preference":"En","system":"zh"},"expect":"en"}
+{"id":"bugplat-0193-偏好04","family":"bugs-platform","check":"lang","input":{"preference":" zh ","system":"en"},"expect":"zh"}
+{"id":"bugplat-0193-偏好05","family":"bugs-platform","check":"lang","input":{"preference":"\tzh\n","system":"en"},"expect":"zh"}
+{"id":"bugplat-0193-偏好06","family":"bugs-platform","check":"lang","input":{"preference":"en ","system":"zh"},"expect":"en"}
+{"id":"bugplat-0193-偏好07","family":"bugs-platform","check":"lang","input":{"preference":"zh ","system":"en"},"expect":"zh"}
+{"id":"bugplat-0193-偏好08","family":"bugs-platform","check":"lang","input":{"preference":"zh-CN","system":"en"},"expect":"en"}
+{"id":"bugplat-0193-偏好09","family":"bugs-platform","check":"lang","input":{"preference":"zh-CN","system":"zh"},"expect":"zh"}
+{"id":"bugplat-0193-偏好10","family":"bugs-platform","check":"lang","input":{"preference":"zh_CN","system":"en"},"expect":"en"}
+{"id":"bugplat-0193-偏好11","family":"bugs-platform","check":"lang","input":{"preference":"zh-Hans","system":"en"},"expect":"en"}
+{"id":"bugplat-0193-偏好12","family":"bugs-platform","check":"lang","input":{"preference":"EN-us","system":"zh"},"expect":"zh"}
+{"id":"bugplat-0193-偏好13","family":"bugs-platform","check":"lang","input":{"preference":"fr","system":"en"},"expect":"en"}
+{"id":"bugplat-0193-偏好14","family":"bugs-platform","check":"lang","input":{"preference":"fr","system":"zh"},"expect":"zh"}
+{"id":"bugplat-0193-偏好15","family":"bugs-platform","check":"lang","input":{"preference":"","system":"en"},"expect":"en"}
+{"id":"bugplat-0193-偏好16","family":"bugs-platform","check":"lang","input":{"preference":"","system":"zh"},"expect":"zh"}
+{"id":"bugplat-0193-偏好17","family":"bugs-platform","check":"lang","input":{"preference":"   ","system":"en"},"expect":"en"}
+{"id":"bugplat-0193-偏好18","family":"bugs-platform","check":"lang","input":{"preference":"system","system":"en"},"expect":"en"}
+{"id":"bugplat-0193-偏好19","family":"bugs-platform","check":"lang","input":{"preference":"system","system":"zh"},"expect":"zh"}
+{"id":"bugplat-0193-偏好20","family":"bugs-platform","check":"lang","input":{"preference":"中文","system":"en"},"expect":"en"}
+{"id":"bugplat-0193-偏好21","family":"bugs-platform","check":"lang","input":{"preference":"中文","system":"zh"},"expect":"zh"}
+{"id":"bugplat-0193-偏好22","family":"bugs-platform","check":"lang","input":{"preference":"zH","system":"en"},"expect":"zh"}
+{"id":"bugplat-0193-偏好23","family":"bugs-platform","check":"lang","input":{"preference":"eN","system":"zh"},"expect":"en"}
+{"id":"bugplat-0193-偏好24","family":"bugs-platform","check":"lang","input":{"preference":"eng","system":"zh"},"expect":"zh"}
+{"id":"bugplat-0193-偏好25","family":"bugs-platform","check":"lang","input":{"preference":"ｚｈ","system":"en"},"expect":"en"}
+{"id":"bugplat-0193-偏好26","family":"bugs-platform","check":"lang","input":{"preference":"ｚｈ","system":"zh"},"expect":"zh"}
+{"id":"bugplat-0193-偏好27","family":"bugs-platform","check":"lang","input":{"preference":"zh​","system":"en"},"expect":"en"}
+{"id":"bugplat-0193-偏好28","family":"bugs-platform","check":"lang","input":{"preference":"en​","system":"zh"},"expect":"zh"}
+{"id":"bugplat-0193-偏好29","family":"bugs-platform","check":"lang","input":{"preference":"de-DE","system":"zh"},"expect":"zh"}
+{"id":"bugplat-0193-偏好30","family":"bugs-platform","check":"lang","input":{"preference":"ja-JP","system":"en"},"expect":"en"}
+{"id":"bugplat-0193-苹果语言00","family":"bugs-platform","check":"lang_apple","input":{"text":"(\"zh-Hans-CN\")"},"expect":"zh"}
+{"id":"bugplat-0193-苹果语言01","family":"bugs-platform","check":"lang_apple","input":{"text":"(\"zh-Hant-TW\")"},"expect":"zh"}
+{"id":"bugplat-0193-苹果语言02","family":"bugs-platform","check":"lang_apple","input":{"text":"(\"zh\")"},"expect":"zh"}
+{"id":"bugplat-0193-苹果语言03","family":"bugs-platform","check":"lang_apple","input":{"text":"(\"ZH\")"},"expect":"zh"}
+{"id":"bugplat-0193-苹果语言04","family":"bugs-platform","check":"lang_apple","input":{"text":"(\"Zh-hans\")"},"expect":"zh"}
+{"id":"bugplat-0193-苹果语言05","family":"bugs-platform","check":"lang_apple","input":{"text":"(\"en-US\")"},"expect":"en"}
+{"id":"bugplat-0193-苹果语言06","family":"bugs-platform","check":"lang_apple","input":{"text":"(\"fr-FR\")"},"expect":"en"}
+{"id":"bugplat-0193-苹果语言07","family":"bugs-platform","check":"lang_apple","input":{"text":"(\"\")"},"expect":"en"}
+{"id":"bugplat-0193-苹果语言08","family":"bugs-platform","check":"lang_apple","input":{"text":"()"},"expect":"en"}
+{"id":"bugplat-0193-苹果语言09","family":"bugs-platform","check":"lang_apple","input":{"text":"(\"en\", \"zh\")"},"expect":"en"}
+{"id":"bugplat-0193-苹果语言10","family":"bugs-platform","check":"lang_apple","input":{"text":"(\"\", \"zh\")"},"expect":"en"}
+{"id":"bugplat-0193-苹果语言11","family":"bugs-platform","check":"lang_apple","input":{"text":"(\"zh\", \"en\")"},"expect":"zh"}
+{"id":"bugplat-0193-苹果语言12","family":"bugs-platform","check":"lang_apple","input":{"text":"(\" zh \")"},"expect":"zh"}
+{"id":"bugplat-0193-苹果语言13","family":"bugs-platform","check":"lang_apple","input":{"text":"(\"zh - CN\")"},"expect":"zh"}
+{"id":"bugplat-0193-苹果语言14","family":"bugs-platform","check":"lang_apple","input":{"text":"(\"zh-CN\", \"en\")"},"expect":"zh"}
+{"id":"bugplat-0193-苹果语言15","family":"bugs-platform","check":"lang_apple","input":{"text":"('zh')"},"expect":"en"}
+{"id":"bugplat-0193-苹果语言16","family":"bugs-platform","check":"lang_apple","input":{"text":"\"zh\""},"expect":"zh"}
+{"id":"bugplat-0193-苹果语言17","family":"bugs-platform","check":"lang_apple","input":{"text":"x \"zh\" y"},"expect":"zh"}
+{"id":"bugplat-0193-苹果语言18","family":"bugs-platform","check":"lang_apple","input":{"text":"（\"zh\"）"},"expect":"zh"}
+{"id":"bugplat-0193-苹果语言19","family":"bugs-platform","check":"lang_apple","input":{"text":"(\"ZH-Hans-CN\")"},"expect":"zh"}
+{"id":"bugplat-0193-苹果语言20","family":"bugs-platform","check":"lang_apple","input":{"text":"(\"zh_CN\")"},"expect":"en"}
+{"id":"bugplat-0193-苹果语言21","family":"bugs-platform","check":"lang_apple","input":{"text":"(\"cn\")"},"expect":"en"}
+{"id":"bugplat-0193-苹果语言22","family":"bugs-platform","check":"lang_apple","input":{"text":"(\"hans\")"},"expect":"en"}
+{"id":"bugplat-0193-苹果语言23","family":"bugs-platform","check":"lang_apple","input":{"text":"(\"z h\")"},"expect":"en"}
+{"id":"bugplat-0193-苹果语言24","family":"bugs-platform","check":"lang_apple","input":{"text":"(\"zH-\")"},"expect":"zh"}
+{"id":"bugplat-0193-苹果语言25","family":"bugs-platform","check":"lang_apple","input":{"text":"(\"-zh\")"},"expect":"en"}
+{"id":"bugplat-0193-苹果语言26","family":"bugs-platform","check":"lang_apple","input":{"text":"(\"  \")"},"expect":"en"}
+{"id":"bugplat-0193-苹果语言27","family":"bugs-platform","check":"lang_apple","input":{"text":"(\"\tzh\t\")"},"expect":"zh"}
+{"id":"bugplat-0193-苹果语言28","family":"bugs-platform","check":"lang_apple","input":{"text":"(\"\nzh\n\")"},"expect":"zh"}
+{"id":"bugplat-0193-苹果语言29","family":"bugs-platform","check":"lang_apple","input":{"text":"(\"zh;q=1\")"},"expect":"en"}
+{"id":"bugplat-0193-苹果语言30","family":"bugs-platform","check":"lang_apple","input":{"text":"(\"zh-Hans\", \"en-US\")"},"expect":"zh"}
+{"id":"bugplat-0193-苹果语言31","family":"bugs-platform","check":"lang_apple","input":{"text":"(\"  zh-Hans-CN  \")"},"expect":"zh"}
+{"id":"bugplat-0193-苹果语言32","family":"bugs-platform","check":"lang_apple","input":{"text":"(\"ZH-HANS-CN\")"},"expect":"zh"}
+{"id":"bugplat-0193-苹果语言33","family":"bugs-platform","check":"lang_apple","input":{"text":"(\"zh-Hans-CN\", \"en\")"},"expect":"zh"}
+{"id":"bugplat-0193-苹果语言34","family":"bugs-platform","check":"lang_apple","input":{"text":"(\"en-US\", \"zh-Hans-CN\")"},"expect":"en"}
+{"id":"bugplat-0193-苹果语言35","family":"bugs-platform","check":"lang_apple","input":{"text":"(\"zh"},"expect":"en"}
+{"id":"bugplat-0193-苹果语言36","family":"bugs-platform","check":"lang_apple","input":{"text":"\"zh-Hans-CN"},"expect":"en"}
+{"id":"bugplat-0193-苹果语言37","family":"bugs-platform","check":"lang_apple","input":{"text":"﻿(\"zh\")"},"expect":"zh"}
+{"id":"bugplat-0193-苹果语言38","family":"bugs-platform","check":"lang_apple","input":{"text":"abc(\"zh-Hans-CN\")def"},"expect":"zh"}
+{"id":"bugplat-0193-苹果语言39","family":"bugs-platform","check":"lang_apple","input":{"text":"(\"zh-Hans-CN\" \"en-US\")"},"expect":"zh"}
+{"id":"bugplat-0193-苹果语言40","family":"bugs-platform","check":"lang_apple","input":{"text":"(\"en-US\" \"zh-Hans-CN\")"},"expect":"en"}
+{"id":"bugplat-0193-配置归一00","family":"bugs-platform","check":"config","input":{"fn":"normalize_language"},"expect":{"value":"system"}}
+{"id":"bugplat-0193-配置归一01","family":"bugs-platform","check":"config","input":{"fn":"normalize_language","arg":""},"expect":{"value":"system"}}
+{"id":"bugplat-0193-配置归一02","family":"bugs-platform","check":"config","input":{"fn":"normalize_language","arg":"   "},"expect":{"value":"system"}}
+{"id":"bugplat-0193-配置归一03","family":"bugs-platform","check":"config","input":{"fn":"normalize_language","arg":"system"},"expect":{"value":"system"}}
+{"id":"bugplat-0193-配置归一04","family":"bugs-platform","check":"config","input":{"fn":"normalize_language","arg":"zh"},"expect":{"value":"zh"}}
+{"id":"bugplat-0193-配置归一05","family":"bugs-platform","check":"config","input":{"fn":"normalize_language","arg":"ZH"},"expect":{"value":"zh"}}
+{"id":"bugplat-0193-配置归一06","family":"bugs-platform","check":"config","input":{"fn":"normalize_language","arg":" zh "},"expect":{"value":"zh"}}
+{"id":"bugplat-0193-配置归一07","family":"bugs-platform","check":"config","input":{"fn":"normalize_language","arg":"en"},"expect":{"value":"en"}}
+{"id":"bugplat-0193-配置归一08","family":"bugs-platform","check":"config","input":{"fn":"normalize_language","arg":"EN"},"expect":{"value":"en"}}
+{"id":"bugplat-0193-配置归一09","family":"bugs-platform","check":"config","input":{"fn":"normalize_language","arg":"\ten\n"},"expect":{"value":"en"}}
+{"id":"bugplat-0193-配置归一10","family":"bugs-platform","check":"config","input":{"fn":"normalize_language","arg":"zh-CN"},"expect":{"value":"system"}}
+{"id":"bugplat-0193-配置归一11","family":"bugs-platform","check":"config","input":{"fn":"normalize_language","arg":"zh_CN"},"expect":{"value":"system"}}
+{"id":"bugplat-0193-配置归一12","family":"bugs-platform","check":"config","input":{"fn":"normalize_language","arg":"en-US"},"expect":{"value":"system"}}
+{"id":"bugplat-0193-配置归一13","family":"bugs-platform","check":"config","input":{"fn":"normalize_language","arg":"fr"},"expect":{"value":"system"}}
+{"id":"bugplat-0193-配置归一14","family":"bugs-platform","check":"config","input":{"fn":"normalize_language","arg":"中文"},"expect":{"value":"system"}}
+{"id":"bugplat-0193-配置归一15","family":"bugs-platform","check":"config","input":{"fn":"normalize_language","arg":"systemx"},"expect":{"value":"system"}}
+{"id":"bugplat-0193-配置归一16","family":"bugs-platform","check":"config","input":{"fn":"normalize_language","arg":"system "},"expect":{"value":"system"}}
+{"id":"bugplat-0193-配置归一17","family":"bugs-platform","check":"config","input":{"fn":"normalize_language","arg":"z h"},"expect":{"value":"system"}}
+{"id":"bugplat-0193-配置归一18","family":"bugs-platform","check":"config","input":{"fn":"normalize_language","arg":"zh​"},"expect":{"value":"system"}}
+{"id":"bugplat-0193-配置归一19","family":"bugs-platform","check":"config","input":{"fn":"normalize_language","arg":"ｚｈ"},"expect":{"value":"system"}}
+{"id":"bugplat-0193-配置归一20","family":"bugs-platform","check":"config","input":{"fn":"normalize_language","arg":"en "},"expect":{"value":"en"}}
+# 用户值 13/1.6/1200 必须原样通过夹取；写死的 14/1.7/0 也是合法值，故本组只能钉边界不能被默认值覆盖。
+# 源自 docs/bugs/0122（L2假后端排版字段写死与用户配置不符）
+{"id":"bugplat-0122-用户字号13","family":"bugs-platform","check":"config","input":{"fn":"clamp_num","v":13,"lo":12,"hi":28,"fallback":14},"expect":{"value":13.0}}
+{"id":"bugplat-0122-用户行高1.6","family":"bugs-platform","check":"config","input":{"fn":"clamp_num","v":1.6,"lo":1.2,"hi":2.0,"fallback":1.6},"expect":{"value":1.6}}
+{"id":"bugplat-0122-用户内容宽1200","family":"bugs-platform","check":"config","input":{"fn":"clamp_content_width","v":1200},"expect":{"value":1200.0}}
+{"id":"bugplat-0122-假后端字号14","family":"bugs-platform","check":"config","input":{"fn":"clamp_num","v":14,"lo":12,"hi":28,"fallback":14},"expect":{"value":14.0}}
+{"id":"bugplat-0122-假后端行高1.7","family":"bugs-platform","check":"config","input":{"fn":"clamp_num","v":1.7,"lo":1.2,"hi":2.0,"fallback":1.6},"expect":{"value":1.7}}
+{"id":"bugplat-0122-假后端内容宽0","family":"bugs-platform","check":"config","input":{"fn":"clamp_content_width","v":0},"expect":{"value":0.0}}
+{"id":"bugplat-0122-字号下界12","family":"bugs-platform","check":"config","input":{"fn":"clamp_num","v":12,"lo":12,"hi":28,"fallback":14},"expect":{"value":12.0}}
+{"id":"bugplat-0122-字号上界28","family":"bugs-platform","check":"config","input":{"fn":"clamp_num","v":28,"lo":12,"hi":28,"fallback":14},"expect":{"value":28.0}}
+{"id":"bugplat-0122-字号低于下界","family":"bugs-platform","check":"config","input":{"fn":"clamp_num","v":11,"lo":12,"hi":28,"fallback":14},"expect":{"value":12.0}}
+{"id":"bugplat-0122-字号高于上界","family":"bugs-platform","check":"config","input":{"fn":"clamp_num","v":29,"lo":12,"hi":28,"fallback":14},"expect":{"value":28.0}}
+{"id":"bugplat-0122-行高下界1.2","family":"bugs-platform","check":"config","input":{"fn":"clamp_num","v":1.2,"lo":1.2,"hi":2.0,"fallback":1.6},"expect":{"value":1.2}}
+{"id":"bugplat-0122-行高上界2.0","family":"bugs-platform","check":"config","input":{"fn":"clamp_num","v":2.0,"lo":1.2,"hi":2.0,"fallback":1.6},"expect":{"value":2.0}}
+{"id":"bugplat-0122-行高低于下界","family":"bugs-platform","check":"config","input":{"fn":"clamp_num","v":1.1,"lo":1.2,"hi":2.0,"fallback":1.6},"expect":{"value":1.2}}
+{"id":"bugplat-0122-行高高于上界","family":"bugs-platform","check":"config","input":{"fn":"clamp_num","v":2.1,"lo":1.2,"hi":2.0,"fallback":1.6},"expect":{"value":2.0}}
+{"id":"bugplat-0122-宽下界480","family":"bugs-platform","check":"config","input":{"fn":"clamp_content_width","v":480},"expect":{"value":480.0}}
+{"id":"bugplat-0122-宽上界2400","family":"bugs-platform","check":"config","input":{"fn":"clamp_content_width","v":2400},"expect":{"value":2400.0}}
+{"id":"bugplat-0122-宽低于下界","family":"bugs-platform","check":"config","input":{"fn":"clamp_content_width","v":300},"expect":{"value":480.0}}
+{"id":"bugplat-0122-宽高于上界","family":"bugs-platform","check":"config","input":{"fn":"clamp_content_width","v":3000},"expect":{"value":2400.0}}
+{"id":"bugplat-0122-字号13.5","family":"bugs-platform","check":"config","input":{"fn":"clamp_num","v":13.5,"lo":12,"hi":28,"fallback":14},"expect":{"value":13.5}}
+{"id":"bugplat-0122-行高1.65","family":"bugs-platform","check":"config","input":{"fn":"clamp_num","v":1.65,"lo":1.2,"hi":2.0,"fallback":1.6},"expect":{"value":1.65}}
+{"id":"bugplat-0122-宽1201.5","family":"bugs-platform","check":"config","input":{"fn":"clamp_content_width","v":1201.5},"expect":{"value":1201.5}}
+{"id":"bugplat-0122-宽479.999","family":"bugs-platform","check":"config","input":{"fn":"clamp_content_width","v":479.999},"expect":{"value":480.0}}
+{"id":"bugplat-0122-宽2400.001","family":"bugs-platform","check":"config","input":{"fn":"clamp_content_width","v":2400.001},"expect":{"value":2400.0}}
+{"id":"bugplat-0122-字号整数20","family":"bugs-platform","check":"config","input":{"fn":"clamp_num","v":20,"lo":12,"hi":28,"fallback":14},"expect":{"value":20.0}}
+{"id":"bugplat-0122-行高整数2","family":"bugs-platform","check":"config","input":{"fn":"clamp_num","v":2,"lo":1.2,"hi":2.0,"fallback":1.6},"expect":{"value":2.0}}
+{"id":"bugplat-0122-字号负值","family":"bugs-platform","check":"config","input":{"fn":"clamp_num","v":-3,"lo":12,"hi":28,"fallback":14},"expect":{"value":12.0}}
+{"id":"bugplat-0122-行高负值","family":"bugs-platform","check":"config","input":{"fn":"clamp_num","v":-0.5,"lo":1.2,"hi":2.0,"fallback":1.6},"expect":{"value":1.2}}
+{"id":"bugplat-0122-宽负值","family":"bugs-platform","check":"config","input":{"fn":"clamp_content_width","v":-100},"expect":{"value":480.0}}
+{"id":"bugplat-0122-字号极大","family":"bugs-platform","check":"config","input":{"fn":"clamp_num","v":1000,"lo":12,"hi":28,"fallback":14},"expect":{"value":28.0}}
+{"id":"bugplat-0122-行高极大","family":"bugs-platform","check":"config","input":{"fn":"clamp_num","v":100,"lo":1.2,"hi":2.0,"fallback":1.6},"expect":{"value":2.0}}
+# 外部编辑器启动口：完整 argv、不经 shell、路径是独立元素（INV-EXT-01）。
+# 源自 docs/bugs/0005（空会话按-Cmd-E-报操作失败）
+{"id":"bugplat-0005-默认编辑器","family":"bugs-platform","check":"argv","input":{"fn":"editor","path":"/tmp/a.md"},"expect":{"argv":["/usr/bin/open","-t","--","/tmp/a.md"],"len":4}}
+{"id":"bugplat-0005-配置null","family":"bugs-platform","check":"argv","input":{"fn":"editor","path":"/tmp/a.md","configured":null},"expect":{"argv":["/usr/bin/open","-t","--","/tmp/a.md"],"len":4}}
+{"id":"bugplat-0005-配置空串","family":"bugs-platform","check":"argv","input":{"fn":"editor","path":"/tmp/a.md","configured":""},"expect":{"argv":["/usr/bin/open","-t","--","/tmp/a.md"],"len":4}}
+{"id":"bugplat-0005-配置空白","family":"bugs-platform","check":"argv","input":{"fn":"editor","path":"/tmp/a.md","configured":"   "},"expect":{"argv":["/usr/bin/open","-t","--","/tmp/a.md"],"len":4}}
+{"id":"bugplat-0005-配置制表换行","family":"bugs-platform","check":"argv","input":{"fn":"editor","path":"/tmp/a.md","configured":"\t\n"},"expect":{"argv":["/usr/bin/open","-t","--","/tmp/a.md"],"len":4}}
+{"id":"bugplat-0005-配置应用","family":"bugs-platform","check":"argv","input":{"fn":"editor","path":"/tmp/a.md","configured":"CotEditor"},"expect":{"argv":["/usr/bin/open","-a","CotEditor","--","/tmp/a.md"],"len":5}}
+{"id":"bugplat-0005-配置应用前后空白","family":"bugs-platform","check":"argv","input":{"fn":"editor","path":"/tmp/a.md","configured":"  CotEditor  "},"expect":{"argv":["/usr/bin/open","-a","CotEditor","--","/tmp/a.md"],"len":5}}
+{"id":"bugplat-0005-配置应用空格","family":"bugs-platform","check":"argv","input":{"fn":"editor","path":"/tmp/a.md","configured":"Visual Studio Code"},"expect":{"argv":["/usr/bin/open","-a","Visual Studio Code","--","/tmp/a.md"],"len":5}}
+{"id":"bugplat-0005-配置中文应用","family":"bugs-platform","check":"argv","input":{"fn":"editor","path":"/tmp/a.md","configured":"中文 编辑器"},"expect":{"argv":["/usr/bin/open","-a","中文 编辑器","--","/tmp/a.md"],"len":5}}
+{"id":"bugplat-0005-配置NBSP","family":"bugs-platform","check":"argv","input":{"fn":"editor","path":"/tmp/a.md","configured":" CotEditor "},"expect":{"argv":["/usr/bin/open","-a","CotEditor","--","/tmp/a.md"],"len":5}}
+{"id":"bugplat-0005-配置看似选项","family":"bugs-platform","check":"argv","input":{"fn":"editor","path":"/tmp/a.md","configured":"-t"},"expect":{"argv":["/usr/bin/open","-a","-t","--","/tmp/a.md"],"len":5}}
+{"id":"bugplat-0005-配置双横线","family":"bugs-platform","check":"argv","input":{"fn":"editor","path":"/tmp/a.md","configured":"--"},"expect":{"argv":["/usr/bin/open","-a","--","--","/tmp/a.md"],"len":5}}
+{"id":"bugplat-0005-配置绝对应用路径","family":"bugs-platform","check":"argv","input":{"fn":"editor","path":"/tmp/a.md","configured":"/Applications/X.app"},"expect":{"argv":["/usr/bin/open","-a","/Applications/X.app","--","/tmp/a.md"],"len":5}}
+{"id":"bugplat-0005-路径空格","family":"bugs-platform","check":"argv","input":{"fn":"editor","path":"/tmp/a b.md"},"expect":{"argv":["/usr/bin/open","-t","--","/tmp/a b.md"],"len":4}}
+{"id":"bugplat-0005-路径中文空格","family":"bugs-platform","check":"argv","input":{"fn":"editor","path":"/tmp/中文 文件.md"},"expect":{"argv":["/usr/bin/open","-t","--","/tmp/中文 文件.md"],"len":4}}
+{"id":"bugplat-0005-路径换行","family":"bugs-platform","check":"argv","input":{"fn":"editor","path":"/tmp/a\nb.md"},"expect":{"argv":["/usr/bin/open","-t","--","/tmp/a\nb.md"],"len":4}}
+{"id":"bugplat-0005-路径制表","family":"bugs-platform","check":"argv","input":{"fn":"editor","path":"/tmp/a\tb.md"},"expect":{"argv":["/usr/bin/open","-t","--","/tmp/a\tb.md"],"len":4}}
+{"id":"bugplat-0005-路径引号","family":"bugs-platform","check":"argv","input":{"fn":"editor","path":"/tmp/a\"b.md"},"expect":{"argv":["/usr/bin/open","-t","--","/tmp/a\"b.md"],"len":4}}
+{"id":"bugplat-0005-路径反斜杠","family":"bugs-platform","check":"argv","input":{"fn":"editor","path":"/tmp/a\\b.md"},"expect":{"argv":["/usr/bin/open","-t","--","/tmp/a\\b.md"],"len":4}}
+{"id":"bugplat-0005-路径前导横线","family":"bugs-platform","check":"argv","input":{"fn":"editor","path":"-weird.md"},"expect":{"argv":["/usr/bin/open","-t","--","-weird.md"],"len":4}}
+{"id":"bugplat-0005-路径双横线","family":"bugs-platform","check":"argv","input":{"fn":"editor","path":"--"},"expect":{"argv":["/usr/bin/open","-t","--","--"],"len":4}}
+{"id":"bugplat-0005-路径百分号","family":"bugs-platform","check":"argv","input":{"fn":"editor","path":"/tmp/%20.md"},"expect":{"argv":["/usr/bin/open","-t","--","/tmp/%20.md"],"len":4}}
+{"id":"bugplat-0005-空路径","family":"bugs-platform","check":"argv","input":{"fn":"editor","path":""},"expect":{"argv":["/usr/bin/open","-t","--",""],"len":4}}
+{"id":"bugplat-0005-配置后路径仍独立","family":"bugs-platform","check":"argv","input":{"fn":"editor","path":"/tmp/中文 文件.md","configured":"Visual Studio Code"},"expect":{"argv":["/usr/bin/open","-a","Visual Studio Code","--","/tmp/中文 文件.md"],"len":5}}

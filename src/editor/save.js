@@ -34,11 +34,28 @@
    * @param {Function} opts.getText   `() => string` —— **现取**缓冲（⛔ 不缓存一份）
    * @param {Function} opts.rev       `() => number` —— 缓冲的**修订号**（每次 `docChanged` +1）
    * @param {Function} opts.send      `(text) => Promise<{written: boolean, bytes: number, ms: number}>`
+   *   ⭐ `design/0082`：未命名文档的 `send` 可能回 `{cancelled: true}`（用户在系统保存面板
+   *   里取消）——见下面那个分支。⚠️ 它**不是错误**，也⛔ 不是"已保存"。
    * @param {Function} opts.onStatus  `(text, isError) => void` —— 界面状态条
    * @param {Function} opts.onClean   `() => void` —— ⭐ **唯一的清脏动作**（见下）
    * @param {Function} [opts.onDone]  `(out) => void` —— 收尾（清提示、回报）
    * @param {Function} [opts.now]
    */
+  // ⚠️ 界面回调是**外部注入**的（`editor/main.js`），它自己抛错不能让保存状态机跟着坏
+  //    （`bugs/0296`）：状态回调一抛，`inflight` 就永远为 true，之后每次 `⌘S` 都走
+  //    `save.ignored`——⛔ 用户以为在保存、实际一次都不会发，而且**没有任何提示**。
+  //    抛错本身仍然要看得见：走 `console.error`，⛔ 不吞成无事发生。
+  function safeCall(fn, what, args) {
+    if (!fn) return;
+    try {
+      fn.apply(null, args);
+    } catch (e) {
+      if (typeof console !== 'undefined' && console.error) {
+        console.error('[save] ' + what + ' 回调抛错（已隔离，不影响保存状态）：', e);
+      }
+    }
+  }
+
   function createSaver(opts) {
     const now = opts.now || function () { return Date.now(); };
     let inflight = false;
@@ -54,7 +71,7 @@
       // ⚠️ 与后端那道 `save_in_flight` **不是重复**：后端那道防的是"两次写盘"，
       //    这一道防的是"两次 IPC ＋ 两次界面翻转"（用户会看到状态条闪两下）。
       if (inflight) {
-        opts.onStatus(t('save.ignored'), false);
+        safeCall(opts.onStatus, 'onStatus', [t('save.ignored'), false]);
         return null;
       }
       if (opts.isMounted && !opts.isMounted()) return null;
@@ -66,7 +83,7 @@
       const rev = opts.rev();
 
       inflight = true;
-      opts.onStatus(t('save.saving'), false);
+      safeCall(opts.onStatus, 'onStatus', [t('save.saving'), false]);
       let out = null;
       try {
         out = await opts.send(text);
@@ -76,38 +93,48 @@
         //    `io` / `not_authorized` 各有各的说法）——⛔ 不要在这里自己拼一套。
         // ⚠️ `wording` 是 `tauri.js` 那层给的人话——它**已经是**当前语言的（那边也翻过）。
         const msg = (e && (e.wording || e.message)) || t('save.failed');
-        opts.onStatus(t('save.failed-with', {
+        safeCall(opts.onStatus, 'onStatus', [t('save.failed-with', {
           msg: msg,
           path: e && e.path ? t('common.in-parens', { path: e.path }) : '',
-        }), true);
+        }), true]);
         return null;
       } finally {
         inflight = false;
       }
 
       last = out;
+      // ⭐ `design/0082`：未命名文档的保存面板可能被用户**取消**。
+      //    ⚠️ 那不是失败，也⛔ **不是"已保存"**：内容还在缓冲里、脏标记必须留着。
+      //    ⛔ 别让它落到下面的 `save.done` 分支——那会把用户的字说成"已经写进磁盘"。
+      if (out && out.cancelled) {
+        safeCall(opts.onStatus, 'onStatus', [t('save.cancelled'), false]);
+        return out;
+      }
       // ⭐ `written === false` = **no-op 短路**（还原后的字节与磁盘原文逐字节相同）。
       //    ⚠️ 界面文案**必须**与"已保存"分开：说成"已保存"会让人以为文件的时间戳动了。
-      opts.onStatus(
+      // ⚠️ `ms` / `bytes` 是 IPC 回包里的**契约外输入**（`bugs/0296`）：缺 `ms` 时
+      //    旧实现 `out.ms.toFixed(1)` 抛 TypeError ⇒ `onClean` / `onDone` 都不执行，
+      //    磁盘已经写入、界面却还显示未保存（下次再存一遍）。⇒ 非有限数按 `0` 显示。
+      safeCall(opts.onStatus, 'onStatus', [
         out && out.written === false
           ? t('save.no-change')
           : t('save.done', {
-            bytes: out ? out.bytes : 0,
-            ms: out ? out.ms.toFixed(1) : '0',
+            bytes: out && Number.isFinite(out.bytes) ? out.bytes : 0,
+            ms: out && Number.isFinite(out.ms) ? out.ms.toFixed(1) : '0',
           }),
         false
-      );
+      ]);
 
       // ⭐⭐ **清脏标记之前，把"缓冲是不是还等于刚发出去的那份"重判一次**（§2.4-4）。
       //    ⚠️ 不等的形态是最难查的那一类：磁盘上是**旧**内容，而界面说"已保存"，
       //    用户接着按 `⌘W` 就走了——一次**静默的数据丢失**。
       if (opts.rev() === rev) {
-        opts.onClean();
+        safeCall(opts.onClean, 'onClean', []);
       } else {
         // ⚠️ 仍然脏 ⇒ **说出来**（⛔ 不静默）。这不是错误，是"你刚在这几毫秒里又改了"。
-        opts.onStatus(t('save.done-but-dirty'), false);
+        safeCall(opts.onStatus, 'onStatus', [t('save.done-but-dirty'), false]);
       }
-      if (opts.onDone) opts.onDone(out);
+      safeCall(opts.onDone, 'onDone', [out]);
       return out;
     }
 

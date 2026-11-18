@@ -281,6 +281,20 @@ test('形状：⭐ 块级公式是 div.rmd-math-display、图表是 div.rmd-diag
   assert.strictEqual(LB.shapeOf(el('SECTION', null, { 'data-footnotes': '' })), 'footnotes');
 });
 
+test('形状：⭐ Mermaid 的**回退外壳**也是 `diagram`（`design/0060`）', function () {
+  // ⚠️ 回退块是 `<div class="rmd-diagram-fallback">` ＋ 一个 `pre.rmd-code`。
+  //    不认它 ⇒ `CodeBlock`（只接受 `pre` / `diagram`）对不上 ⇒ **整篇**块表对齐失败、
+  //    退化成源码视图，而屏幕上没有任何报错。
+  assert.strictEqual(
+    LB.shapeOf(el('DIV', 'rmd-diagram-fallback', { 'data-diagram': 'mermaid' })),
+    'diagram'
+  );
+  // ⚠️ 前缀相似的类名不许误判：正则两端都要求边界。
+  assert.strictEqual(LB.shapeOf(el('DIV', 'rmd-diagram-note')), 'unknown');
+  assert.strictEqual(LB.shapeOf(el('DIV', 'not-rmd-diagram-fallback')), 'unknown');
+  assert.strictEqual(LB.shapeOf(el('DIV', 'rmd-diagram-fallback-extra')), 'unknown');
+});
+
 test('形状：注释节点是 raw-html（`<!-- raw HTML omitted -->`），其余一律 unknown', function () {
   assert.strictEqual(LB.shapeOf(comment()), 'raw-html');
   assert.strictEqual(LB.shapeOf({ nodeType: 3 }), 'unknown', '文本节点');
@@ -322,6 +336,114 @@ test('对齐：四块对上四个节点', function () {
     }),
     ['Heading', 'Paragraph', 'List', 'CodeBlock']
   );
+});
+
+test('对齐：⭐ 「段落 ＋ 注释(raw-html) ＋ 段落」（`bugs/0080`）', function () {
+  // 源码：正文段落 / 一块**原始 HTML** / 正文段落。
+  // `INV-SEC-01` 下 comrak 把块级原始 HTML 渲染成 `<!-- raw HTML omitted -->` **注释**，
+  // 而 `HtmlBlock` 在形状表里本来就接受 `raw-html` ⇒ 这三块必须**对得上**。
+  const blocks = blocksOf(
+    [
+      [0, 1, 1, 1],
+      [6, 3, 3, 1],
+      [0, 5, 5, 1],
+    ],
+    5
+  );
+  /** 顶层相邻节点之间的空白文本（真实 DOM 里一定有）。 */
+  function 空白() {
+    return { nodeType: 3, data: '\n' };
+  }
+  const doc = {
+    childNodes: [空白(), el('P'), 空白(), comment(), 空白(), el('P'), 空白()],
+  };
+
+  const nodes = LB.topNodes(doc);
+  // ① 取法本身：只留元素与注释，⛔ 空白文本节点不许被数进去（8 块会变 16 个）
+  assert.deepStrictEqual(
+    nodes.map(function (n) {
+      return n.nodeType;
+    }),
+    [1, 8, 1],
+    '顶层节点 = 元素 ＋ 注释，空白文本节点被滤掉'
+  );
+  // ② 用它对齐：三块对三节点，必须过（这就是 `bugs/0080` 里整篇失败的那一档）
+  const out = LB.align(nodes, blocks);
+  assert.strictEqual(out.ok, true, JSON.stringify(out.issues));
+  assert.deepStrictEqual(
+    out.slots.map(function (s) {
+      return s.block.kind;
+    }),
+    ['Paragraph', 'HtmlBlock', 'Paragraph']
+  );
+
+  // ③ 反面（⚠️ 变异对照，证明 ① 不是恒真）：只取元素 ⇒ 数量闸门打红
+  const 只有元素 = doc.childNodes.filter(function (n) {
+    return n.nodeType === 1;
+  });
+  const 缺注释 = LB.align(只有元素, blocks);
+  assert.strictEqual(缺注释.ok, false, '⛔ 只取元素时块表（3）比节点数（2）多，必须整次失败');
+  // ④ 反面：裸 `childNodes` ⇒ 空白文本把节点数撑大，同样打红
+  const 没过滤 = LB.align(doc.childNodes, blocks);
+  assert.strictEqual(没过滤.ok, false, '⛔ 不过滤空白文本时节点数（7）比块数（3）多，必须整次失败');
+  // ⑤ 空文档 / 没有 `#doc`：返回空表，⛔ 不抛
+  assert.deepStrictEqual(LB.topNodes(null), []);
+  assert.deepStrictEqual(LB.topNodes({}), []);
+});
+
+test('顶层节点：临时表格外壳要**拆开数**，块序号不许错位（`bugs/0297`）', function () {
+  // 编辑期间 `src/live/cell.js::freezeTableLayout` 会把 `<table>` 挪进这个外壳：
+  // `display:block` 的表格压根不吃 `table-layout: fixed`，必须先变成 `display: table`。
+  // ⚠️ 外壳是**同一个块的外盒**，⛔ 不是新块 —— 把它计成一个节点，块序号整体错位，
+  //    产品的 `noteLive` 对齐与探针的 `块节点()[块]` 会同时拿到错的那个节点
+  //    （2026-11-09 实测：整轮 block-probe 在 `Q9` 因为 `格()` 变空而崩）。
+  const 外壳 = {
+    nodeType: 1,
+    tagName: 'DIV',
+    classList: {
+      contains: function (c) {
+        return c === 'rmd-table-freeze';
+      },
+    },
+    children: [el('TABLE')],
+  };
+  const blocks = blocksOf(
+    [
+      [0, 1, 1, 1],
+      [5, 3, 3, 0],
+      [0, 5, 5, 1],
+    ],
+    5
+  );
+  /** 顶层相邻节点之间的空白文本（真实 DOM 里一定有，⛔ 不许被数成块）。 */
+  function 空白() {
+    return { nodeType: 3, data: '\n' };
+  }
+  const doc = { childNodes: [el('P'), 空白(), 外壳, 空白(), el('P')] };
+  const nodes = LB.topNodes(doc);
+  assert.deepStrictEqual(
+    nodes.map(function (n) {
+      return n.tagName;
+    }),
+    ['P', 'TABLE', 'P'],
+    '外壳里的表格要顶替外壳的位置，块数仍是 3'
+  );
+  const out = LB.align(nodes, blocks);
+  assert.strictEqual(out.ok, true, JSON.stringify(out.issues));
+  assert.deepStrictEqual(
+    out.slots.map(function (s) {
+      return [s.block.kind, LB.shapeOf(s.node)];
+    }),
+    [
+      ['Paragraph', 'p'],
+      ['Table', 'table'],
+      ['Paragraph', 'p'],
+    ]
+  );
+  // 反面（⚠️ 变异对照，证明上面那条不是恒真）：不拆 ⇒ 外壳自己占一个块位，
+  // `div` 不是 `table` 形状，Table 这一格对不上，整篇对齐必须失败。
+  const 不拆 = LB.align([el('P'), 外壳, el('P')], blocks);
+  assert.strictEqual(不拆.ok, false, '⛔ 外壳被当成一个块时，Table 那一格必须拿不到 `table` 形状');
 });
 
 test('对齐：⭐ 脚注定义被搬到文末合并成一个 section（定义在**中间**也不许错位）', function () {

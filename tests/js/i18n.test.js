@@ -534,6 +534,8 @@ test('⭐ `tauri.js` 的每个 `kind` 都有 zh 词，且**互不相同**、都�
     // ⭐ 2026-10-29（代码评审第 22 条）：**我们的后台线程没了**（`spawn_blocking` 的
     //    join 失败）。⚠️ 与 `io` 分开：那条说"文件读不出来"，这条说**我们 code 里有 panic**。
     'worker_lost',
+    // ⭐ `design/0076`（导出）：拒绝的 `reason` 由后端 `message` 带过来，这里只有一类。
+    'export',
   ];
   assert.deepStrictEqual(Object.keys(map).sort(), EXPECT.slice().sort(),
     '`KIND_KEY` 的类集合变了 —— 后端加了/删了错误变体？');
@@ -574,6 +576,29 @@ test('`renderstat.js::DEFAULT_TPL` 与字典的 `doc.code-unhighlighted` 逐字�
   } finally {
     if (had) g.window = saved;
     else delete g.window;
+    I.setLang(before);
+  }
+});
+
+test('`renderstat.js::MERMAID_TPL` 与字典的 `doc.diagrams-unrendered` 逐字相等', function () {
+  // ⭐ `design/0060`：同族锚点。⚠️ 它比上面那条更容易漂——两条文案长得像，
+  //    改一句顺手改错另一句时，界面上不会有任何报错。
+  // ⚠️ 这里**不能** `require`：上面那条已经把它执行过一次，Node 的模块缓存
+  //    会让第二次 `require` 不再执行 IIFE（它没有 `module.exports`），
+  //    于是新给的 `window` 永远是空的。⇒ 与 `renderstat.test.js` 同法，读源码再跑。
+  const before = I.lang();
+  const src = require('node:fs').readFileSync(
+    path.join(__dirname, '..', '..', 'src', 'services', 'renderstat.js'),
+    'utf8'
+  );
+  const win = {};
+  new Function('window', src)(win);
+  const R = win.rmd && win.rmd.renderstat;
+  try {
+    assert.ok(R && typeof R.MERMAID_TPL === 'string', '`renderstat.js` 没挂上 `MERMAID_TPL`');
+    I.setLang('zh');
+    assert.strictEqual(R.MERMAID_TPL, I.DICT.zh['doc.diagrams-unrendered']);
+  } finally {
     I.setLang(before);
   }
 });
@@ -660,19 +685,49 @@ const EXEMPT = [
   ["main.js", "⛔ 树里定位出错："],
   ["main.js", "⛔ 编辑功能自证没过："],
   ["main.js", "⛔ 刷新侧边栏失败："],
-  // ⭐ `design/0038`：启动页点一行被拒时的**诊断**出口（屏幕那句走 `status.recent-not-found`）
-  ["main.js", "打开最近目录失败："],
-  // ⭐ `design/0043`：收藏行失败走的是同一个诊断出口（屏幕那句是 `status.favorite-open-failed`）
-  ["main.js", "打开收藏失败："],
+  // ⭐ `design/0077`：复制时 `render_preview` 失败是**诊断出口**（屏幕上那句话走
+  //    `clip.copy.render-failed` 字典项，⛔ 不在这一列里）。
+  ["main.js", "复制：渲染选中内容失败（"],
+  // ⚠️ `design/0070`：启动页点一行被拒的诊断出口改走 `diag_note`（后端 `rmd.log`），
+  //    ⛔ 不再是 `console.error` 里的中文字面量——原来的两条已随之删除。
   ["main.js", "⛔ 订阅 Apple Event 打开请求失败（多半是 core:event:allow-listen 被拒）："],
+  // ⭐ `bugs/0058`：`⌘`-点击在 WKWebView 里走"新窗口"那条路，通道失败同样是**诊断出口**
+  //    （它静默的表现就是缺陷本身：⌘-点击毫无反应）。
+  ["main.js", "⛔ 订阅链接激活事件失败（多半是 core:event:allow-listen 被拒）："],
+  // ⭐ `design/0071` §2.2：拖入窗口的三条通道与遮罩，**全部是诊断出口**——
+  //    屏幕上那五句拒绝理由走字典（`drop.reject.*`），⛔ 不在这一列里。
+  ["main.js", "⛔ 拖放遮罩模块没加载（services/drop.js）：拖进来不会有视觉反馈，但打开仍然有效"],
+  ["main.js", "⛔ 拖放拒绝理由不是预期的 key 前缀（已丢弃）"],
+  ["main.js", "⛔ 换根之后取会话快照失败："],
+  ["main.js", "⛔ 换根之后重画侧边栏失败："],
+  ["main.js", "⛔ 订阅拖放遮罩事件失败（多半是 core:event:allow-listen 被拒）："],
+  ["main.js", "⛔ 订阅拖放拒绝事件失败（被拒的文件不会给出理由）："],
+  ["main.js", "⛔ 订阅换根事件失败（拖入目录后侧边栏不会刷新）："],
   // ⭐ `design/0050`：目录变化那条订阅搬进了 `services/diskevents.js`，
   //    失败现在是**两条通道各自报**（树 / 监视状态），⛔ 不再是一条笼统的"订阅失败"。
   ["main.js", "⛔ 订阅目录监视状态失败（降级不会显式告知）："],
   ["main.js", "⛔ 订阅目录变化事件失败（盘上改动不会自动出现）："],
   ["main.js", "⛔ 重新监视失败："],
+  // ⭐ `design/0056`：`F2` 真关失败时的诊断出口（屏幕那句走 `status.close-failed`，
+  //    这里只补"是哪条 IPC 挂的"，⛔ 不上屏）
+  ["main.js", "关闭文档失败（close_document）："],
+  // ⭐ `design/0069`：文档历史（后退 / 前进）的两条**诊断出口**。
+  //    屏幕上的反馈一律是「打开失败 / 权限不足」那套既有提示，⛔ 不新增界面文案。
+  ["main.js", "⛔ 文档历史：导航出错："],
+  ["services/history.js", "⛔ 文档历史：侧键导航出错："],
   ["services/diskevents.js", "⛔ 磁盘事件订阅者抛异常："],
   ["services/diskevents.js", "⛔ 磁盘状态订阅者抛异常："],
   ["components/FileTree.js", "⛔ 手动对账失败（仍会重列可见层）："],
+  // ⚠️ `design/0082` §2.1：「⌘N 建完再打开」那一步已随 `onOpenCreated` 一起删除
+  //    （草稿不落盘，`saveAs` 之后由 `adoptSavedDraft` 就地换身份，没有第二步）。
+  // ⭐ `design/0082` §3/§4：草稿首次落盘后的三条对账，与关窗守卫的三条诊断出口。
+  //    ⚠️ 屏幕上那两句走 `save.cancelled` / `edit.ask-close-window`，⛔ 这几句只进 stderr。
+  ["main.js", "⛔ 草稿落盘后对账失败："],
+  ["main.js", "⛔ 草稿落盘后挂监视失败："],
+  ["main.js", "⛔ 草稿落盘后刷新侧边栏失败："],
+  ["main.js", "⛔ 拿不到窗口对象，关窗询问未接线（design/0082 §4）"],
+  ["main.js", "关窗前保存抛错："],
+  ["main.js", "关窗前保存失败："],
   ["main.js", "⛔ 订阅文件变化事件失败："],
   ["main.js", "⛔ 订阅命令行工具结果失败（多半是 ACL 少了 core:event:allow-listen）："],
   ["main.js", "⛔ 订阅菜单事件失败（多半是 ACL 少了 core:event:allow-listen）："],
@@ -705,6 +760,14 @@ const EXEMPT = [
   ["main.js", "自证抛错："],
   ["main.js", "转发白名单 "],
   ["main.js", "转发白名单是空的（应用键在编辑区里会全部失效）"],
+  // ⭐ `design/0071` 阶段 4：`window.new` 的空处理**不该被执行到**（建窗整个在 Rust 里），
+  //    真到了这里说明 `on_menu_event` 的转发分支错了 ⇒ 只进 stderr，⛔ 不是界面文案。
+  ["main.js", "快捷键分发：`window.new` 不该到前端（建窗在 Rust 里）；检查 `on_menu_event` 的转发分支"],
+  // ⭐ `design/0083` §2.3：窗口标题贴不上时的**诊断**（⛔ 不上屏——标题贴不上不影响读/写，
+  //    屏幕上一句提示都没有，只有控制台这一条）。
+  ["main.js", "⛔ 设置窗口标题失败："],
+  // ⭐ `design/0083` §2.2：`⌘T` 的空 handler，与 `window.new` 那条同一性质（链路错了才到这儿）。
+  ["main.js", "快捷键分发：`window.new-tab` 不该到前端（建标签在 Rust 里）；检查 `on_menu_event` 的转发分支"],
   ["main.js", "连回报都失败了："],
   ["main.js", "错"],
   ["main.js", "），以快照为准"],
@@ -743,6 +806,9 @@ const EXEMPT = [
   ["services/keymap.js", "表里有、没有 handler："],
   ["services/renderbudget.js", " · 本次重渲整篇 {ms} ms（文档越大越慢）"],
   ["services/renderstat.js", " · 代码未高亮 {un} / {all} 块（规模限制，内容完整）"],
+  // ⭐ `design/0060`：与上一条同性质——它是字典那句的**无 i18n 兜底副本**，
+  //    与 `doc.diagrams-unrendered` 由 `i18n.test.js` ⑦ 逐字对钉。
+  ["services/renderstat.js", " · 图表未渲染 {un} / {all} 张（原因见文内，原文完整）"],
   ["services/session.js", "unwatch_document 失败："],
   ["services/session.js", "文件监视已停止（授权已改变）"],
   ["services/session.js", "自动刷新不可用："],
@@ -750,6 +816,9 @@ const EXEMPT = [
   //    `reload.watch-rename-failed` 现翻）
   ["services/session.js", "自动刷新不可用：改名后没能重建监视"],
   ["services/session.js", "让后端放下陈旧监视失败："],
+  // ⭐ `design/0056`：`close_document` 回包说"没关上"时的诊断出口
+  //    （屏幕那句走 `status.close-failed`；这一句**只**进 stderr）
+  ["services/session.js", "close_document 未生效（doc_seq 不符），本地监视真值已清；旧 seq="],
   ["services/tauri.js", "拿不到 window.__TAURI__.event（withGlobalTauri 或 ACL 的问题）"],
   ["services/tauri.js", "拿不到 window.__TAURI__（检查 tauri.conf.json 的 app.withGlobalTauri）"],
   ["services/tauri.js", "翻译错误文案失败："],
@@ -760,6 +829,9 @@ const EXEMPT = [
   //    以及状态机 `handle()` 返回的 `why`。它们进 `console.*`、进降级判据、进测试断言，
   //    ⛔ 一个都不进窗口：将来状态条要说人话时按 `status.live-*` 走 `t()`（§3.3）。
   //    ⛔ 别把"上屏文案"顺手加进这一段。
+  // ⭐ `design/0065` P1：列表几何搬进 `live/geometry.js` 之后，装饰层**加载期**就要取到它；
+  //    取不到 ＝ 脚本顺序配错了（`frontend.md` 第 3 条，症状是整窗空白）⇒ 这是纯诊断出口。
+  ["live/decorations.js", "rmd: live/geometry.js 必须先于 live/decorations.js 加载"],
   ["live/blocks.js", "行号必须是整数"],
   ["live/blocks.js", "行区间非法 ${startLine}-${endLine}"],
   ["live/blocks.js", "line_count 不是正整数：${JSON.stringify(lineCount)}"],
@@ -778,11 +850,16 @@ const EXEMPT = [
   ["live/blocks.js", "数量对不上：块表 ${ordered.length} 块（另有 ${defs.length} 个脚注定义），DOM 顶层 ${dom.length} 个节点"],
   ["live/blocks.js", "第 ${i} 块（${block.kind}，第 ${block.startLine}-${block.endLine} 行）对不上："],
   ["live/blocks.js", "允许 ${JSON.stringify(tagOf(block.kind))}，DOM 是 ${shape}"],
-  ["live/input.js", "组合开始：不动文档"],
+  ["live/input.js", "组合开始：不动文档文本（装饰与重排照常）"],
   ["live/input.js", "不在组合态，忽略"],
   ["live/input.js", "组合中：只更新临时态"],
   ["live/input.js", "组合被取消（空结果）"],
+  // ⭐ 空结果 ＋ 组合期间有暂存粘贴：补发那条的 why（诊断出口，⛔ 不走 `t()`）。
+  ["live/input.js", "组合被取消（空结果），但补上组合期间粘贴的内容"],
   ["live/input.js", "组合结束：落一条事务"],
+  // ⭐ `design/0059` C′：组合会话绑定目标文本后新增的两个诊断出口。
+  ["live/input.js", "组合目标已失效：丢弃暂存输入"],
+  ["live/input.js", "组合结束：目标已变，按当前选区落定"],
   ["live/input.js", "组合中的 beforeinput：交给 compositionend"],
   ["live/input.js", "撤销重做由我们分派，⛔ 不交给浏览器"],
   ["live/input.js", "空插入"],
@@ -842,6 +919,34 @@ const EXEMPT = [
   // ⭐ `design/0052` U6（`INV-KERNEL-05`）：几何差只告警、不拦人。状态条那句走 `t()`；
   //    这一条是**给开发者看的 trace**（前端没有写 `rmd.log` 的通道，见该处注释）。
   ["live/index.js", "[rmd] 就地编辑：这一块变矮了 "],
+  // ⭐ 2026-11-05：**吞错 ≠ 不报**。串行链的链尾与 `end_edit` 的 catch 都要留证据，
+  //    否则探针里只剩「授权计数对不上」，连"没调、还是调了失败"都分不清。
+  //    与上面那条同性质：给开发者看的 trace，⛔ 不进用户界面。
+  ["live/index.js", "[rmd-live] end_edit 失败："],
+  // ⭐ 2026-11-06：跨格定位的**失败诊断**（不抛异常，⛔ 不上屏；见 `bugs/0104` §9 那一族
+  //    「静默失败」）。`focusPoint` 的两条在 `live/index.js`，跨格落点的四条在 `main.js`。
+  ["live/index.js", "[rmd-live] focusPoint：当前不在编辑态（state="],
+  ["live/index.js", "），定位请求忽略"],
+  ["live/index.js", "[rmd-live] focusPoint：活动视图没有 focusAt，定位请求忽略"],
+  ["main.js", "[rmd-live] 编辑动作抛出："],
+  // ⭐ `design/0070`：`#fail-bar` 没建出来时的**降级出口**——这是给开发者看的 trace，
+  //    ⛔ 不上屏（用户看到的是 `bar.raise` 或退回的中性状态条那一句）。
+  ["main.js", "fail-bar 不可用，失败未展示："],
+  ["main.js", "[rmd-live] 跨格：块 "],
+  ["main.js", " 找不到表格节点（对齐表陈旧？），按键按普通处理"],
+  ["main.js", " 里没有第 "],
+  ["main.js", " 格（DOM 与载荷不一致），按键按普通处理"],
+  ["main.js", "[rmd-live] 跨格：量不到原格光标的屏幕列，光标停在目标格开头"],
+  ["main.js", "[rmd-live] 跨格：量不到目标格 "],
+  ["main.js", " 的矩形，光标停在格首"],
+  ["main.js", "[rmd-live] 跨格：定位到目标视觉列未生效，光标停在目标格开头"],
+  // ⭐ `bugs/0296`：保存的状态回调（`onStatus` / `onClean` / `onDone`）抛错时**隔离**
+  //    并留证据——⛔ 不上屏（屏幕文案走 `t('save.*')`），也⛔ 不吞成无事发生。
+  ["editor/save.js", " 回调抛错（已隔离，不影响保存状态）："],
+  // ⭐ `design/0078`：格式栏块命令 / 表格操作的**调用失败诊断**（⛔ 不上屏；
+  //    屏幕上的拒绝理由走 `status.table-rejected` 那组字典键）。
+  ["live/formatbar.js", " 调用失败"],
+  ["live/formatbar.js", " 失败"],
 ];;
 
 const EXEMPT_SET = new Set(EXEMPT.map(function (e) { return e[0] + '\u0000' + e[1]; }));

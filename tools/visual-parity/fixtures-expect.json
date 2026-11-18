@@ -1,0 +1,266 @@
+{
+  "00-body.md": {
+    "blocks_kind": [
+      "Paragraph",
+      "Paragraph"
+    ],
+    "dom_line_boxes": 6,
+    "generated_at": "2026-11-08T04:25:35Z",
+    "renderer": "comrak+",
+    "sha256": "0c72a29295fcd570853f67b4dc307c44fdb44d85ce1bb90006aa514ece5ad370"
+  },
+  "01-headings.md": {
+    "blocks_kind": [
+      "Heading",
+      "Heading",
+      "Heading",
+      "Heading",
+      "Heading",
+      "Heading",
+      "Heading",
+      "Heading",
+      "Heading"
+    ],
+    "dom_line_boxes": 11,
+    "generated_at": "2026-11-08T04:25:35Z",
+    "renderer": "comrak+",
+    "sha256": "2e8157e10d92549d8e303ce9784bbeb41919a372de79e2703faa70a34075bbba"
+  },
+  "02-blocks.md": {
+    "blocks_kind": [
+      "Paragraph",
+      "Paragraph",
+      "ThematicBreak",
+      "ThematicBreak",
+      "ThematicBreak",
+      "Paragraph",
+      "CodeBlock",
+      "HtmlBlock",
+      "Paragraph"
+    ],
+    "dom_line_boxes": 8,
+    "generated_at": "2026-11-08T04:25:35Z",
+    "renderer": "comrak+",
+    "sha256": "c110320d913a0005f05fd8e5c4ab7d4e55885e62cce4dcff57c3e57b84bd1ba3"
+  },
+  "03-quote.md": {
+    "blocks_kind": [
+      "BlockQuote",
+      "BlockQuote",
+      "BlockQuote",
+      "BlockQuote",
+      "BlockQuote",
+      "BlockQuote",
+      "BlockQuote",
+      "Paragraph"
+    ],
+    "dom_line_boxes": 14,
+    "generated_at": "2026-11-08T04:25:35Z",
+    "renderer": "comrak+",
+    "sha256": "657eddb136761d30aa6d32c881ee8ee310432a853164784f0f4e57002c052ab3"
+  },
+  "04a-lists-basic.md": {
+    "blocks_kind": [
+      "List",
+      "List",
+      "List",
+      "List",
+      "List"
+    ],
+    "dom_line_boxes": 18,
+    "generated_at": "2026-11-08T04:25:35Z",
+    "renderer": "comrak+",
+    "sha256": "3f930f875f28c3dcf3b6b10bf59b9622e698bee85cc6b2ed24990d448cf92341"
+  },
+  "04b-lists-nested.md": {
+    "blocks_kind": [
+      "List",
+      "List",
+      "List",
+      "List",
+      "List"
+    ],
+    "dom_line_boxes": 16,
+    "generated_at": "2026-11-08T04:25:35Z",
+    "renderer": "comrak+",
+    "sha256": "21501cc6ff8b21bdf6ef10858872ebbef4531ae186baff832c9e9ef69268c0fe"
+  },
+  "04c-lists-edge.md": {
+    "blocks_kind": [
+      "List",
+      "List",
+      "Paragraph",
+      "List",
+      "Paragraph",
+      "List"
+    ],
+    "dom_line_boxes": 11,
+    "generated_at": "2026-11-08T04:25:35Z",
+    "renderer": "comrak+",
+    "sha256": "2c9a8b388d143ae3f6446714e54dd23fc305b3cf1d9e22d335f39649745fe3f8"
+  },
+  "05-fences.md": {
+    "blocks_kind": [
+      "CodeBlock",
+      "CodeBlock",
+      "CodeBlock",
+      "CodeBlock",
+      "CodeBlock"
+    ],
+    "dom_line_boxes": 13,
+    "generated_at": "2026-11-08T04:25:35Z",
+    "renderer": "comrak+",
+    "sha256": "6064acf0bebb121db8731ef721900ffc9edbca0f2566d1321b13b3e15576120a"
+  },
+  "06a-table.md": {
+    "blocks_kind": [
+      "Table",
+      "Table",
+      "Table",
+      "Table"
+    ],
+    "dom_line_boxes": 15,
+    "generated_at": "2026-11-08T04:25:35Z",
+    "renderer": "comrak+",
+    "sha256": "295c1bb9b2a778bc7f36df680e65d2e8bdf12c3477bd7834ab54d17a96606091"
+  },
+  "06b-table-edge.md": {
+    "blocks_kind": [
+      "Table",
+      "Table",
+      "Table",
+      "Paragraph"
+    ],
+    "dom_line_boxes": 8,
+    "generated_at": "2026-11-08T04:25:35Z",
+    "renderer": "comrak+",
+    "sha256": "a5dfd19da80dbfb6c8ceda0c081587c54ee4a3336860c037575ae53c24e5b351"
+  },
+  "07a-inline-em.md": {
+    "blocks_kind": [
+      "Paragraph"
+    ],
+    "dom_line_boxes": 17,
+    "generated_at": "2026-11-08T04:25:35Z",
+    "renderer": "comrak+",
+    "sha256": "9451015f324cdb02cb62225f35745ec6f65fc92dac14cfb55505ffebeda7d142"
+  },
+  "07b-inline-code.md": {
+    "blocks_kind": [
+      "Paragraph"
+    ],
+    "dom_line_boxes": 12,
+    "generated_at": "2026-11-08T04:25:35Z",
+    "renderer": "comrak+",
+    "sha256": "b68862adb238be4fc4ee0bbbd7546d4ab89fce2e121efc63d3ce036a855c6512"
+  },
+  "08-links-images.md": {
+    "blocks_kind": [
+      "Paragraph",
+      "Paragraph",
+      "Paragraph",
+      "Paragraph",
+      "Paragraph",
+      "Paragraph",
+      "Paragraph"
+    ],
+    "dom_line_boxes": 13,
+    "generated_at": "2026-11-08T04:25:35Z",
+    "renderer": "comrak+",
+    "sha256": "cb9e3bd7737de16855b645cf5f043de967f8c17358a02944f64b492da7a1915c"
+  },
+  "09-breaks-entities.md": {
+    "blocks_kind": [
+      "Paragraph",
+      "Paragraph",
+      "Paragraph",
+      "CodeBlock",
+      "Paragraph",
+      "Paragraph",
+      "Paragraph",
+      "Paragraph"
+    ],
+    "dom_line_boxes": 11,
+    "generated_at": "2026-11-08T04:25:35Z",
+    "renderer": "comrak+",
+    "sha256": "23f2e2336601586c573c81d4af477895ea838c0eada033dd289083b289520307"
+  },
+  "10-footnotes.md": {
+    "blocks_kind": [
+      "Paragraph",
+      "Paragraph",
+      "Paragraph",
+      "Paragraph",
+      "FootnoteDefinition",
+      "FootnoteDefinition",
+      "FootnoteDefinition"
+    ],
+    "dom_line_boxes": 13,
+    "generated_at": "2026-11-08T04:25:35Z",
+    "renderer": "comrak+",
+    "sha256": "7c50d2a62e4f3fe4d9ddad49bb03dc60a9500a050ce391cb2e10274258a6ff69"
+  },
+  "11-diagrams.md": {
+    "blocks_kind": [
+      "CodeBlock",
+      "CodeBlock",
+      "CodeBlock",
+      "Paragraph",
+      "Paragraph",
+      "CodeBlock"
+    ],
+    "dom_line_boxes": 20,
+    "generated_at": "2026-11-08T04:25:35Z",
+    "renderer": "comrak+",
+    "sha256": "322c8b50bf3478afc023906db16a27b5fd48562c9df6ae904cc825b934bbb77c"
+  },
+  "12-task.md": {
+    "blocks_kind": [
+      "List"
+    ],
+    "dom_line_boxes": 7,
+    "generated_at": "2026-11-08T04:25:35Z",
+    "renderer": "comrak+",
+    "sha256": "a8d0f9893d31bdd580dd8e759249bc2a0867c4877614a572e226d2451b7c44d3"
+  },
+  "13a-combos.md": {
+    "blocks_kind": [
+      "BlockQuote",
+      "List",
+      "List",
+      "Heading"
+    ],
+    "dom_line_boxes": 9,
+    "generated_at": "2026-11-08T04:25:35Z",
+    "renderer": "comrak+",
+    "sha256": "ee735063c51173e1645954112afb092c8f740931672f592d2e9974fea4899d16"
+  },
+  "13b-combos2.md": {
+    "blocks_kind": [
+      "List",
+      "BlockQuote",
+      "List"
+    ],
+    "dom_line_boxes": 8,
+    "generated_at": "2026-11-08T04:25:35Z",
+    "renderer": "comrak+",
+    "sha256": "1d288584d5e72aa3bfbdd6dd5b2ae5fc3632235e337b66270d117d3676a2d155"
+  },
+  "14-edit-menu.md": {
+    "blocks_kind": [
+      "Heading",
+      "Paragraph",
+      "BlockQuote",
+      "List",
+      "List",
+      "List",
+      "CodeBlock",
+      "Table",
+      "Paragraph"
+    ],
+    "dom_line_boxes": 11,
+    "generated_at": "2026-11-08T04:25:35Z",
+    "renderer": "comrak+",
+    "sha256": "542c76b5e06fa0b17df0dd99e0b1e3c9c307a22ea75507b787f50ad144a9f24f"
+  }
+}

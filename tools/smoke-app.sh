@@ -7,7 +7,11 @@
 #
 # 这里会**真的启动应用**（那正是被测对象：LaunchServices → launchd → 窗口）。
 # 所以：
-#   · `open` 一律带 `-g`（⛔ 不把应用带到前台）；
+#   · `open` 一律带 `-g -j`（⛔ 不把应用带到前台）；
+#     ⚠️ `-g` **单独不够**：`tao` 在 `launched()` 里无条件 `activateIgnoringOtherApps(true)`
+#     （`tao-0.37.1/src/platform_impl/macos/app_state.rs:284-293`、`app_delegate.rs:106`，
+#     `docs/design/0022` §1.3）⇒ 只带 `-g` 照样抢前台；`-j` 是 LaunchServices 的 hidden 启动。
+#     2026-11-15 实测：`-g -j` 后前台保持原应用、进程在、窗口在屏、启动自证照常打完（`docs/kb/0023` §5）。
 #   · ⛔ 绝不 `kill -9`（那会让 LaunchServices 认为应用崩溃过）——
 #     正常路径是 `osascript … to quit`，退路是 SIGTERM；
 #   · **如果用户已经在用 rmd（任何一份 `.app`）就整轮拒绝**，
@@ -183,7 +187,7 @@ fi
 # ── 6. 后台启动 + 冒烟自证 + 自行退出 ───────────────────────────────────
 # ⚠️ `--env RMD_SMOKE=1` 只在**这一份新实例**上生效（open 的语义）。
 start_ms="$(now_ms)"
-if ! open -g --env RMD_SMOKE=1 --stderr "$LOG_A" -a "$APP" "$SAMPLE"; then
+if ! open -g -j --env RMD_SMOKE=1 --stderr "$LOG_A" -a "$APP" "$SAMPLE"; then
   bad "6 · open -a 返回非零（应用没起来）"
 else
   end_ms="$(now_ms)"
@@ -244,11 +248,11 @@ fi
 
 # ── 9. 已在运行时再送一份 ⇒ 仍 1 个进程 + 第二条 Apple Event ─────────────
 # ⚠️ 这一段**不带** RMD_SMOKE：要的就是一个常驻实例。
-if open -g --stderr "$LOG_B" -a "$APP" "$SAMPLE"; then
+if open -g -j --stderr "$LOG_B" -a "$APP" "$SAMPLE"; then
   if wait_until 10 bash -c "pgrep -f '/rmd\\.app/Contents/MacOS/rmd' >/dev/null 2>&1"; then
     # 给它一点时间跑完引导（注册监听 / 打开第一份）。
     sleep 2
-    open -g -a "$APP" "$SAMPLE2" || true
+    open -g -j -a "$APP" "$SAMPLE2" || true
 
     # 第二条事件：日志里 `▶ 打开请求（Apple Event）` 至少出现 2 次。
     if wait_until 15 bash -c "[ \"\$(grep -c '▶ 打开请求（Apple Event）' '$LOG_B' 2>/dev/null || true)\" -ge 2 ]"; then

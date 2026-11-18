@@ -1,4 +1,5 @@
-// rmd · 阅读进度恢复的**真 DOM 离屏探针**（跑 `design/0017` §7.4 的 12 条判据）
+// rmd · 阅读进度恢复的**真 DOM 离屏探针**（跑 `design/0017` §7.4 的 12 条判据
+// ＋ `bugs/0077` 的 2 条 `keepScroll` 落定校正判据）
 //
 // ⭐ 跑的是**产品那几份**：
 //    · `src/services/progress.js` —— 全部判据（`restorePlan` / `toAnchor` /
@@ -123,6 +124,50 @@
   /** `main.js::markProgressUserAbort` 的镜像。 */
   function markProgressUserAbort() {
     if (pendingRestore) pendingRestore.userAborted = true;
+    if (keepScrollFix) keepScrollFix.userAborted = true;   // ⭐ `bugs/0077`
+  }
+
+  /**
+   * ⭐ `bugs/0077`：`keepScroll` 重渲的**落定后校正** —— `main.js::correctKeepScroll` 的镜像。
+   *
+   * ⚠️ 判据全在 `P.shouldFixKeepScroll`（`tests/js/progress.test.js` #23 逐条验过；
+   *    `main.js` 那层接线由同文件 #24 的源码闸门守）。这里只镜像三件事：
+   *    按**同一个锚点**重算、`|新位置 − appliedTop| ≥ 1 px` 才写、写走 `hostSetTop`。
+   * ⚠️ 与 `pendingRestore` 那条的差别：**不排除编辑态**（重渲发生在就地编辑里），
+   *    所以这里没有 `editing` 这一位。
+   */
+  let keepScrollFix = null;
+  function correctKeepScroll(gen) {
+    const p = keepScrollFix;
+    if (!p || p.mountGen !== gen) return;
+    if (!P.shouldFixKeepScroll(p, gen, currentPath, Date.now())) {
+      keepScrollFix = null;
+      return;
+    }
+    keepScrollFix = null;
+    const m = scrollMetrics();
+    const r = R.resolveAnchor(p.anchor, headingPositions(), m.scrollHeight, m.clientHeight);
+    if (Math.abs(r.scrollTop - p.appliedTop) < 1) return;
+    hostSetTop(r.scrollTop);
+  }
+
+  /**
+   * ⭐ `bugs/0077` §5-4：`main.js::captureImageBoxes` 的镜像。
+   * 重渲**之前**记下每张已落位图的渲染盒（`realPath → {w,h}`），交给 `renderImages`
+   * 的 `prevBoxes` 当占位比例用 ⇒ 新树在解码前就有正确高度，"先塌再撑"不存在。
+   */
+  function captureImageBoxes(root) {
+    const out = Object.create(null);
+    const imgs = root.querySelectorAll('img');
+    for (let i = 0; i < imgs.length; i++) {
+      const el = imgs[i];
+      const key = el.dataset && el.dataset.realPath;
+      if (!key) continue;
+      const r = el.getBoundingClientRect();
+      if (!(r.width >= 1 && r.height >= 1)) continue;
+      out[key] = { w: Math.round(r.width), h: Math.round(r.height) };
+    }
+    return out;
   }
 
   // ⚠️ 与 `main.js::setupReadingProgress` 同样的**输入事件**判据（⛔ 不看像素）。
@@ -132,11 +177,12 @@
   window.addEventListener(
     'keydown',
     function (e) {
-      if (!pendingRestore) return;
+      if (!pendingRestore && !keepScrollFix) return;
       const k = e.key;
       if (k === 'PageUp' || k === 'PageDown' || k === 'Home' || k === 'End' || k === ' ' ||
           k === 'ArrowUp' || k === 'ArrowDown' || k === 'ArrowLeft' || k === 'ArrowRight') {
-        pendingRestore.userAborted = true;
+        if (pendingRestore) pendingRestore.userAborted = true;
+        if (keepScrollFix) keepScrollFix.userAborted = true;
       }
     },
     true
@@ -680,6 +726,211 @@
     };
   }
 
+  // ── ⭐ `bugs/0077`：`keepScroll` 重渲的落定后校正 ─────────────────────
+  //
+  // 复现的是**用户报的那条**：勾选任务项 ⇒ `doc.innerHTML = payload.html` ⇒
+  // 还原位置**在图片进入布局之前**算完 ⇒ 图片落定后标题整体下移 D 像素、而
+  // `scrollTop` 没跟着改 ⇒ 视口停在原处上方 D 像素（读起来就是"往上跳了几千像素"）。
+  // 判据：**目标标题的视口 y 位移 ≤ 2 px**（与 bug §6 同口径），并给一条
+  // **内置负对照**（把校正摘掉 ⇒ 同一场景必须真偏 ≥ 400 px），防"判据恒绿"。
+
+  /** 标题相对正文宿主观口的 y（正数 = 在视口内）。 */
+  function headingY(id) {
+    const el = doc.querySelector('h2[id="' + id + '"]');
+    if (!el) return NaN;
+    return el.getBoundingClientRect().top - doc.getBoundingClientRect().top;
+  }
+
+  /** 重渲之后那一份 HTML（与 `addHeading` / `addParagraphs` 的夹具同形）。 */
+  function 重渲稿(段数) {
+    let s = '<img src="ks.png" alt=""><h2 id="h1">目标节</h2>';
+    for (let i = 1; i <= (段数 || 30); i++) {
+      s += '<p style="height:100px">第 ' + i + ' 段</p>';
+    }
+    return s;
+  }
+
+  /**
+   * 跑一遍"点方框 ⇒ 整篇重渲"。
+   * @param {boolean} 开启校正 false = 负对照（模拟修复前：`onSettled` 不校正）
+   * @param {boolean} [带占位盒] true = 把重渲前的图片渲染盒交给 `renderImages`
+   *        （`bugs/0077` §5-4 那一半；判据 15 用，默认不带来复现修复前的行为）
+   */
+  async function 重渲一遍(开启校正, 带占位盒) {
+    writes.length = 0;
+    deferred.length = 0;
+    // ⚠️⚠️ **关掉滚动锚定**：`bugs/0077` 的用户现场是**阅读态**（滚动宿主 = 窗口），
+    //    而这里的探针页把 `#doc` 当宿主（编辑态同构）。开着锚定的话，图片长高时
+    //    浏览器会**自己**把 `scrollTop` 补上 —— 那是浏览器替产品做事，
+    //    负对照会恒绿（实测过：不关时两张图都不漂，缺陷被藏起来）。
+    doc.style.overflowAnchor = 'none';
+    const gen = newMount('/probe/ks.md', 21);
+
+    // ① 旧树：图**已落定**（高度正确），标题在第 800 px 那张图下面。
+    ASSETS['ks.png'] = { url: makePng(400, 800, '#88a') };
+    addImage('ks.png');
+    addHeading('h1', '目标节');
+    addParagraphs(30, 100);
+    IV.renderImages(doc, { onSettled: function () {} });
+    const 图好 = await waitUntil(function () {
+      const im = doc.querySelector('img');
+      return !!im && im.naturalHeight > 0;
+    }, 3000);
+    if (!图好) return { 致命: '旧树里的图没有落定' };
+
+    // ② 用户滚到标题**下方** 100 px（`pickAnchor` 取"最后一个 top ≤ scrollTop"的标题，
+    //    offset = scrollTop − headingTop ⇒ 视口 y0 = −100，与产品同一套口径）。
+    const h0 = headingPositions().filter(function (h) { return h.id === 'h1'; })[0];
+    doc.scrollTop = h0.top + 100;
+    await sleep(50);
+    const y0 = headingY('h1');
+    const m0 = scrollMetrics();
+    const 锚 = R.pickAnchor(doc.scrollTop, headingPositions(), m0.scrollHeight, m0.clientHeight);
+
+    // ③ 整篇重渲：新树里的图是**零高占位**，且字节故意晚到（模拟 `read_asset` 慢）。
+    const 旧盒 = 带占位盒 ? captureImageBoxes(doc) : null;
+    ASSETS['ks.png'] = { url: makePng(400, 800, '#88a'), defer: true };
+    doc.innerHTML = 重渲稿(30);
+    // ⭐ `main.js::mountDocument` 同序：**先占住图片盒，再算滚动位置**。
+    if (旧盒) IV.holdBoxes(doc, 旧盒);
+    const m = scrollMetrics();
+    const r0 = R.resolveAnchor(锚, headingPositions(), m.scrollHeight, m.clientHeight);
+    hostSetTop(r0.scrollTop);
+    keepScrollFix = {
+      path: '/probe/ks.md',
+      mountGen: gen,
+      anchor: 锚,
+      appliedTop: r0.scrollTop,
+      expires: Date.now() + RESTORE_EXPIRES_MS,
+      userAborted: false,
+    };
+    const y1 = headingY('h1');
+    const 恢复写入 = writes.length;
+
+    // ④ 图片才落定 ⇒ `onSettled`（真 `decode()` ＋ 两帧 rAF）。
+    let settled = 0;
+    IV.renderImages(doc, {
+      prevBoxes: 旧盒,
+      onSettled: function () {
+        settled += 1;
+        if (开启校正) correctKeepScroll(gen);
+        else keepScrollFix = null;      // 负对照：修复前没有这一半
+      },
+    });
+    release('ks.png');
+    await waitUntil(function () { return settled >= 1; }, 6000);
+    await sleep(100);
+    doc.style.overflowAnchor = '';
+
+    return {
+      y0: y0,
+      y1: y1,
+      y2: headingY('h1'),
+      恢复写入: 恢复写入,
+      校正写入: writes.length - 恢复写入,
+      写入: writes.slice(),
+      appliedTop: r0.scrollTop,
+      scrollTop: doc.scrollTop,
+      图片自然高: (doc.querySelector('img') || {}).naturalHeight,
+      settled: settled,
+    };
+  }
+
+  async function t12() {
+    if (!needRaf()) return { ok: null, criterion: 'rAF 自证未过', value: { E1: false } };
+    const 正 = await 重渲一遍(true);
+    const 负 = await 重渲一遍(false);
+    if (正.致命 || 负.致命) {
+      return { ok: null, criterion: '夹具没落定（离屏解码环境不成立？）', value: { 正: 正, 负: 负 } };
+    }
+    const 正漂 = Math.abs(正.y2 - 正.y1);
+    const 负漂 = Math.abs(负.y2 - 负.y1);
+    const ok = Math.abs(正.y1 - 正.y0) <= 2 &&      // 恢复那一刻本身是准的
+               Math.abs(正.y2 - 正.y0) <= 2 &&      // ⭐ 落定后仍在原处（≤2 px，bug §6）
+               正.校正写入 === 1 &&                 // 校正**最多写一次**
+               负.校正写入 === 0 &&                 // 负对照：不校正就不可能写
+               负漂 >= 400;                         // 负对照真偏了（防判据不承重）
+    return {
+      ok: ok,
+      criterion: '图落定后目标标题的视口 y 位移 ≤ 2 px ∧ 校正恰好写一次 ∧ 摘掉校正时同一场景真偏 ≥400 px',
+      value: { 正向: 正, 负对照: 负, 正向漂移: 正漂, 负对照漂移: 负漂 },
+    };
+  }
+
+  async function t13() {
+    if (!needRaf()) return { ok: null, criterion: 'rAF 自证未过', value: { E1: false } };
+    writes.length = 0;
+    deferred.length = 0;
+    doc.style.overflowAnchor = 'none';   // 同 t12：别让浏览器替产品补偿
+    const gen = newMount('/probe/ks2.md', 22);
+    ASSETS['ks.png'] = { url: makePng(400, 800, '#88a'), defer: true };
+    doc.innerHTML = 重渲稿(30);
+    const m = scrollMetrics();
+    const 锚 = P.toAnchor({ id: 'h1', offset: 100, ratio: null });
+    const r0 = R.resolveAnchor(锚, headingPositions(), m.scrollHeight, m.clientHeight);
+    hostSetTop(r0.scrollTop);
+    keepScrollFix = {
+      path: '/probe/ks2.md', mountGen: gen, anchor: 锚, appliedTop: r0.scrollTop,
+      expires: Date.now() + RESTORE_EXPIRES_MS, userAborted: false,
+    };
+    const 恢复写入 = writes.length;
+
+    // ⚠️ 用户在图落定**之前**自己滚了：程序一个像素都不许再写。
+    window.dispatchEvent(new WheelEvent('wheel', { deltaY: 120 }));
+    doc.scrollTop += 120;
+    const 用户落点 = doc.scrollTop;
+
+    let settled = 0;
+    IV.renderImages(doc, {
+      onSettled: function () {
+        settled += 1;
+        correctKeepScroll(gen);
+      },
+    });
+    release('ks.png');
+    await waitUntil(function () { return settled >= 1; }, 6000);
+    await sleep(100);
+    doc.style.overflowAnchor = '';
+
+    const ok = 恢复写入 === 1 && writes.length === 恢复写入 &&
+               Math.abs(doc.scrollTop - 用户落点) < 1 && keepScrollFix === null;
+    return {
+      ok: ok,
+      criterion: '用户在落定前滚过 ⇒ 校正零写入 ∧ 最终停在用户那一刻的位置',
+      value: {
+        恢复写入: 恢复写入,
+        总写入: writes.length,
+        用户落点: 用户落点,
+        scrollTop: doc.scrollTop,
+        onSettled次数: settled,
+      },
+    };
+  }
+
+  // ── ⭐ `bugs/0077` §5-4：占住上一次的图片盒 ⇒ 连"肉眼那一下"都不该有 ──────
+  //
+  // 判据 13 证明的是**位置最终算得回来**（靠 `onSettled` 之后补写一次）。
+  // 但用户看到的"跳"发生在补写之前：图片高度缺席 ⇒ 版面先塌一次。
+  // 这一条关掉校正，**只**靠 `prevBoxes` 给出的占位比例，要求位置从头到尾不动。
+  async function t14() {
+    if (!needRaf()) return { ok: null, criterion: 'rAF 自证未过', value: { E1: false } };
+    const 正 = await 重渲一遍(false, true);    // 带占位盒、⛔ 不开校正
+    const 负 = await 重渲一遍(false, false);   // 不带占位盒、⛔ 不开校正（内置负对照）
+    if (正.致命 || 负.致命) {
+      return { ok: null, criterion: '夹具没落定（离屏解码环境不成立？）', value: { 正: 正, 负: 负 } };
+    }
+    const 正漂 = Math.abs(正.y2 - 正.y0);
+    const 负漂 = Math.abs(负.y2 - 负.y0);
+    const ok = 正漂 <= 2 &&                  // 占位盒把高度占住了 ⇒ 落定后仍在原处
+               正.校正写入 === 0 &&         // 而且**一次都没补写**（证明了不是靠校正）
+               负漂 >= 400;                 // 负对照真偏了（防判据恒绿）
+    return {
+      ok: ok,
+      criterion: '带 prevBoxes ⇒ 不靠校正也不漂（|y2−y0| ≤ 2 px ∧ 校正写入 0）∧ 摘掉占位盒真偏 ≥400 px',
+      value: { 正向: 正, 负对照: 负, 正向漂移: 正漂, 负对照漂移: 负漂 },
+    };
+  }
+
   // ── 总装 ────────────────────────────────────────────────────────────
   window.__RUN = async function () {
     const t0 = Date.now();
@@ -709,6 +960,9 @@
       [9, '程序滚动不误判为接管', t9],
       [10, '差异 < 1 px 不写第二次', t10],
       [11, '10 s 过期不再校正', t11],
+      [13, 'keepScroll 重渲：落定后目标不漂（含负对照）', t12],
+      [14, 'keepScroll 重渲：用户接管就不抢', t13],
+      [15, 'keepScroll 重渲：prevBoxes 占位（不靠校正也不漂，含负对照）', t14],
     ];
 
     for (const [id, name, fn] of tests) {

@@ -104,17 +104,119 @@
 /* ════════════════════════════════════════════════════════════════════
  * 列表
  * ⚠️ 缩进用 `em`（相对列表自身的字号）→ 天然跟随基准字号（A 类）。
- * ⛔ 不覆盖 `list-style-type`：那会让中文文档里的 `-` 与 `1.` 变成
- *    与 Markdown 原文不同的符号，而渲染层的职责是**忠实**。
+ * ⚠️ **无序列表不覆盖 `list-style-type`**：UA 的 `disc / circle / square`
+ *    恰好就是 Mardo / Notion 的逐层形状（`bugs/0321`），编辑态照抄同一张表。
+ *    ⛔ 别为"忠实"两个字去动它——中文 `-` 变成别的符号才是真的不忠实。
+ * ⭐ **有序列表覆盖**（`bugs/0116` §9，见下）：Notion 口径要求逐层换字形，
+ *    而 UA 对每一层都给 `decimal` ⇒ 不覆盖就永远是 `1.`。
  * ════════════════════════════════════════════════════════════════════ */
 .doc ul, .doc ol {
   margin: 0 0 var(--reader-gap-block);
   padding-left: var(--reader-list-indent);
 }
 
+/* ⭐⭐ 有序列表的**分级字形** —— 十进制 → 小写拉丁 → 小写罗马，三层一循环
+ * （`bugs/0116` §9，2026-11-14 用户裁定复刻 Notion）
+ *
+ * 用户原话：「复刻 Notion 的时候，未注意到一点，有序列表 1.2.3.4 的下一级是 a. b. c. d.」
+ * ⇒ 整条链是 `1.` / `a.` / `i.` / 回到 `1.`。
+ *
+ * 判据是**层数**，不是"有序列表套有序列表"的层数：`ul` 也占一层
+ * （Notion 里缩进是绝对的，`•` 下面缩进去的编号项就是 `a.`）。`:is(ol, ul)` 的祖先计数
+ * 与编辑态的 `listStack.length` 同构。
+ *
+ * ⚠️⚠️ **同一张表被写在两个语言里**：编辑态那份在 `live/decorations.js::分级字形`。
+ *    改这里必须同批改那边；`tests/js/live-ordered-glyph.test.js` 逐档比对两张表（带变异）。
+ * ⚠️ 列到 **11 层**（12 条规则）与 `分级字形` 的 `级上限 = 11` 对齐：每层一个
+ *    `--reader-list-indent`(2em)，12 层已经 24em（14 px 下 336 px）——再深的列表在
+ *    任何正文宽度下都被挤到不可读，所以两边都在第 11 层封顶，⛔ 不要只改一边。
+ * ⚠️ 特异性每层 +1（`:is()` 取最具体的那个实参）⇒ 顺序无关，⛔ 别依赖"后写的赢"。
+ * ⚠️ 这里**只配字形**，`padding-left` 仍是上面那条规则给的 `--reader-list-indent`：
+ *    缩进量不随字形改（`INV-TYPE-02`）。 */
+.doc ol { list-style-type: decimal; }
+.doc :is(ol, ul) ol { list-style-type: lower-alpha; }
+.doc :is(ol, ul) :is(ol, ul) ol { list-style-type: lower-roman; }
+.doc :is(ol, ul) :is(ol, ul) :is(ol, ul) ol { list-style-type: decimal; }
+.doc :is(ol, ul) :is(ol, ul) :is(ol, ul) :is(ol, ul) ol { list-style-type: lower-alpha; }
+.doc :is(ol, ul) :is(ol, ul) :is(ol, ul) :is(ol, ul) :is(ol, ul) ol { list-style-type: lower-roman; }
+.doc :is(ol, ul) :is(ol, ul) :is(ol, ul) :is(ol, ul) :is(ol, ul) :is(ol, ul) ol { list-style-type: decimal; }
+.doc :is(ol, ul) :is(ol, ul) :is(ol, ul) :is(ol, ul) :is(ol, ul) :is(ol, ul) :is(ol, ul) ol { list-style-type: lower-alpha; }
+.doc :is(ol, ul) :is(ol, ul) :is(ol, ul) :is(ol, ul) :is(ol, ul) :is(ol, ul) :is(ol, ul) :is(ol, ul) ol { list-style-type: lower-roman; }
+.doc :is(ol, ul) :is(ol, ul) :is(ol, ul) :is(ol, ul) :is(ol, ul) :is(ol, ul) :is(ol, ul) :is(ol, ul) :is(ol, ul) ol { list-style-type: decimal; }
+.doc :is(ol, ul) :is(ol, ul) :is(ol, ul) :is(ol, ul) :is(ol, ul) :is(ol, ul) :is(ol, ul) :is(ol, ul) :is(ol, ul) :is(ol, ul) ol { list-style-type: lower-alpha; }
+.doc :is(ol, ul) :is(ol, ul) :is(ol, ul) :is(ol, ul) :is(ol, ul) :is(ol, ul) :is(ol, ul) :is(ol, ul) :is(ol, ul) :is(ol, ul) :is(ol, ul) ol { list-style-type: lower-roman; }
+
+/* ⭐⭐ 列表内**永远紧凑**，空行照一行的版面排（`design/0066`，2026-11-11 用户裁定）
+ *
+ * 用户原话：「**永远是紧凑的状态，松散不存在，如果是空行，就把空行展示出来。**」
+ * ⇒ CommonMark 的 tight/loose **在版面上不生效**：列表项里不再有"段距"这个概念，
+ *    源码里的每一行（含空行）恰好占一个行高。
+ *
+ * 两条规则缺一不可：
+ *   ① `.doc li > p { margin: 0 }` —— comrak 给松散列表的正文套 `<p>`，那条
+ *      `margin-bottom: var(--reader-gap-block)` 就是"整表看起来变松"的全部来源；
+ *   ② `[data-blanks]` 的 `margin-top` —— 渲染侧按 `sourcepos` 数出的空行数
+ *      （`render.rs::写空行属性`）在这里换成高度：`n × 行高`。
+ *      ⚠️ 行高用 `--reader-line-height × 1em` 而不是 `lh`：`1em` 是本元素的字号
+ *      （`.doc` 上就是 `--reader-font-size`），两者相乘恰好是 CSS 行高的算法，
+ *      而 `lh` 单位要 Safari 16.4+（本仓未验最低系统版本）。
+ *   ⇒ 项距 = `(空行数 ＋ 1) × 行高`，与编辑态**逐像素**相同（`INV-LIVE-04` ①）。
+ *
+ * ⚠️ 属性只落在**有空行**的元素上（无空行一个字节都不写）⇒ 紧凑列表的输出与改动前
+ *    逐字节相同，`parser.rs` 那条精确断言照旧成立。
+ * ⚠️ 嵌套列表的下外边距也归零：它原来给每个"项里带子列表"的条目凭空加一段段距，
+ *    而源码里那里并没有空行。
+ * ⚠️ 列表**外**的块距（`.doc p` 的 `--reader-gap-block`）**不动**——用户选的是
+ *    「只改列表内」（`design/0066` §7 第 1 条 A）。 */
+.doc li > p { margin: 0; }
+.doc li > ul, .doc li > ol { margin-bottom: 0; }
+.doc li[data-blanks],
+.doc li > [data-blanks] {
+  margin-top: calc(var(--rmd-blanks, 0) * var(--reader-line-height) * 1em);
+}
+
+/* ⭐ `design/0085` C3（`bugs/0318`，2026-11-15 用户「批准这份设计」）：**引用里的空行
+ * 按该语境的一行高**。
+ *
+ * 上面那条乘的是 `--reader-line-height`（全局正文行高）；而 `.doc blockquote` 的行高是
+ * `--reader-quote-lh`（更紧）⇒ 引用里那两个列表项之间的空行会比它上下那两行**高一截**
+ * （本机实测 23.797 vs 20.3 px）——而空行在屏幕上就是"一行"，它得跟该处正文行一样高
+ * （`design/0066` 模型 A 的"恰好一行高"）。
+ *
+ * ⚠️ `1em` 仍是**本元素**的字号（＝ `--reader-font-size`，两态同一档），这里只换"一行"
+ *    的倍数，⛔ 没有第二份 px；⛔ 也没有把 `[data-blanks]` 改成固定高。
+ * ⚠️ 特异性 (0,3,1) 压过上面那条 (0,2,1)，与文档顺序无关。 */
+.doc blockquote li[data-blanks],
+.doc blockquote li > [data-blanks] {
+  margin-top: calc(var(--rmd-blanks, 0) * var(--reader-quote-lh) * 1em);
+}
+
 /* 任务列表（GFM）：`<input type="checkbox" disabled>`。⚠️ 只做对齐，⛔ 不重画控件 */
 .doc li.task-list-item { list-style: none; }
 .doc li.task-list-item input[type="checkbox"] { margin-right: 0.4em; }
+
+/* ⭐ 任务项**首行**允许在词内断行（`bugs/0302`，2026-11-09 用户报告）
+ *
+ * 「如果输出超过一行，所有的内容都到第二行去了」：方框后面那个空格是一个**普通断行点**，
+ * 而 `overflow-wrap: break-word`（`.doc` 上那条）只在"本行没有别的断行点"时才允许劈词
+ * ⇒ 一个比行宽还长的词会**整段挪到下一行**，首行只剩一个方框（离屏实测 14 px 正文：
+ * 视觉行 `[[方框 12 px]]` / `[[长词 928 px]]` / `[[余下 836 px]]`）。
+ * ⇒ 首行显式给 `break-all`：允许在词内任意处断开，长词就从方框**后面**开始排。
+ * ⚠️ 只作用于 `::first-line`（＝方框所在的那一条视觉行）：其余视觉行仍是普通按词断行，
+ *    正文里的英文词 / URL 不会被无条件劈开（`break-all` 放到整段上是**另一个**后果）。
+ * ⚠️ 中文的换行禁则不受影响（实测 `。」` 仍整段下移；WebKit 在 `break-all` 下照样守禁则）。
+ *
+ * ⚠️ **一条选择器同时覆盖紧凑项与松散项**（2026-11-09 实测，⛔ 别再补第二条）：
+ *   · **紧凑**项：正文是 `<li>` 的行内内容 ⇒ 归 `li::first-line`；
+ *   · **松散**项：`render.rs` 把方框写进**首段内部**，于是 `<li>` 自己**没有行盒**了
+ *     （它唯一的子元素是那个 `<p>`）⇒ WebKit 把 `li::first-line` 落到首个子块的首行。
+ *   ⚠️⚠️ 曾经这里写过两条（第二条是 `> p:first-of-type::first-line`）。2026-11-09 摘掉第二条
+ *     重跑 `W11p`**仍然通过**、几何逐点相同（方框顶 774.83 / 首字顶 772.66）⇒ 第二条已冗余，
+ *     合并成一条；对应变异 `M55` 随之退役（见 `block-probe.sh`）。
+ *     ⚠️ 这条冗余是**渲染器改动带来的**：在"方框是 `<p>` 的块级兄弟"那个旧形态下
+ *     `li::first-line` 只量到方框自己那一行，第二条确实缺不了。
+ *   ⭐ 前提的护栏是 `W11r`（紧凑）＋ `W11p`（松散）：哪天传播不再成立，先红的是它们。 */
+.doc li.task-list-item::first-line { word-break: break-all; }
 
 /* ════════════════════════════════════════════════════════════════════
  * 引用块 —— A7：跟基准（`10px` 半透明边线 + 浅底 + 右圆角）
@@ -271,4 +373,9 @@
   padding-top: var(--reader-gap-block);
 }
 
-.doc sup { font-size: var(--reader-size-small); }
+/* ⭐ `bugs/0303`（2026-11-10）：`<sup>` 的 UA 默认是 `vertical-align: super` ＋ `line-height: normal`
+ * ⇒ 抬高后的**行内盒**超出本行 strut，行盒从 23.80 涨到 27.73 px（该视觉行比同段其它行高
+ * 3.94 px，且整块在编辑态矮 3.94 px）。`line-height: 0` 只把**行内盒对行盒高度的贡献**归零，
+ * ⛔ 不改字号、不改字形、不改上标位置（垂直位置仍由 `vertical-align` 决定）。
+ * 判据：`block-harness.js::跑脚注行盒`（`S1`）＋ `B*-3a` 的等高口径。 */
+.doc sup { font-size: var(--reader-size-small); line-height: 0; }

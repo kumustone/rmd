@@ -102,37 +102,49 @@
  * ⚠️ 特异性：`(0,3,0)` 压过 `.cm-rmd-liveHost .cm-line` 的 `(0,2,0)`，⛔ 与顺序无关。
  * ════════════════════════════════════════════════════════════════════ */
 
+/* ⭐ 字色也归这里（`design/0085` C5）：阅读态 `.doc h1`–`.doc h6` 带
+ * `color: var(--reader-heading)`（`typography.css:63`，比正文深一档），编辑态缺了这一条
+ * ⇒ 两态的标题**深浅不同**。⛔ 别信 `live/box.js` 里那句"标题与正文同色"的旧注释
+ * （2026-11-15 已原地纠正）：照它写，用户一进编辑态标题就变浅。
+ * ⚠️ 值仍是 `--reader-*`，⛔ 没有第二份色值（`INV-THEME-02`）；
+ *    特异性 (0,3,0) 与上面的字号那几条一致，压过 `.cm-content` 的继承。 */
 .cm-rmd-liveHost .cm-line.cm-rmd-h1 {
+  color: var(--reader-heading);
   font-size: var(--reader-size-h1);
   line-height: var(--reader-heading-lh-top);
   font-weight: bold;
 }
 
 .cm-rmd-liveHost .cm-line.cm-rmd-h2 {
+  color: var(--reader-heading);
   font-size: var(--reader-size-h2);
   line-height: var(--reader-heading-lh-top);
   font-weight: bold;
 }
 
 .cm-rmd-liveHost .cm-line.cm-rmd-h3 {
+  color: var(--reader-heading);
   font-size: var(--reader-size-h3);
   line-height: var(--reader-heading-lh-sub);
   font-weight: bold;
 }
 
 .cm-rmd-liveHost .cm-line.cm-rmd-h4 {
+  color: var(--reader-heading);
   font-size: var(--reader-size-h4);
   line-height: var(--reader-heading-lh-sub);
   font-weight: bold;
 }
 
 .cm-rmd-liveHost .cm-line.cm-rmd-h5 {
+  color: var(--reader-heading);
   font-size: var(--reader-size-h5);
   line-height: var(--reader-heading-lh-sub);
   font-weight: bold;
 }
 
 .cm-rmd-liveHost .cm-line.cm-rmd-h6 {
+  color: var(--reader-heading);
   font-size: var(--reader-size-h6);
   line-height: var(--reader-heading-lh-sub);
   font-weight: bold;
@@ -151,7 +163,8 @@
  *
  * ⚠️ 这是 `bugs/0022`（编辑态与渲染态**折行位置不同**）的正解：行内代码在渲染态是
  *    **等宽 ＋ 有内边距**，编辑态若是正文字体，折行本来就不同 ⇒ **加多少几何 slack 都堵不住**。
- *    把呈现对齐之后，`layoutSlack()` 的 `softWraps` 那一项才是在比同一件事。
+ *    把呈现对齐之后，编辑态与渲染态才是在比同一件事——⛔ **但对齐不是为了"把 slack 算准"**：
+ *    `INV-LIVE-04` ① 要求进入瞬间块高差为 **0**，`layoutSlack()` 的输出只是诊断量，不再是闸门允差。
  * ⛔ 不许出现字面色值与绝对尺寸（`INV-THEME-02` / `INV-THEME-04`）——
  *    五条全部只引用 `.doc` 那边**同一批** `--reader-*` 变量，⛔ 没有第二份数字。
  * ⚠️ 类名与 `live/decorations.js::INLINE_MARK` **逐字对应**；⛔ 别在别处再起一套。
@@ -173,6 +186,14 @@
   background: var(--reader-inline-code-bg);
   color: var(--reader-inline-code-text);
   padding: .125em .25em;
+  /* ⚠️⚠️ **行内代码这一档不许撑行高**（2026-11-05 实测，`design/0061` 的 `Q36`）：
+     这一段字比正文小（`--reader-size-small`）而**行高是继承来的**，WebKit 会按它自己的
+     字号重新分配行高的上下半高 ⇒ 含行内代码的那一**视觉行**在编辑态比阅读态高
+     **0.53 px**，把整块的高度和下面每一行的行顶一起推下去（实测 `48.125` vs `47.594`）。
+     屏幕上几乎看不出来，但"进入编辑态**不重排**"是 `design/0061` 的核心承诺，而且这条差
+     会随该段里行内代码的行数累加。⇒ 让这一段**不参与**行盒高度的计算：行高由这一行的
+     字身（strut）说了算。⛔ 别改成 `px` 或 `em`——`1` 是"与自身字号同高"，与主题无关。 */
+  line-height: 1;
   border-radius: calc(var(--reader-font-size) * 0.25);
 }
 
@@ -185,10 +206,323 @@
  *    光标停在那一行时必须照常显示 ```json，否则语言标记就改不了了。
  * ⚠️ `overflow: hidden` 是兜底：`font-size:0` 之后那几个字形不再有尺寸，但万一浏览器
  *    仍给出行内盒，也不许它把行撑开。 */
-.cm-rmd-liveHost .cm-line.cm-rmd-fence {
+.cm-rmd-liveHost .cm-line.cm-rmd-fence,
+.cm-rmd-liveHost .cm-line.cm-rmd-collapsed {
   font-size: 0;
   line-height: 0;
   overflow: hidden;
+}
+
+/* ⭐ 围栏行的 **block widget**（`bugs/0298` 候选 1b，2026-11-12）
+ *
+ * 围栏行不再只是"一行 ＋ 行级类"，而是 `Decoration.replace({block:true, widget})` 的
+ * block widget（widget 的 `estimatedHeight` 恒 0 ⇒ 视口外也按 0 记账，CM6 的高度表
+ * 不再给它一整行）。widget 自己渲染一个空 `<div class="cm-rmd-fence-block">`，
+ * 这里把它压成 0 高——否则 block widget 仍会按自身行高出现在屏幕上。
+ * ⚠️ 与上面 `.cm-line.cm-rmd-fence` 那条**不是同一件事**：那条还被 `cm-rmd-collapsed`
+ *    等行级类共用，⛔ 别合并、别删。 */
+.cm-rmd-liveHost .cm-rmd-fence-block {
+  height: 0;
+  overflow: hidden;
+  font-size: 0;
+  line-height: 0;
+}
+
+/* ⭐ 编辑态的白空格模型改回 `pre-wrap`（`bugs/0316`，2026-11-12）
+ *
+ * 阅读态 `.doc p` 是 `white-space: normal`（行尾空格**不占行宽**）；编辑态 CM6
+ * `lineWrapping()` 的 baseTheme 给 `.cm-content` 加类 `.cm-lineWrapping`，值是
+ * `break-spaces`（空格**保留且不悬挂**）⇒ 折行点上的那个空格计入行宽，浏览器被迫把
+ * **前一个字**一起退到下一行 ⇒ 点进去整段从该行起**错后一个字**（`Q36` 实测）。
+ *
+ * 修法：把同一个元素上的 `white-space` 改回 `pre-wrap`（`pre-wrap` 允许行尾空格**悬挂**，
+ * 与阅读态在折行点上观感一致；CM6 的 `whiteSpace_fallback` 本来也是 `pre-wrap`）。
+ * ⚠️⚠️ **特异性必须 ≥ (0,2,0)**：上游那条 `.cm-lineWrapping` 是单个类 (0,1,0)，且由
+ *    StyleModule **运行时注入 `<head>`**（排在所有 `<link>` 之后）⇒ 单写 `.cm-lineWrapping`
+ *    打平后按文档顺序输。`.cm-content.cm-lineWrapping` ＝ (0,2,0) 才稳赢。
+ * ⚠️ CM6 把 `pre-wrap` / `normal` / `pre-line` / `break-spaces` 都算折行模型
+ *    （`@codemirror/view 6.43.14` 的 `wrappingWhiteSpace`）⇒ 换值**不会**让 `lineWrapping()` 失效。
+ * ⚠️ 表格单元格本来就走 `pre-wrap`（下面 `.cm-rmd-cell` 那一组）⇒ 这里对它是无变更。
+ * ⛔ **不许**用"放宽 `Q36` 容差 / 跳过某几行"代替这条规则（`bugs/0316` §5 明令）。
+ * ⛔ 制表符不在本条范围内（`bugs/0316` §6 的裁定）：正文里的 `\t` 在两个模型下都折叠，
+ *    但它按**制表位**展宽与否是另一回事，⛔ 别把这条规则当 tab 的修复。 */
+.cm-rmd-liveHost .cm-content.cm-lineWrapping {
+  white-space: pre-wrap;
+}
+
+/* ⭐ 零宽标记字符（`bugs/0304` 候选 ④，2026-11-12）
+ *
+ * 行内代码的**反引号不再用零宽替换**，而是留在文本流里、只压成零宽。
+ * 原因：`Decoration.replace` 会给隐藏区间插一个 `cm-widgetBuffer` 零宽 `<img>`
+ * （U+FFFC 的替身），它参与 UAX#14 断行 ⇒ 全角左括号「（」紧跟行内代码时，
+ * 阅读态（`（` ＋ `b`）被 LB14 粘住，编辑态（`（` ＋ CB ＋ `b`）却能在 CB 之后断
+ * ⇒ 折行点差一个全角字（`bugs/0304` §3.2 / §5 候选 ④）。
+ * ⇒ 字符留在流里（反引号是 `AL`，LB14 天然成立），断行输入与阅读态**同类**；
+ *   隐藏性由落点层（`plan.ranges` 仍含这些区间）保证，⛔ 不靠删字符。
+ *
+ * ⚠️⛔ **不能用 `display:inline-block` / `width:0` / `overflow:hidden` 压宽**：
+ *    那会把这一段变成**原子行内盒**，断行算法看不见里面的字符 ⇒ 本条要的"留在字符流里"
+ *    当场作废。只能靠 `font-size: 0`（字形零宽，字符仍在流里）。
+ * ⚠️ 行高不受影响：行盒的 strut 来自 `.cm-line` 自己的字号，`1.6 × 0` 的零号 span
+ *    不会把行撑高或压扁（`--reader-line-height` 是无单位 1.6）。
+ * ⚠️ 代价：这些字符**真的在文本里** ⇒ `⌘A` / 三击选中 / `visibleText` 能看见它们
+ *    （`bugs/0304` §5 已列，验收时要重跑整段路径）。 */
+.cm-rmd-liveHost .cm-rmd-zw {
+  font-size: 0;
+}
+
+/* ⭐ 引用块里的空行 ＝ **段距**，不是一整行（`bugs/0090`，2026-11-08）
+ *
+ * 阅读态里 `> 第一段\n>\n> 第二段` 的两段之间只有 `--reader-gap-block`（14 px 下 15.4 px）；
+ * 编辑态按源码行排，那条 `>` 会占**一整行**（20.297 px）⇒ 每条高 **+4.906 px**，后续内容下移。
+ * ⛔ **不是**靠调大/调小全局行高：那只会在别的地方制造同样的偏差。
+ * `font-size: 0` 让这一行没有字形高度，`line-height` 直接给出段距；
+ * ⚠️ 排版模型：`.cm-line` 是块级行盒，`font-size: 0` 后 strut 没有字形，
+ *    **行盒高就等于行高本身** `--reader-gap-block` ⇒ ⛔ **不再叠加**空行自己的行高。
+ *    阅读态两段之间 = 内容行高 20.3 ＋ 段距 15.4；编辑态 = 内容行高 20.3 ＋ 空行盒 15.4
+ *    ⇒ 两者相等（+4.906 px 的那条差消失）；⛔ 把 `line-height` 去掉或改成正文行高都会退回原缺陷。
+ * `overflow: hidden` 是兜底（万一有 widget buffer 残留，不许它把行撑开）。
+ * ⚠️ 连续多条空引用行只有第一条带这个类，其余由 `cm-rmd-collapsed` 塌成 0
+ *    （阅读态的段距只出现一次）。
+ * ⚠️ `design/0066`（2026-11-11）起**只有引用块**走这一条：列表内的空行不再折成段距
+ *    （用户裁定「松散不存在，空行照排」），`cm-rmd-li-sep` 那一支已随 `bugs/0021` 的
+ *    emulation 一起删除。⛔ 别拆成第二份声明：M48 的变异靶子就是这条 `line-height`，
+ *    它必须**恰好命中一次**（`tests/js/probe-targets.test.js`）。 */
+.cm-rmd-liveHost .cm-line.cm-rmd-quote-gap {
+  font-size: 0;
+  line-height: var(--reader-gap-block);
+  overflow: hidden;
+}
+
+/* ⭐ 引用块 / 列表项里的内层**代码块**（`bugs/0091`，2026-11-08）
+ *
+ * 阅读态的这些值住在 `.doc pre` / `.doc pre code` 上；而编辑态的引用块只有**一个**
+ * 内容层（host 是 `blockquote` 的替身），内层 `pre` 不在「被替换元素」里
+ * （`live/box.js::PROPS` 只搬宿主自己的盒子）⇒ 只能按源码行贴类。
+ * ⚠️ 值仍是同一批 `--reader-*`（与 `typography.css` 的 `.doc pre code` 同源），
+ *    ⛔ 没有第二份数字：
+ *    · `font-family` / `font-size` / `line-height` 必须落在 `.cm-line` 上才生效；
+ *    · 上下内边距是**整块一份**（`code` 是 `display:block`）⇒ 只落首 / 末行；
+ *    · 左右内边距每一行都要，否则每行都从宿主内容盒左缘起排（实测左移 25.2 px）；
+ *    · 底色 / 圆角同属 `pre` ⇒ 逐行给底色、首 / 末行给圆角。
+ * ⛔ 不用 `padding` 简写：首 / 末行上会把左右内边距一起重置。 */
+.cm-rmd-liveHost .cm-line.cm-rmd-code-line {
+  font-family: var(--reader-font-mono);
+  font-size: var(--reader-size-small);
+  line-height: var(--reader-code-lh);
+  color: var(--reader-block-code-text);
+  padding-left: var(--reader-code-pad-x);
+  padding-right: var(--reader-code-pad-x);
+  background: var(--reader-block-code-bg);
+}
+
+.cm-rmd-liveHost .cm-line.cm-rmd-code-first {
+  padding-top: var(--reader-code-pad-y);
+  border-top-left-radius: var(--reader-code-radius);
+  border-top-right-radius: var(--reader-code-radius);
+}
+
+.cm-rmd-liveHost .cm-line.cm-rmd-code-last {
+  padding-bottom: var(--reader-code-pad-y);
+  border-bottom-left-radius: var(--reader-code-radius);
+  border-bottom-right-radius: var(--reader-code-radius);
+}
+
+/* ════════════════════════════════════════════════════════════════════
+ * 1a‴. 嵌套引用：第二层起的竖线与左内边距（`design/0085` C4）
+ *
+ * 宿主只搬**被换掉的那个顶层元素**的盒子（`live/box.js` 量的是 `#doc` 的直接孩子）
+ * ⇒ `- > q` 与 `> > q` 的第二层引用在编辑态**既没有竖线、也没有那一段让位**
+ * （阅读态 28 ＋ 4 ＋ 17.5 ＝ 49.5 px，编辑态 28 px）。
+ *
+ * ⇒ `live/decorations.js` 给这些行挂 `data-rmd-qdepth`（1–3），这里按层给盒子：
+ *    · 竖线宽度是**层数乘**出来的（阅读态每层各一条边框，行盒只有一条）；
+ *    · 左内边距同理（`--reader-quote-pad-x-factor` 就是 `.doc blockquote` 的横向内边距系数）。
+ * ⚠️ 值全部来自 `--reader-quote-*`（与 `.doc blockquote` 同一批），⛔ 没有第二份数字。
+ * ⚠️ 写在 `padding-left` 上、⛔ 不碰列表行的 `margin-left`（那是行内值，层级在前、量在左）。
+ * ⚠️ 层数上限 3：更深的引用在 `decorations.js` 里夹到 3（阅读态是逐层内边距，行级盒子
+ *    表达不了任意多层而不引入常数表）。
+ * ⚠️ 引用里的**代码行**另有一条合并规则（见下）：`padding-left` 是同一个属性，
+ *    同特异性下后来者整条覆盖 ⇒ 必须显式求和，⛔ 不能指望"两条规则叠加"。
+ * ════════════════════════════════════════════════════════════════════ */
+.cm-rmd-liveHost .cm-line[data-rmd-qdepth="1"] {
+  border-left: var(--reader-quote-bar-width) solid var(--reader-quote-bar-color);
+  padding-left: calc(var(--reader-font-size) * var(--reader-quote-pad-x-factor));
+}
+
+.cm-rmd-liveHost .cm-line[data-rmd-qdepth="2"] {
+  border-left: calc(var(--reader-quote-bar-width) * 2) solid var(--reader-quote-bar-color);
+  padding-left: calc(var(--reader-font-size) * var(--reader-quote-pad-x-factor) * 2);
+}
+
+.cm-rmd-liveHost .cm-line[data-rmd-qdepth="3"] {
+  border-left: calc(var(--reader-quote-bar-width) * 3) solid var(--reader-quote-bar-color);
+  padding-left: calc(var(--reader-font-size) * var(--reader-quote-pad-x-factor) * 3);
+}
+
+/* 引用里的内层代码行：引用让位 ＋ `pre code` 自己的左右内边距（两条都要）。
+ * ⚠️ 特异性 (0,4,0)，压过上面的 (0,3,0) 与 `.cm-rmd-code-line` 的 (0,3,0)。
+ * ⚠️ 已知取舍：行盒的底色会覆盖那段引用让位（阅读态底色起于让位**之后**）——
+ *    行盒只有一个背景层，要做到"底色从内边距起、让位仍留白"得再套一层元素，
+ *    而 `INV-LIVE-24` 的边界（≤4 个行级盒子）正是本轮要守的东西。 */
+.cm-rmd-liveHost .cm-line.cm-rmd-code-line[data-rmd-qdepth="1"] {
+  padding-left: calc(var(--reader-font-size) * var(--reader-quote-pad-x-factor)
+                     + var(--reader-code-pad-x));
+}
+
+.cm-rmd-liveHost .cm-line.cm-rmd-code-line[data-rmd-qdepth="2"] {
+  padding-left: calc(var(--reader-font-size) * var(--reader-quote-pad-x-factor) * 2
+                     + var(--reader-code-pad-x));
+}
+
+.cm-rmd-liveHost .cm-line.cm-rmd-code-line[data-rmd-qdepth="3"] {
+  padding-left: calc(var(--reader-font-size) * var(--reader-quote-pad-x-factor) * 3
+                     + var(--reader-code-pad-x));
+}
+
+/* ⭐ 引用块 / 列表项里的内层**标题**（`bugs/0091`，2026-11-08）
+ *
+ * 阅读态 `.doc hN` 的上下间距是「系数 × 该级字号」；编辑态只有行级类 `cm-rmd-hN`
+ * （字号 / 行高 / 字重），**没有**外边距 ⇒ 首行文字上跳（实测 11.859 px）。
+ * `1em` 就是 `cm-rmd-hN` 给这一行设的字号 ⇒ 与 `.doc hN` 是同一条派生式。
+ * ⚠️ 行盒上的**外边距不折叠**，而且会与上下相邻行叠加 ⇒ 用 `padding-top` / `padding-bottom`
+ *    单边给；哪一侧要补由 `live/decorations.js` 判（紧邻空引用行 / 另一个标题时不补）。 */
+.cm-rmd-liveHost .cm-line.cm-rmd-heading-space-before {
+  padding-top: calc(1em * var(--reader-gap-heading-before));
+}
+
+.cm-rmd-liveHost .cm-line.cm-rmd-heading-space-after {
+  padding-bottom: calc(1em * var(--reader-gap-heading-after));
+}
+
+/* ⭐ 列表（`bugs/0092`，2026-11-05）：源码标记**恒藏**，行盒与阅读态的列表项同一个形状。
+ *
+ * 阅读态的圆点由 UA 的 `::marker` 画（`list-style-position: outside`）在 `<ul>` 的
+ * `padding-left`（`--reader-list-indent`）里，**不占正文宽度**；编辑态若把 `- ` 留在流里，
+ * 每个列表项的可用宽度就少 2–6 个字符 ⇒ 长条目多折一行、块变高、下方整体下移。
+ *
+ * ⇒ 三条：
+ *   ① 标记字符由零宽替换藏掉；行首缩进一并藏掉（`live/decorations.js` 的 `ListMark` 分支）。
+ *   ② 嵌套缩进由**行内** `margin-left: depth × --reader-list-indent` 给（续行同样有）。
+ *   ③ 圆点/编号**不再手绘**：行 `display: list-item`，标记交给 UA 的 `::marker`
+ *      —— 与阅读态是同一段代码（`design/0084`，2026-11-15 用户批准）。
+ * ⚠️ 抽象缩进量走 `--reader-list-indent`（与 `.doc ul` 同一个变量），⛔ 不写第二份数值。 */
+
+/* ⭐⭐ 2026-11-15（`design/0084`）：**列表标记由 UA 画**，编辑态与阅读态同一条来源。
+ *
+ * 编辑态曾经用绝对定位的 `::before` **手绘**一枚标记去逼近 UA 的 `::marker`：直径
+ * `.357em`、让位 `.7857em`、环径 `.4286em` / 描边 `.0714em`（`bugs/0101`）、编号让位
+ * `calc(.09em + 2.5px)` ＋ `tabular-nums`（`bugs/0112` B2-m）、`max-content` ＋
+ * `content-box` ＋ `translateX(-100%)`（B2-m-5，三位数溢出）。这一族全是**从栅格反推的
+ * 拟合常数**——`::marker` 没有几何 API，量不到，只能拟合；而拟合只在取样区间内成立，
+ * 每换一档字号 / 位数 / 层数就要再补一条 ⇒ 用户反复感到「进出编辑态重新渲染」。
+ *
+ * ⇒ 编辑态的列表行改成**真正的列表项**：`display: list-item` ＋ 缩进写在 `margin-left`
+ *   （`live/decorations.js::listDeco`，值仍来自 `--reader-list-indent`），标记交给 UA。
+ *   标记的左右缘、让位、基线、三位数左扩在两态由**同一段代码**算出来 ⇒ 不需要任何系数。
+ *   离屏实测（真 CM6，`docs/bugs/0113` §8）：行高、`contentHeight`、`scrollHeight`、
+ *   `coordsAtPos`、`posAtCoords` 改前改后全等 ⇒ 不改变 CM6 的高度模型与命中测试。
+ *
+ * ⚠️⚠️ 缩进**必须**在 `margin-left` 上：`::marker` 按**边框盒**定位，缩进写在项自身的
+ *    `padding-left` 上时标记整体左移一个缩进（离屏实测 64 设备 px）。
+ * ⚠️ 字形按**层数**给（`data-rmd-li-level`，`decorations.js` 里已夹到表长以内），与阅读态
+ *    `typography.css` 的两张表**同词汇、同循环**（`INV-TYPE-08`）：有序
+ *    `decimal / lower-alpha / lower-roman` 三层一循环（12 档，与 `级上限` 同长）；
+ *    无序 `disc / circle / square`（UA 按 `<ul>` 嵌套深度级联出来的形状）。
+ *    ⚠️ 改任一侧任一关键字必须**同批**改另一边 —— `tests/js/live-ordered-glyph.test.js`
+ *    逐档比对两张表（含双向变异）。
+ * ⛔ 别再为了「补一点间距」往这里加拟合常数：`tests/js/live-list-marker.test.js` 有一条
+ *    源码级闸门（`.357em` / `.7857em` / `.4286em` / `.0714em` / `padding-right` 一个都不许回来）。 */
+.cm-rmd-liveHost .cm-line.cm-rmd-li[data-rmd-li="bullet"],
+.cm-rmd-liveHost .cm-line.cm-rmd-li[data-rmd-li="ordered"],
+.cm-rmd-liveHost .cm-line.cm-rmd-li[data-rmd-li="task"] {
+  display: list-item;
+  list-style-position: outside;
+}
+
+/* 任务项：阅读态是 `.doc li.task-list-item { list-style: none }`（`typography.css:179`），
+   编辑态同一个口径 —— 方框由 widget 给（`decorations.js::taskBoxDom`），⛔ 不要标记。 */
+.cm-rmd-liveHost .cm-line.cm-rmd-li[data-rmd-li="task"] {
+  list-style-type: none;
+}
+
+/* 有序列表的**分级字形**：十进制 → 小写拉丁 → 小写罗马，三层一循环
+ * （`bugs/0116` §9，2026-11-14 用户裁定复刻 Notion）。
+ *
+ * 与 `typography.css:136-147` 的 12 条 `.doc … ol` **逐档同构**（`INV-TYPE-08`）：
+ * 同一层必须是同一个关键字，层数上限同为 `decorations.js::级上限 = 11`。
+ * ⚠️ 层数＝这一行被几层列表覆盖（`ul` 也占一层），与 `lineLevel` 同一个口径；
+ *    ⛔ 不是"有序列表套有序列表"的层数。
+ * ⚠️ `:is()` 与 `data-rmd-li-level` 都靠特异性，⛔ 别调换这两节的顺序去"修"层级。 */
+.cm-rmd-liveHost .cm-line.cm-rmd-li[data-rmd-li="ordered"][data-rmd-li-level="0"] { list-style-type: decimal; }
+.cm-rmd-liveHost .cm-line.cm-rmd-li[data-rmd-li="ordered"][data-rmd-li-level="1"] { list-style-type: lower-alpha; }
+.cm-rmd-liveHost .cm-line.cm-rmd-li[data-rmd-li="ordered"][data-rmd-li-level="2"] { list-style-type: lower-roman; }
+.cm-rmd-liveHost .cm-line.cm-rmd-li[data-rmd-li="ordered"][data-rmd-li-level="3"] { list-style-type: decimal; }
+.cm-rmd-liveHost .cm-line.cm-rmd-li[data-rmd-li="ordered"][data-rmd-li-level="4"] { list-style-type: lower-alpha; }
+.cm-rmd-liveHost .cm-line.cm-rmd-li[data-rmd-li="ordered"][data-rmd-li-level="5"] { list-style-type: lower-roman; }
+.cm-rmd-liveHost .cm-line.cm-rmd-li[data-rmd-li="ordered"][data-rmd-li-level="6"] { list-style-type: decimal; }
+.cm-rmd-liveHost .cm-line.cm-rmd-li[data-rmd-li="ordered"][data-rmd-li-level="7"] { list-style-type: lower-alpha; }
+.cm-rmd-liveHost .cm-line.cm-rmd-li[data-rmd-li="ordered"][data-rmd-li-level="8"] { list-style-type: lower-roman; }
+.cm-rmd-liveHost .cm-line.cm-rmd-li[data-rmd-li="ordered"][data-rmd-li-level="9"] { list-style-type: decimal; }
+.cm-rmd-liveHost .cm-line.cm-rmd-li[data-rmd-li="ordered"][data-rmd-li-level="10"] { list-style-type: lower-alpha; }
+.cm-rmd-liveHost .cm-line.cm-rmd-li[data-rmd-li="ordered"][data-rmd-li-level="11"] { list-style-type: lower-roman; }
+
+/* 无序列表的**形状**分三层（`bugs/0321`，2026-11-14 用户报告「编辑的时候 List Item 是圆点，
+ * 编辑完展示的时候…不一样了」）。
+ *
+ * 阅读态的圆点/圆环/方块是浏览器按 **UA 级联**画的（`ul ul` ⇒ `circle`、`ul ul ul` ⇒ `square`，
+ * 更深的 `ul` 仍命中第三条 ⇒ 一直是方）；本仓**没有**覆盖**无序列表**的 `list-style-type`
+ * （`typography.css`：渲染层要忠实）⇒ 那把尺子的取值就是 UA 那张表，编辑态照抄，⛔ 不能
+ * 自创「每层都实心圆」。⚠️ **有序**列表是例外（上面那 12 条，Notion 分级字形）——UA 对 `ol`
+ * 每一层都给 `decimal`，不覆盖就永远没有 `a.` / `i.`。
+ * ⚠️ 层数在 `decorations.js` 里已夹到 2：三层及更深都是方，⛔ 不要按 11 档铺开。 */
+.cm-rmd-liveHost .cm-line.cm-rmd-li[data-rmd-li="bullet"][data-rmd-li-level="0"] { list-style-type: disc; }
+.cm-rmd-liveHost .cm-line.cm-rmd-li[data-rmd-li="bullet"][data-rmd-li-level="1"] { list-style-type: circle; }
+.cm-rmd-liveHost .cm-line.cm-rmd-li[data-rmd-li="bullet"][data-rmd-li-level="2"] { list-style-type: square; }
+
+/* ⚠️ 这里**曾经**是「列表的段距」（`bugs/0021`，2026-11-09）的两条规则：
+ *    `cm-rmd-li-gap-after`（前一行补 `padding-bottom`）与 `cm-rmd-li-sep`（空行行高 = 段距）。
+ *    `design/0066`（2026-11-11 用户裁定「**永远是紧凑的状态，松散不存在，如果是空行，
+ *    就把空行展示出来**」）之后它们**都没有意义**：列表内的空行就是普通一行（⛔ 不塌、
+ *    ⛔ 不折），阅读态那边由 `typography.css` 的 `.doc li > p { margin: 0 }` 撤掉段距、
+ *    由 `render.rs::写空行属性` 的 `--rmd-blanks` 把空行还成高度。
+ *    ⇒ 编辑态因此**不需要**任何补丁，这是减法。⛔ 别再往这里加"模拟阅读态段距"的规则。
+ *    历史与实测见 `docs/bugs/0021` / `docs/bugs/0307` / `docs/design/0066`。 */
+
+/* 任务框：与阅读态 `.doc li.task-list-item input[type="checkbox"]` 同一份外边距。
+   ⚠️ 只钉 `margin-right` —— 其余外边距/尺寸都由 UA 对同一个元素给，两边天然一致。
+   ⚠️⚠️ 方框右边那个**空格**不在这里：它由 widget 的 DOM 自带
+   （`live/decorations.js::taskBoxDom`，`bugs/0106`），因为 comrak 在阅读态写的是
+   `disabled="" /> `（字面空格）。⛔ 别改成在这里加 margin —— 那会变成第二份盒子数值。
+   ⭐ 2026-11-05（`bugs/0103`）：**可点**。原先这里是 `pointer-events: none`，于是编辑态
+   点方框的落点是 `.cm-line` —— 只放光标，方框没有任何反应（用户：「点几下就勾不动了，
+   点击没有反应」）。Mardo 在编辑态点方框就是打勾，⛔ 不是"只摆一个样子"。
+   ⚠️ 进编辑态时阅读态那一块已被 host 换掉（`swapLiveView`）⇒ 屏幕上的方框只剩这一个，
+   ⛔ 不存在"一次点击翻两次"。接线在 `main.js::onHostTaskBoxDown/Click`（`#doc` capture）。 */
+.cm-rmd-liveHost .cm-rmd-taskbox {
+  margin-right: .4em;
+  pointer-events: auto;
+}
+
+/* ⭐ 任务项**首行**的断行：阅读态、编辑态**各需要一条**（2026-11-09 `bugs/0302`）
+ *
+ * 阅读态那半在 `typography.css`：`.doc li.task-list-item::first-line`（紧凑项）＋
+ * `.doc li.task-list-item > p:first-of-type::first-line`（松散项，正文在 `<p>` 里，
+ * 而 `::first-line` ⛔ 不进块级子元素）。两者缺一，超宽首词就整段掉到第二行、首行只剩方框。
+ *
+ * ⚠️⚠️ **编辑态这条不能省**：CM6 `lineWrapping` 给 `.cm-line` 写的是
+ *    `overflow-wrap: anywhere` ＋ `word-break: break-word`（离屏实测，`--diag` 的 `排版` 栏）。
+ *    这两个值的语义都是「**只有本行找不到别的断行点时才拆词**」——方框后面那个空格
+ *    （`bugs/0106` 定的）就是断行点 ⇒ 超宽首词照样整段掉到第二行。`anywhere` 与
+ *    `break-word` 的差别只在 min-content 计算，⛔ 不在实际断行位置。
+ *    ⚠️ 2026-11-09 曾据「`M54` 只停 `typography.css` 的两条、`W11l` 仍绿」把这条判成死代码删掉
+ *    ——**那个判断是错的**：`W11l` 当时取"文档顺序第一个超宽任务行"，而夹具里第一个是
+ *    **中文长句**（本来就在方框后起排），长单词那条根本没被量。实测那一行方框顶 351.92 /
+ *    首字顶 375.72（行高 23.80）⇒ 方框确实独占首行。现在 `W11l` 量块内**全部**超宽任务行，
+ *    承重变异是 `M56`（只停这一条 ⇒ 只有 `W11l` 红）。
+ *    ⭐ 教训：判据在缺陷态**恒绿**时，先怀疑判据不敏感，再怀疑规则是死代码。 */
+.cm-rmd-liveHost .cm-line[data-rmd-li="task"]::first-line {
+  word-break: break-all;
 }
 
 /* ⭐ `design/0047` §2.9 早已点名的那个补丁，落地时漏了 —— 2026-10-26 被等高校验抓出来：
@@ -347,26 +681,33 @@
 }
 
 /* ════════════════════════════════════════════════════════════════════
- * 3. IME preedit 覆盖层（`live/input.js` 的落点）
+ * 3. IME preedit 组合串（行内 widget，`design/0047` §2.7 修订 / `bugs/0060`）
  *
- * ⚠️ 组合期间**文档一个字节都不动**（`F6` 的强需求）⇒ 组合串画在这一层上。
- * ⛔ 它不许接收事件（否则组合串会进 contenteditable）。
+ * ⚠️ 组合期间**文档一个字节都不动**（`F6` 的强需求）⇒ 组合串画在装饰层的
+ *    行内 widget 上（`main.js::PreeditWidget`）。
+ * ⭐ 形态对齐 Mardo：它**进排版**——占宽度、把右边的字推开、行满折行。
+ * ⛔ 它不许接收事件（`ignoreEvent()` 已返回 true）。
  * ════════════════════════════════════════════════════════════════════ */
 
 .cm-rmd-preedit {
-  position: absolute;
-  pointer-events: none;
+  /* ⚠️⛔ **没有 `position`**：它是行内元素，就排在这一行里（2026-11-02 用户
+     「按照 mardo 来修改」）。曾经那版是绝对定位的覆盖层，靠"自带底板"盖住正文
+     ——现在组合串**占了位**，右边的字被推开，叠字问题结构上不存在。 */
   color: var(--reader-text);
-  /* ⚠️ 下划线是"这段还没进文档"的唯一提示；⛔ 不要用背景色（会盖住正文）。 */
+  /* ⚠️ 下划线是"这段还没进文档"的唯一提示。
+     ⚠️⚠️ **字号 / 行高 / 字体族 / 字重 / 底色一律不在这里给**（也不许写行内值）：
+     widget 住在 `.cm-line` 里面，那几样**天然继承那一行**（标题块第二行的正文尺度、
+     代码块的等宽字体都在行上）⇒ 2026-10-29 那条「拼音的字很大」与 `bugs/0060` 的
+     叠字都不会再出现，⛔ 别为了"保险"再把它们钉一遍（`INV-LIVE-07`：样式表是唯一来源）。 */
   text-decoration: underline;
   text-decoration-color: var(--ui-text-muted);
-  z-index: 2;
-  /* ⚠️⚠️ **字号 / 行高 / 字体族 / 字重不在这里给**（2026-10-29，用户实测
-     「在标题下面一行输入的时候，拼音落地的字体虽然是正文，正常，但是拼音的字很大」）：
-     覆盖层挂在 host 上，而 host 身上是 `live/box.js` 搬来的**块级**文字层
-     ⇒ 标题块的第二行是正文尺度（`.cm-line.cm-rmd-body`），拼音却按
-     标题尺度画。那四样由 `main.js::syncPreeditMetrics` 从**光标所在那一行**量出来写行内
-     ⇒ 样式表仍是唯一来源（`INV-LIVE-07`），⛔ 别在这里钉一个固定字号。 */
+  /* ⭐ Mardo 用透明度区分"还没确定的字"（`MardoRhythm.inputtingAlpha`，见
+     `docs/research/notes/0038`）——我们沿用这个语义，值按本仓的对比度挑。
+     ⚠️ 主题只改颜色的前提下它三套通用（浅底/深底上都 ≥ 4.5 : 1）。 */
+  opacity: 0.72;
+  /* ⚠️ 组合串可能是一条没有空格的拼音，别让它在一个词中间被折得东倒西歪；
+     行宽不够时整体挪到下一行（`word-break` 仍是默认的按词折）。 */
+  white-space: normal;
 }
 
 /* ════════════════════════════════════════════════════════════════════
@@ -457,12 +798,136 @@
    * 用户看到的是"打字打不进去、方向键也没用"（`Q20` 首次实跑：视觉行盒 **1**、
    * 内容宽 **544 px** 而格宽 **445 px**）。
    * ⭐ 阅读态的 `<td>` 本来就软换行 ⇒ 编辑态跟着换行，两边高度一致，表格不会跳。
-   * ⚠️ 这两条**必须与 CM6 的 `lineWrapping` 一致**：它把 `pre-wrap` /
-   *    `word-break: break-word` 写在 `.cm-content` 的 contentAttributes 上，
-   *    这里再写死 `pre` 会把那个扩展**整体作废**（扩展装了等于没装）。 */
+   * ⚠️ 这两条**必须与 CM6 的 `lineWrapping` 一致**：它把 `break-spaces` /
+   *    `word-break: break-word` 写在 `.cm-content` 的 contentAttributes 上
+   *    （`@codemirror/view 6.43.14` 的 baseTheme 原文；`pre-wrap` 只是 IE 回退，
+   *    ⚠️ 2026-11-11 实测计算值就是 `break-spaces`，旧注释写"pre-wrap"已过时，见
+   *    `docs/bugs/0316`），这里再写死 `pre` 会把那个扩展**整体作废**（扩展装了等于没装）。 */
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   /* ⚠️ 不留任何额外行距：多一行就多一行表格高度。 */
   padding: 0;
 }
 
+
+/* ════════════════════════════════════════════════════════════════════
+ * 6. 选中浮动格式栏（`design/0061` L4）
+ *
+ * 只在**编辑态且有非空选区**时出现，浮在选区上方。三条硬要求：
+ *   ① ⛔ 不改变行盒 / 不参与正文排版：`position: fixed` ＋ `pointer-events: none`
+ *      （容器不吃点击；只有按钮自己开 `pointer-events: auto`）。
+ *   ② ⛔ 不许字面色值（`INV-THEME-02`）：全部引用第 2 层语义变量。
+ *   ③ 尺寸是**界面尺度**（`--ui-*`），⛔ 不跟 `--reader-font-size` 变
+ *      （`INV-THEME-04`：主题只改颜色）。
+ * ⚠️ `z-index: 35`：压过正文与顶栏（10–30），但低于设置 / 查找等覆盖层（40+）——
+ *    那些是模态层，格式栏不该盖在它们上面。
+ * ══════════════════════════════════════════════════════════════════ */
+
+.live-formatbar {
+  position: fixed;
+  z-index: 35;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin: 0;
+  padding: 4px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius);
+  background: var(--ui-bg-elevated);
+  box-shadow: 0 8px 24px var(--ui-border);
+  color: var(--ui-text);
+  font-family: var(--reader-font-sans);
+  font-size: var(--ui-font-size);
+  line-height: 1;
+  white-space: nowrap;
+  user-select: none;
+  /* ⚠️ 容器**不吃**点击：浮层横在正文上，命中区只应属于按钮（`design/0061` §6）。 */
+  pointer-events: none;
+}
+
+/* `hidden` 是出厂态；`display:flex` 会盖掉 UA 的 `[hidden]`，必须显式收回。 */
+.live-formatbar[hidden] {
+  display: none;
+}
+
+.live-formatbar button {
+  pointer-events: auto;
+  min-width: 26px;
+  height: 26px;
+  margin: 0;
+  padding: 0 6px;
+  border: 1px solid transparent;
+  border-radius: var(--ui-radius);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.live-formatbar button:hover {
+  background: var(--ui-hover-bg);
+}
+
+.live-formatbar button:active {
+  background: var(--ui-selected-bg);
+}
+
+/* 字形本身就是语义：粗体 / 斜体 / 删除线的按钮文字要看起来像它做的事。 */
+.live-formatbar-bold { font-weight: 700; }
+.live-formatbar-italic { font-style: italic; }
+.live-formatbar-strike { text-decoration: line-through; }
+
+.live-formatbar-sep {
+  pointer-events: none;
+  width: 1px;
+  height: 16px;
+  margin: 0 2px;
+  background: var(--ui-border);
+}
+
+/* ⭐ `design/0078`：空选区的格内只留「更多」（紧凑模式）。 */
+.live-formatbar-compact > button[data-cmd],
+.live-formatbar-compact > .live-formatbar-sep {
+  display: none;
+}
+
+/* 溢出菜单：贴着浮层右下角，⛔ 不改变浮层自身的布局流。 */
+.live-formatbar-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  min-width: 150px;
+  padding: 4px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius);
+  background: var(--ui-bg-elevated);
+  box-shadow: 0 8px 24px var(--ui-border);
+  pointer-events: auto;
+}
+
+.live-formatbar-menu[hidden] {
+  display: none;
+}
+
+.live-formatbar-menu-title {
+  padding: 4px 6px 2px;
+  color: var(--ui-text-muted);
+  font-size: calc(var(--ui-font-size) - 1px);
+}
+
+.live-formatbar-menu button {
+  width: 100%;
+  min-width: 0;
+  text-align: left;
+}
+
+.live-formatbar button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.live-formatbar button:disabled:hover {
+  background: transparent;
+}

@@ -24,11 +24,11 @@
 use std::fmt::Write;
 
 use comrak::html::{ChildRendering, Context};
-use comrak::nodes::{AstNode, NodeCodeBlock, NodeValue};
+use comrak::nodes::{AstNode, ListType, NodeCodeBlock, NodeValue};
 use comrak::Options;
 
 use super::parser::ParseOpts;
-use super::{diagram, highlight};
+use super::{diagram, highlight, mermaid};
 
 /// 一次渲染的观测量（`design/0007` §3.1）。
 ///
@@ -71,6 +71,36 @@ pub struct RenderStats {
     /// ⚠️ **私有**是刻意的：它是闸门的**内部状态**，⛔ 不是给人看的数。
     /// 给人看的形态是 `code_budget_exhausted`（"有几块是这么没的"）。
     code_exhausted: bool,
+
+    // ── `design/0060`：Mermaid 围栏（`document::mermaid` 写这几格）──
+    /// 真正画出来的图数。
+    pub mermaid_rendered: usize,
+    /// 回退成代码块的图数（**各类原因合计**，⭐ 前端那个数取的就是它）。
+    pub mermaid_fallback: usize,
+    /// 其中因**规模**回退的（含源码/预扫描/模型计数/SVG 字节/累计触顶）。
+    pub mermaid_oversize: usize,
+    /// 其中因**空图**回退的（`design/0060` §2.1⑤ 末句：不输出那张 56×56 白板）。
+    pub mermaid_empty: usize,
+    /// 其中因 **XML 白名单拒绝**回退的（`INV-MERMAID-08`）。
+    pub mermaid_security: usize,
+    /// 其中因**文档累计触顶**回退的（⚠️ **含触顶之后的每一块**，`INV-MERMAID-04`）。
+    pub mermaid_budget_exhausted: usize,
+    /// 累计**源码**字节（闸门累加器）。
+    pub mermaid_source_bytes: usize,
+    /// 累计**产物**字节（闸门累加器）。
+    pub mermaid_svg_bytes: usize,
+    /// 累计**真实节点数**（`design/0060` §6.1 的全文闸门累加器）。
+    pub mermaid_nodes: usize,
+    /// 累计**真实关系数**（同上）。
+    pub mermaid_relations: usize,
+    /// ⭐ **全部 Mermaid 围栏数**（含回退的），`MAX_BLOCKS` 的累加器。
+    /// ⚠️ 与 `mermaid_diagrams` 是两件事：后者只数**画出来的**（ID 前缀要用它），
+    /// 而回退的块不占图数额度——没有这个计数器，一份塞满坏图的文档可以有无穷多块。
+    pub(crate) mermaid_blocks: usize,
+    /// 已成功出图的图数——**同时是文档内的图序号**（`design/0060` §2.1⑦ 的 ID 前缀）。
+    pub(crate) mermaid_diagrams: usize,
+    /// ⛔ 粘滞位，理由同 `code_exhausted`（`INV-MERMAID-04`）。
+    pub(crate) mermaid_exhausted: bool,
 }
 
 // ⚠️ **为什么没有图表的那三个计数器**（这几行是**一次显式取舍**，不是漏了）：
@@ -85,10 +115,12 @@ pub struct RenderStats {
 //
 // ⚠️⭐ **2026-10-15 更正（Q22）：那句话对"普通的代码围栏"已经不作数了。**
 // 代码高亮的四条预算**要求**"超限可见"，而没有计数器就做不到 ⇒ 那一条**走了前者**
-// （见本文件 `NodeValue::CodeBlock` 那一支）。⛔ **图表与公式仍走适配器**——
-// 上一段给图表列的两个理由（后果肉眼可见 / 适配器摸不到 `context.user`）**依然成立**，
-// Q22 追加节也明文「公式/图表**沿用各自预算**，不与高亮输入混算」。
-// ⛔ 所以别把这段读成"图表也搬进 formatter 了"。
+// （见本文件 `NodeValue::CodeBlock` 那一支）。
+// ⚠️⚠️ **2026-11-03 再更正（`design/0060`）：`mermaid` 围栏也搬进 formatter 了**——
+// 理由与 Q22 同源：全文累计闸门（图数/源码字节/节点/关系/SVG 字节）的累加器
+// 只能存在 `context.user` 里，而适配器的 `write` 摸不到它。
+// ⇒ 今天的实际分工是：**`math` 与 `flow`/`sequence` 走适配器，`mermaid` 走 formatter**。
+// ⛔ 别把这段读成"图表全在适配器里"——那一支在 `is_mermaid_fence()` 就分走了。
 
 impl RenderStats {
     /// ⭐ Q22：因**规模闸门**未能高亮的代码块数（单块超限 ＋ 累计触顶）。
@@ -98,6 +130,14 @@ impl RenderStats {
     /// 与"这文档太大"是两件事，混在一起报会让提示文案说假话。
     pub fn code_unhighlighted(&self) -> usize {
         self.code_oversize + self.code_budget_exhausted
+    }
+
+    /// ⭐ `design/0060` §2.1⑧：**没画出来的 Mermaid 图数**（各类原因合计）。
+    ///
+    /// ⚠️ 回退是**完整**的（原文逐字保留 ＋ 一行原因），所以文案⛔ 不许说成
+    /// 「内容丢了」——那会让人跑去别的编辑器重看一遍。
+    pub fn mermaid_unrendered(&self) -> usize {
+        self.mermaid_fallback
     }
 
     /// 一行摘要，给 `report_status` 用。
@@ -140,6 +180,29 @@ impl RenderStats {
                 self.code_input_bytes, self.code_output_bytes
             ));
         }
+        // ── Mermaid（`design/0060`）──
+        // ⚠️ `mermaid=` **每次都打**（含零），理由与 `math=`/`code=` 同：
+        //    "这一行没有 mermaid=" 与 "mermaid=0" 必须是两件不同的事。
+        s.push_str(&format!(" mermaid={}", self.mermaid_rendered));
+        // ⚠️ 后缀**只在非零时出现**：一份通篇没有图的文档不该多印五个恒零键。
+        if self.mermaid_fallback > 0 {
+            s.push_str(&format!(" mermaid_skip={}", self.mermaid_fallback));
+        }
+        if self.mermaid_oversize > 0 {
+            s.push_str(&format!(" mermaid_over={}", self.mermaid_oversize));
+        }
+        if self.mermaid_empty > 0 {
+            s.push_str(&format!(" mermaid_empty={}", self.mermaid_empty));
+        }
+        if self.mermaid_security > 0 {
+            s.push_str(&format!(" mermaid_sec={}", self.mermaid_security));
+        }
+        if self.mermaid_budget_exhausted > 0 {
+            s.push_str(&format!(
+                " mermaid_budget={}",
+                self.mermaid_budget_exhausted
+            ));
+        }
         s
     }
 }
@@ -165,10 +228,151 @@ comrak::create_formatter!(RmdFormatter<RenderStats>, {
     //    段里有别的东西（哪怕只是一个空格）就照旧——否则会造出
     //    「`$$…$$ 后面跟一句话`」这种段落的 `<p>` 凭空消失的静默 DOM 变化。
     NodeValue::Paragraph => |context, node, entering| {
+        // ⭐ 松散列表里的任务项（`bugs/0302`）：方框要写进**首段内部**，⛔ 不留在 `<li>` 下。
+        //    见 `是松散任务项首段` 的注释（comrak 的默认形态会让方框独占首行）。
+        if 是松散任务项首段(node) {
+            if entering {
+                context.cr()?;
+                context.write_str("<p")?;
+                comrak::html::render_sourcepos(context, node)?;
+                context.write_str(">")?;
+                if let Some(parent) = node.parent()
+                    && let NodeValue::TaskItem(ref nti) = parent.data().value
+                {
+                    写任务方框(context, nti)?;
+                }
+            } else {
+                context.write_str("</p>")?;
+                context.lf()?;
+            }
+            return Ok(ChildRendering::HTML);
+        }
         if is_lone_display_math(node) {
             return Ok(ChildRendering::HTML);
         }
+        // ⭐ `design/0066`：列表项里的段落**后面**隔了几行源码空行 ⇒ 那几行要占版面
+        //    （`--rmd-blanks`）。⚠️ 整表松不松（`List::tight`）⛔ 不再决定段距——
+        //    段距这个概念在列表内不存在，`.doc li > p { margin: 0 }` 撤掉了它。
+        // ⚠️ 只有 `> 0` 才自己出 `<p>`：为 0 时**逐字节**走 comrak 默认，
+        //    紧凑列表的输出因此一个字都没变（`parser.rs` 那条断言）。
+        let 空行 = 项内块前空行(node);
+        if 空行 > 0 {
+            if entering {
+                context.cr()?;
+                context.write_str("<p")?;
+                写空行属性(context, 空行)?;
+                comrak::html::render_sourcepos(context, node)?;
+                context.write_str(">")?;
+            } else {
+                // ⚠️ comrak 在这一支还给脚注段落补 backref（`html.rs:924-930`）；
+                //    那要求父节点是 `FootnoteDefinition`，而我们这儿的父节点是列表项 ⇒ 无。
+                context.write_str("</p>")?;
+                context.lf()?;
+            }
+            return Ok(ChildRendering::HTML);
+        }
         return comrak::html::format_node_default(context, node, entering);
+    },
+
+    // ── 列表项：**前一顶与本项之间**的源码空行占版面（`design/0066`）──
+    //
+    // ⚠️ 为什么落在 `<li>` 的 `margin-top` 上：⛔ 不能补一个空 `<li>` 占位——
+    //    `<ol>` 的隐式编号会把占位项算进去，`start=` 也跟着错（`design/0066` §3.1）。
+    // ⚠️ 输出形状与 comrak 0.56 `render_item`（`html.rs:787-803`）逐字相同，
+    //    只多一个属性；`render_sourcepos` 仍然写在属性**之后**。
+    NodeValue::Item(_) => |context, node, entering| {
+        if entering {
+            context.cr()?;
+            context.write_str("<li")?;
+            写空行属性(context, 项前空行(node))?;
+            comrak::html::render_sourcepos(context, node)?;
+            context.write_str(">")?;
+        } else {
+            context.write_str("</li>")?;
+            context.lf()?;
+        }
+    },
+
+    // ── 列表项里**嵌套**的列表：它前面的空行同样占版面（`design/0066`）──
+    //
+    //     - 甲
+    //            ← 这一行要占一个行高
+    //       - 乙
+    //
+    // ⚠️ 只有真的有空行时才自己出标签；其余（含所有顶层列表）逐字节走
+    //    comrak 的 `render_list`（`html.rs:856-898`），⛔ 不复述一份默认路径。
+    // ⚠️ 复述的那一支必须与 `render_list` 同序同义（`contains-task-list` → `sourcepos`
+    //    → `start=`），否则「有一处空行」的列表与它的兄弟列表会输出成两种形状。
+    NodeValue::List(ref nl) => |context, node, entering| {
+        let 空行 = 项内块前空行(node);
+        if 空行 == 0 {
+            return comrak::html::format_node_default(context, node, entering);
+        }
+        if entering {
+            context.cr()?;
+            context.write_str(if nl.list_type == ListType::Bullet { "<ul" } else { "<ol" })?;
+            if nl.is_task_list && context.options.render.tasklist_classes {
+                context.write_str(" class=\"contains-task-list\"")?;
+            }
+            写空行属性(context, 空行)?;
+            comrak::html::render_sourcepos(context, node)?;
+            match nl.list_type {
+                ListType::Bullet => {
+                    context.write_str(">")?;
+                }
+                ListType::Ordered if nl.start == 1 => {
+                    context.write_str(">")?;
+                }
+                ListType::Ordered => {
+                    write!(context, " start=\"{}\">", nl.start)?;
+                }
+            }
+            context.lf()?;
+        } else {
+            context.write_str(if nl.list_type == ListType::Bullet { "</ul>" } else { "</ol>" })?;
+            context.lf()?;
+        }
+    },
+
+    // ── 任务项：松散列表里把方框挪进首段（`bugs/0302`）──
+    //
+    // ⚠️ **为什么非改不可**：comrak 0.56 的 `render_task_item` 把
+    //    `<input type="checkbox" …> ` 直接写在 `<li>` 下，而松散列表的正文被包进
+    //    `<p>`（`render_paragraph` 按 `List::tight` 决定）。`<p>` 是**块级**兄弟
+    //    ⇒ 方框所在的那一行**永远只有方框**，正文整段掉到第二行。
+    //    实测（2026-11-09，离屏 740 px / 14 px 正文）：方框顶 **280.52** / 首字顶
+    //    **300.77**（行高 23.80）——即使正文只有一个词也一样，⛔ 与"词太长"无关。
+    //    用户原话「如果输出超过一行，所有的内容都到第二行去了」。
+    // ⚠️ 只改**松散**（`List::tight == false` ∧ 首个子节点是段落）这一种；
+    //    紧凑列表的输出**逐字节不变**（方框仍在 `<li>` 下），⛔ 别把两者合并成一条路。
+    // ⚠️ 输出仍是 `Option::None` 之外的**同一套 HTML 词汇**：只是 `<input>` 的位置从
+    //    `<li>` 的直接子节点变成首段的行内子节点（GitHub 的松散任务项就是这个形状）。
+    NodeValue::TaskItem(ref nti) => |context, node, entering| {
+        let write_li = node
+            .parent()
+            .is_some_and(|p| matches!(p.data().value, NodeValue::List(_)));
+        // 方框已交给首段（`NodeValue::Paragraph` 那一支）⇒ 这里⛔ 不能重复写一次。
+        let 方框在首段里 = node.first_child().is_some_and(是松散任务项首段);
+        if entering {
+            if write_li {
+                context.cr()?;
+                context.write_str("<li")?;
+                if context.options.render.tasklist_classes {
+                    context.write_str(" class=\"task-list-item\"")?;
+                }
+                写空行属性(context, 项前空行(node))?;
+                comrak::html::render_sourcepos(context, node)?;
+                context.write_str(">")?;
+            }
+            if !方框在首段里 {
+                写任务方框(context, nti)?;
+            }
+        } else if write_li {
+            context.write_str("</li>")?;
+            context.lf()?;
+        }
+        // ⚠️ 这个 `if` 的尾巴是 `()`——回落由宏补的那一句 `Ok(ChildRendering::HTML)` 负责。
+        //    写一个尾表达式 `Ok(...)` 会与宏的返回类型（`()`）冲突。
     },
 
     // ── 代码围栏：Q22 的规模闸门（`design/0007` 文末追加节）──
@@ -183,8 +387,17 @@ comrak::create_formatter!(RmdFormatter<RenderStats>, {
     //    ⇒ 原样回落 `format_node_default`，那里面 comrak 会自己分流到
     //    `render_math_code_block` 或 `codefence_renderers`（`html.rs:512-526`）。
     NodeValue::CodeBlock(ref ncb) => |context, node, entering| {
-        if entering && !is_special_fence(&ncb.info) {
-            return write_gated_code_block(context, ncb);
+        if entering {
+            // ⭐ `design/0060`：**真的** Mermaid 走「自己的那一整条链」——
+            //    头部准入、两道结构预算、XML 清洗、颜色两态、可见原因，
+            //    五样都要 `context.user` 与整块支配权 ⇒ 只有 formatter 这一层做得到。
+            let lang = highlight::fence_lang(&ncb.info);
+            if diagram::is_mermaid_fence(lang) {
+                return mermaid::write_block(context, ncb);
+            }
+            if !is_special_fence(&ncb.info) {
+                return write_gated_code_block(context, ncb);
+            }
         }
         return comrak::html::format_node_default(context, node, entering);
     },
@@ -355,6 +568,129 @@ pub(crate) fn is_lone_display_math<'a>(node: &'a AstNode<'a>) -> bool {
         }
         _ => false,
     }
+}
+
+/// 这个段落是不是**松散列表里任务项的首段**——方框要写进它里面（`bugs/0302`）。
+///
+/// ⚠️ 三条都是必要前提，少一条就会误伤别的段落：
+///   ① 父节点是 `TaskItem`、② 它是**首个子节点**（后面还有段落的话那些段落没有方框）、
+///   ③ 那张列表是**松散**的（`List::tight == false`）——紧凑列表的正文**不套 `<p>`**，
+///      方框照旧留在 `<li>` 下，输出逐字节不变。
+/// ⚠️ ④ 整段只含一个块级公式时**不接管**：那一段本来就不写 `<p>`（`INV-MATH-03`）。
+///    接管了会凭空多出一个 `<p>`；不接管则方框由 `TaskItem` 那一支照旧写，⛔ 两边不能同时让。
+fn 是松散任务项首段<'a>(node: &'a AstNode<'a>) -> bool {
+    let Some(item) = node.parent() else {
+        return false;
+    };
+    if !matches!(item.data().value, NodeValue::TaskItem(_)) {
+        return false;
+    }
+    if node.previous_sibling().is_some() || is_lone_display_math(node) {
+        return false;
+    }
+    item.parent().is_some_and(|list| match list.data().value {
+        NodeValue::List(ref nl) => !nl.tight,
+        _ => false,
+    })
+}
+
+/// 「本块前面有几行源码空行」（`design/0066`：列表内**一行源码 = 一行版面**）。
+///
+/// 口径：**上一个兄弟块末行 → 本块首行**之间隔了几行。
+/// ⚠️ 只看**兄弟**，⛔ 不看祖先：列表与列表外块的间距不在本次口径内
+///    ——用户 2026-11-11 裁定的是「只改列表内」（`design/0066` §7 第 1 条 A）。
+/// ⚠️ 首个子块返回 0：它前面那几条空行属于「**这项**的开头」，由 `<li>` 自己表达
+///    （见 [`项前空行`]），否则同一处空行会被算两遍。
+fn 块前空行<'a>(node: &'a AstNode<'a>) -> usize {
+    let Some(prev) = node.previous_sibling() else {
+        return 0;
+    };
+    let 本 = node.data().sourcepos.start.line;
+    let 上 = prev.data().sourcepos.end.line;
+    if 本 > 上 { 本 - 上 - 1 } else { 0 }
+}
+
+/// 列表项**自己**的前导空行：与上一个同级项（`Item` / `TaskItem`）之间隔了几行。
+///
+/// ⚠️ 父节点不是 `List` 时一律 0：`Item` 只出现在列表里，这条判据是防御性的。
+///
+/// ⚠️⚠️ **⛔ 不能直接用 [`块前空行`]**（2026-11-16 实测，`bugs/0318` 的形状）：
+///    comrak 0.56 把**引用里的 `>` 空行**算进前一项的 `sourcepos.end`
+///    （`> - 甲\n>\n> - 乙`：第一项 `end.line = 2`、它的段落 `end.line = 1`）
+///    ⇒ `本 - 上 - 1 = 0`，两个列表项之间那条空行**在阅读态整条消失**。
+///    ⇒ 改用前一项**最后一个内容子块**的末行（`末内容行`）数。[`块前空行`] 保持原样：
+///    它服务的 `项内块前空行` 里，前一个兄弟是**块**，`end` 不含后续空行。
+fn 项前空行<'a>(node: &'a AstNode<'a>) -> usize {
+    let 在列表里 = node
+        .parent()
+        .is_some_and(|p| matches!(p.data().value, NodeValue::List(_)));
+    if !在列表里 {
+        return 0;
+    }
+    let Some(prev) = node.previous_sibling() else {
+        return 0;
+    };
+    let 本 = node.data().sourcepos.start.line;
+    let 上 = 末内容行(&prev);
+    if 本 > 上 {
+        本 - 上 - 1
+    } else {
+        0
+    }
+}
+
+/// 块**内容**的末行：沿最后一个子块一路下去（`Text` 的 `end` 就是它所在那一行）。
+///
+/// ⚠️ 存在的唯一原因见 [`项前空行`]：`Item.sourcepos.end` 会把后续那条 `>` 空行吞进去。
+fn 末内容行<'a>(node: &'a AstNode<'a>) -> usize {
+    match node.last_child() {
+        Some(c) => 末内容行(c),
+        None => node.data().sourcepos.end.line,
+    }
+}
+
+/// **列表项里的块**的前导空行：父节点必须是 `Item` / `TaskItem`，否则 0。
+///
+/// ⚠️ 列表项里的空行**一定**让整张列表变松（CommonMark §5.3：两个直接子块之间有空行
+///    ⇒ loose），所以这里拿到的段落**必然**带 `<p>`，"没有 `<p>` 可挂"的情况不存在。
+fn 项内块前空行<'a>(node: &'a AstNode<'a>) -> usize {
+    let 在项里 = node.parent().is_some_and(|p| {
+        matches!(p.data().value, NodeValue::Item(_) | NodeValue::TaskItem(_))
+    });
+    if !在项里 {
+        return 0;
+    }
+    块前空行(node)
+}
+
+/// 把「前导空行数」写进标签：`data-blanks`（判据 / 探针读）＋ `--rmd-blanks`（CSS 换算）。
+///
+/// ⚠️ **为什么不用 `attr()`**：`attr(data-blanks number)` 是 CSS Values 5 的类型化
+///    取数，本机 WKWebView 未验证（`design/0066` §3.2 的退路①），而行内自定义属性
+///    不依赖任何新特性。⚠️ `csp` 为 `null`（`tauri.conf.json`），行内样式不会被拦。
+/// ⚠️ 为 0 时**一个字节都不写**：紧凑列表与没有空行的项，输出与改动前逐字节相同
+///    （`parser.rs` 那条 `- [ ] 甲` 的精确断言靠的就是这一条）。
+fn 写空行属性<T>(context: &mut Context<'_, '_, T>, 空行: usize) -> std::fmt::Result {
+    if 空行 == 0 {
+        return Ok(());
+    }
+    write!(
+        context,
+        " data-blanks=\"{空行}\" style=\"--rmd-blanks:{空行}\""
+    )
+}
+
+/// 写任务项的那个方框 —— 与 comrak 0.56 `render_task_item` 的字节**逐字相同**/// （顺序：`type` → `class` → `checked` → `disabled`），⚠️ 改顺序等于改输出。
+fn 写任务方框<T>(context: &mut Context<'_, '_, T>, nti: &comrak::nodes::NodeTaskItem) -> std::fmt::Result {
+    context.write_str("<input type=\"checkbox\"")?;
+    if context.options.render.tasklist_classes {
+        context.write_str(" class=\"task-list-item-checkbox\"")?;
+    }
+    if nti.symbol.is_some() {
+        context.write_str(" checked=\"\"")?;
+    }
+    context.write_str(" disabled=\"\" /> ")?;
+    Ok(())
 }
 
 /// 渲染成 HTML。
@@ -815,6 +1151,79 @@ $$\\frac{a}{b}$$\n\
         assert!(
             html.starts_with(&期望),
             "⛔ 未超限的围栏输出变了——Q22 只该改**超限**的那些\n期望开头：{期望}\n实际：{html}"
+        );
+    }
+
+    /// ⭐ `design/0066`：列表里的空格源码行 ⇒ `<li>` / `<p>` / 嵌套 `<ul>` 上的 `data-blanks`。
+    ///
+    /// ⚠️ 这四个数是**版面**（编辑态与阅读态逐像素对齐，`INV-LIVE-04` ①）的唯一来源：
+    ///    少写一条，那一处空行在两态都变成 0 高。
+    #[test]
+    fn 列表内空行写成_data_blanks() {
+        fn 渲染(src: &str) -> String {
+            let opts = ParseOpts::default();
+            with_parsed(src, &opts, |root| {
+                crate::document::render::to_html(root, &opts)
+            })
+        }
+
+        // ① 紧凑列表：⛔ 一个属性都不许出现（输出必须与改动前逐字节相同）。
+        let 紧 = 渲染("- 甲\n- 乙\n");
+        assert!(!紧.contains("data-blanks"), "紧凑列表不该有 data-blanks\n{紧}");
+
+        // ② 项之间 1 条空行 ⇒ 第二项 `data-blanks="1"`，第一项没有。
+        let 一 = 渲染("- 甲\n\n- 乙\n");
+        assert_eq!(
+            一.matches("data-blanks=\"1\"").count(),
+            1,
+            "1 条空行应恰好落在一个项上\n{一}"
+        );
+        assert!(
+            一.contains("<li data-blanks=\"1\" style=\"--rmd-blanks:1\">"),
+            "属性没写在 `<li>` 的开标签里\n{一}"
+        );
+
+        // ③ 项之间 3 条空行 ⇒ 同一个数。
+        let 三 = 渲染("- 甲\n\n\n\n- 乙\n");
+        assert!(
+            三.contains("<li data-blanks=\"3\" style=\"--rmd-blanks:3\">"),
+            "3 条空行没算成 3\n{三}"
+        );
+
+        // ④ 项内两个段落之间的空行落在 `<p>` 上（⛔ 不是 `<li>` 上——那会算到下一项）。
+        let 段 = 渲染("- 甲\n\n  续段\n");
+        assert!(
+            段.contains("<p data-blanks=\"1\" style=\"--rmd-blanks:1\">续段</p>"),
+            "项内段落的空行没落在第二段上\n{段}"
+        );
+
+        // ⑤ 项与嵌套列表之间的空行落在嵌套 `<ul>` 上，且 `start=` 一并保留。
+        let 嵌 = 渲染("1. 甲\n\n   - 乙\n2. 丙\n");
+        assert!(
+            嵌.contains("<ul data-blanks=\"1\" style=\"--rmd-blanks:1\">"),
+            "嵌套列表前的空行没落在 `<ul>` 上\n{嵌}"
+        );
+        assert!(嵌.contains("<ol>"), "有序列表的形状变了\n{嵌}");
+
+        // ⑥ ⭐ `bugs/0318`（`design/0085` C3）：**引用里**两列表项之间那条 `>` 空行。
+        //    ⚠️ comrak 0.56 把这条空行算进前一项的 `sourcepos.end`（实测第一项 end.line = 2）
+        //    ⇒ 走 `块前空行` 会数成 0，空行在阅读态整条消失（编辑态却有一行 ⇒ 差 20.3 px）。
+        let 引 = 渲染("> - 甲\n>\n> - 乙\n");
+        assert!(
+            引.contains("<li data-blanks=\"1\" style=\"--rmd-blanks:1\">"),
+            "引用里列表项之间的空行没算到后一项上\n{引}"
+        );
+        // ⑦ 负对照：同样的引用列表**没有**空行 ⇒ 一个属性都不许出现。
+        let 引紧 = 渲染("> - 甲\n> - 乙\n");
+        assert!(
+            !引紧.contains("data-blanks"),
+            "紧凑的引用列表不该有 data-blanks\n{引紧}"
+        );
+        // ⑧ 两条空行 ⇒ 2（⛔ 不是被 `end` 吞掉之后的 1）。
+        let 引二 = 渲染("> - 甲\n>\n>\n> - 乙\n");
+        assert!(
+            引二.contains("<li data-blanks=\"2\" style=\"--rmd-blanks:2\">"),
+            "引用里两条空行没算成 2\n{引二}"
         );
     }
 }

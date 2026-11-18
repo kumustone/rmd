@@ -160,7 +160,53 @@ struct Timings {
 }
 
 pub fn run(args: &BenchArgs) -> i32 {
-    let date = args.date.clone().unwrap_or_else(utc_date);
+    // —— 入口校验：参数错误必须在「跑」之前报出来（bugs/0288–0291）——
+    let date = match &args.date {
+        Some(d) => match validate_date(d) {
+            Ok(()) => d.clone(),
+            Err(why) => {
+                eprintln!("⛔ --date {d:?} 不合法：{why}（要求 `YYYY-MM-DD`）");
+                return 1;
+            }
+        },
+        None => utc_date(),
+    };
+    // ⚠️ 真正执行的轮数是 `warmup + repeat`。release 下 `usize` 加法会**回绕**
+    //    （bugs/0290：`--repeat u64::MAX --warmup 1` 回绕成 0，头部却打印天文数字）。
+    //    ⛔ 不把溢出当成 0 轮继续跑。
+    let total_rounds = match args.warmup.checked_add(args.repeat) {
+        Some(n) => n,
+        None => {
+            eprintln!(
+                "⛔ --warmup {} 与 --repeat {} 相加溢出 usize；⛔ 不把它当成 0 轮",
+                args.warmup, args.repeat
+            );
+            return 1;
+        }
+    };
+    // ⚠️ `--json` 指向输入文件 = **静默**把正文整份换成基准 JSON（bugs/0289）。
+    if let Some(out) = &args.json {
+        for p in &args.paths {
+            if same_file(out, p) {
+                eprintln!(
+                    "⛔ --json {} 与输入 {} 是同一个文件；拒绝把结果写到输入上",
+                    out.display(),
+                    p.display()
+                );
+                return 1;
+            }
+        }
+    }
+    // ⚠️ 零轮时循环一次都不执行 ⇒ 读盘校验只能在循环外做
+    //    （bugs/0288：不存在的文件、目录都曾以 exit 0 结束，脚本会误判「基准成功」）。
+    if total_rounds == 0 {
+        for path in &args.paths {
+            if let Err(e) = loader::load(path) {
+                eprintln!("⛔ 跳过 {}：{e}", path.display());
+                return 1;
+            }
+        }
+    }
     println!("rmd {} · 步骤 1（CLI 基准）", env!("CARGO_PKG_VERSION"));
     println!(
         "comrak {} · profile {} · needle {:?}",
@@ -199,6 +245,10 @@ pub fn run(args: &BenchArgs) -> i32 {
         args.warmup
     );
     println!();
+    if total_rounds == 0 {
+        println!("  ⚠️ --warmup 0 且 --repeat 0：一轮计时都没跑，下面的数字不是基准结果");
+        println!();
+    }
 
     // —— 峰值 RSS：后台每 2ms 采一次 ——
     let stop = Arc::new(AtomicBool::new(false));
@@ -221,7 +271,7 @@ pub fn run(args: &BenchArgs) -> i32 {
     let mut all: Vec<Timings> = Vec::new();
 
     for path in &args.paths {
-        match bench_one(path, args, &opts) {
+        match bench_one(path, args, &opts, total_rounds) {
             Ok((fr, t)) => {
                 print_one(&fr, &t, args);
                 files.push(fr);
@@ -249,7 +299,7 @@ pub fn run(args: &BenchArgs) -> i32 {
     println!("     要纯净的常驻值请加 `--no-search` 再跑一遍。");
 
     if let Some(out) = &args.json {
-        match write_json(out, &date, args, &opts, &files, &all, peak_sampled, peak_kernel) {
+        match write_json(out, &date, args, &opts, &files, &all, total_rounds, peak_sampled, peak_kernel) {
             Ok(()) => println!("\n✅ 结果写入 {}", out.display()),
             Err(e) => {
                 eprintln!("\n⛔ 写不了 {}：{e}", out.display());
@@ -261,7 +311,12 @@ pub fn run(args: &BenchArgs) -> i32 {
     0
 }
 
-fn bench_one(path: &Path, args: &BenchArgs, opts: &ParseOpts) -> std::io::Result<(FileResult, Timings)> {
+fn bench_one(
+    path: &Path,
+    args: &BenchArgs,
+    opts: &ParseOpts,
+    total_rounds: usize,
+) -> std::io::Result<(FileResult, Timings)> {
     let mut t = Timings::default();
     let mut t1 = Vec::new();
     let mut t2 = Vec::new();
@@ -272,7 +327,8 @@ fn bench_one(path: &Path, args: &BenchArgs, opts: &ParseOpts) -> std::io::Result
     let mut tb = Vec::new();
     let mut fr = FileResult { path: path.display().to_string(), ..Default::default() };
 
-    for round in 0..(args.warmup + args.repeat) {
+    // ⚠️ 轮数由 `run()` 用 `checked_add` 算好后传进来（bugs/0290：这里的加法曾回绕成 0）。
+    for round in 0..total_rounds {
         let counting = round >= args.warmup;
 
         // —— T1 读盘 ——
@@ -445,6 +501,7 @@ fn write_json(
     opts: &ParseOpts,
     files: &[FileResult],
     all: &[Timings],
+    total_rounds: usize,
     peak_sampled: u64,
     peak_kernel: u64,
 ) -> std::io::Result<()> {
@@ -517,6 +574,10 @@ fn write_json(
         "参数": {
             "repeat": args.repeat,
             "warmup": args.warmup,
+            // ⭐ 实际执行的轮数（`warmup + repeat`，`checked_add` 算过，见 bugs/0290）。
+            //    ⚠️ 旧文件没有这个键；它与 `repeat` 相等只是常态，⛔ 不要据此反推
+            //    "零轮"——零轮时它是 0 而 `repeat`/`warmup` 也各自为 0。
+            "rounds_executed": total_rounds,
             "needle": args.needle,
             "no_toc": args.no_toc,
             "no_search": args.no_search,
@@ -548,8 +609,97 @@ fn write_json(
             std::fs::create_dir_all(dir)?;
         }
     }
-    std::fs::write(out, serde_json::to_string_pretty(&doc).unwrap())?;
+    // ⭐ 原子写（bugs/0289）：先写同目录临时文件再 `rename`。
+    //    ⛔ 直接 `fs::write(out, …)` 在写到一半失败会留下**半份 JSON**，
+    //    而这个名字是 `benchmarks/results/` 的输入（与 `0256` 的导出无事务性同族）。
+    let text = serde_json::to_string_pretty(&doc).unwrap();
+    // ⚠️ 原子写只适用于**普通文件**：`/dev/null` 这类字符设备不能靠 rename 覆盖，
+    //    `/`、`/tmp` 这类目录也不行——直接写，让它们保留自己的错误
+    //    （`File exists` / `Is a directory`），⛔ 不把错误改写成临时文件名的错误。
+    let regular = std::fs::metadata(out).map(|m| m.file_type().is_file()).unwrap_or(true);
+    if !regular {
+        std::fs::write(out, text)?;
+        return Ok(());
+    }
+    let mut tmp = out.to_path_buf();
+    let name = out
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "bench.json".to_string());
+    tmp.set_file_name(format!(".{name}.{}.tmp", std::process::id()));
+    let res = std::fs::write(&tmp, text).and_then(|()| std::fs::rename(&tmp, out));
+    if res.is_err() {
+        let _ = std::fs::remove_file(&tmp);
+    }
+    res
+}
+
+// ───────────────────────────── 入口校验 ─────────────────────────────
+
+/// 严格 `YYYY-MM-DD`，含真实日历范围（闰年 2 月 29）。
+///
+/// ⚠️ `--date` 是结果 JSON 的 `date` 字段、也是按日期聚合 `benchmarks/results/` 的键
+/// （bugs/0291：`2026-13-99`、空串、`2026/01/01` 曾原样入库，下游 `ls 2026-*.json` 静默漏掉）。
+fn validate_date(s: &str) -> Result<(), &'static str> {
+    let b = s.as_bytes();
+    if b.len() != 10 {
+        return Err("长度不是 10");
+    }
+    if b[4] != b'-' || b[7] != b'-' {
+        return Err("分隔符不是 `-`");
+    }
+    let num = |r: std::ops::Range<usize>| -> Option<u32> {
+        let seg = &b[r];
+        if seg.is_empty() || !seg.iter().all(u8::is_ascii_digit) {
+            return None;
+        }
+        Some(seg.iter().fold(0u32, |a, c| a * 10 + u32::from(c - b'0')))
+    };
+    let (y, m, d) = match (num(0..4), num(5..7), num(8..10)) {
+        (Some(y), Some(m), Some(d)) => (y, m, d),
+        _ => return Err("含非数字字符"),
+    };
+    if !(1..=12).contains(&m) {
+        return Err("月份不在 1..12");
+    }
+    let leap = (y % 4 == 0 && y % 100 != 0) || y % 400 == 0;
+    let days = match m {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        _ => {
+            if leap {
+                29
+            } else {
+                28
+            }
+        }
+    };
+    if d == 0 || d > days {
+        return Err("日不在该月的 1..=最后一天");
+    }
     Ok(())
+}
+
+/// 两个路径是否指向同一个文件（含 `--json` 尚不存在的情形）。
+///
+/// 先试 `canonicalize`（存在的路径能穿过软链与 `..`）；输出文件可能还不存在，
+/// 那就把它**所在目录**规范化后再比文件名。
+fn same_file(a: &Path, b: &Path) -> bool {
+    if let (Ok(ca), Ok(cb)) = (std::fs::canonicalize(a), std::fs::canonicalize(b)) {
+        return ca == cb;
+    }
+    let norm = |p: &Path| -> PathBuf {
+        let dir = match p.parent() {
+            Some(d) if !d.as_os_str().is_empty() => d.to_path_buf(),
+            _ => PathBuf::from("."),
+        };
+        let name = p.file_name().map(PathBuf::from).unwrap_or_default();
+        match std::fs::canonicalize(&dir) {
+            Ok(d) => d.join(name),
+            Err(_) => p.to_path_buf(),
+        }
+    };
+    norm(a) == norm(b)
 }
 
 // ───────────────────────────── 度量原语 ─────────────────────────────
@@ -707,4 +857,39 @@ fn pad(s: &str, w: usize) -> String {
         out.push_str(&" ".repeat(w - cur));
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn 日期校验_合法的年月日() {
+        for d in ["2026-01-01", "2024-02-29", "2000-02-29", "1999-12-31"] {
+            assert!(validate_date(d).is_ok(), "{d}");
+        }
+    }
+
+    #[test]
+    fn 日期校验_非法输入全部拒收() {
+        for d in [
+            "", "nope", "2026-1-1", "2026-13-99", "0000-00-00", "2026/01/01",
+            "2026-02-30", "2026-02-29", "2100-02-29", "2026-04-31", " 2026-01-01",
+            "2026-01-01 ", "+2026-01-01", "999999-99-99", "日期", "2026-01-0a",
+        ] {
+            assert!(validate_date(d).is_err(), "{d:?} 不该通过");
+        }
+    }
+
+    #[test]
+    fn 同一文件_相对与绝对路径都算同一个() {
+        let dir = std::env::temp_dir().join(format!("rmd-bench-same-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let a = dir.join("a.md");
+        std::fs::write(&a, "# x\n").unwrap();
+        assert!(same_file(&a, &dir.join("./a.md")));
+        assert!(same_file(&a, &a));
+        assert!(!same_file(&a, &dir.join("b.md")));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

@@ -146,6 +146,39 @@
   }
 
   /**
+   * ⭐ **这一次"激活"算不算"打开它"的手势**（`design/0026` §2.2 ③，`bugs/0058`）。
+   *
+   * 判据只有一条：**只有 `⌃` 不算，其余都算**——包括 `⌘`／`⇧`／`⌥`。
+   *
+   * 理由（macOS ＋ 浏览器那一套惯例，逐条对着本程序的能力读）：
+   * ⇒ ⭐⭐ **判定口径是"系统把这个手势派给的动作，本程序有没有"**：
+   *    - 派给的动作**不存在** ⇒ 落点**退化为"就在这儿打开"**，⛔ 不是"什么都不做"；
+   *    - 派给的动作**存在且有用** ⇒ ⛔ 不抢。
+   *
+   * - `⌘`-点击 = 新标签页、`⇧`-点击 = 新窗口 ⇒ ⚠️ **本程序没有多窗口**
+   *   （`on_new_window` 一律拒绝）⇒ 这两个手势**唯一的合理落地就是"就在这儿打开"**。
+   *   ⭐⭐ 曾经按"带修饰键 = 用户没表达"把它们整类放过，用户看到的是
+   *   「⌘+点击链接什么也不发生」（`bugs/0058`）——**把系统的习惯动作当成"用户没表达"**。
+   * - `⌥`-点击 = 下载 ⇒ **本程序没有下载** ⇒ 同上，落点是"就在这儿打开"。
+   *   ⚠️ 这条一开始被我判成"不接管"（理由："⛔ 不替用户猜"），
+   *   但那是**同一条错误的第二次**：没有下载能力时，"什么都不做"才是猜错的那一边。
+   * - `⌃`-点击 = 右键上下文菜单（AppKit 层面就归它）⇒ **这个动作本程序有且有用**
+   *   （复制链接、复制图片全靠它）⇒ ⛔ 抢过来会把菜单弄没，**唯一不接管的一个**。
+   *
+   * ⚠️ **中键**（`button === 1`，"新标签页后台打开"）不归这里判——它没有修饰键，
+   * 由 `main.js` 的委托按 `button` 收（`bugs/0058` §9）；判据同为"没有标签页 ⇒ 就在这儿打开"。
+   *
+   * ⚠️ 与 [`hasModifier`] 是**两个问题**：那个问"带不带修饰键"（覆盖层要用），
+   * 这个问"这一击是不是打开的意思"。⛔ 别拿 `hasModifier` 当它用——那正是 `bugs/0058`。
+   * ⚠️ 标识符只能出现在本文件（`keymap.test.js` 的源码级闸门）⇒ 调用侧只许转调。
+   */
+  function isOpenGesture(ev) {
+    if (!ev) return false;
+    if (ev.ctrlKey === true) return false;
+    return true;
+  }
+
+  /**
    * 把后端那张表切成"键 → 动作"的绑定表（**只含 `owner=web`**）。
    *
    * ⚠️⚠️ **没有 `accel` 的 `web` 项要响亮报错，⛔ 不许静默跳过**——它不是"少了一条"，
@@ -252,7 +285,16 @@
     function dispatch(id, source) {
       const src = source === 'menu' ? 'menu' : 'key';
       if (ctx.compositionActive()) return false;
-      if (ctx.editable()) return false;
+      if (ctx.editable()) {
+        // ⭐ `design/0077`：**菜单路径**可以有选择地放行少数动作。
+        //    ⚠️ 就地/分栏编辑时焦点在可编辑元素上，而「复制为 Markdown」等动作
+        //    本来就该在编辑态可用；不放行的话菜单点了没反应（静默）。
+        //    ⚠️ 默认**不放行**（`allowEditable` 不是必需字段）⇒ 既有行为一个字不变；
+        //    键盘路径的可编辑焦点闸门在 `handleKeydown` 里，⛔ 不经过这个钩子。
+        const allowed = typeof ctx.allowEditable === 'function' &&
+          ctx.allowEditable(id, src) === true;
+        if (!allowed) return false;
+      }
 
       const known = table.some(function (r) { return r.id === id; });
       if (!known) {
@@ -359,7 +401,8 @@
     isShiftImplied: isShiftImplied,
     isEditableElement: isEditableElement,
     isComposingEvent: isComposingEvent,
-    hasModifier: hasModifier
+    hasModifier: hasModifier,
+    isOpenGesture: isOpenGesture
   };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

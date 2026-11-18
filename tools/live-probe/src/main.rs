@@ -817,11 +817,120 @@ fn probe_markup_json(paths: &[String]) {
     println!("{}", serde_json::to_string_pretty(&doc).unwrap());
 }
 
+/// ⭐ `--render-json`：给 `tools/posmap-probe/` 的机器可读出口
+/// （`design/0059` 阶段 C 的 Rust 半）。
+///
+/// # 为什么必须由 Rust 出
+///
+/// 阶段 C 要量的是「**产品那一次渲染**出来的 DOM」与源码偏移之间的关系。
+/// 在 JS 里手写一段 Markdown→HTML 就是**第二份语义真相**（`0059` 明文禁止）；
+/// 这里直接调 `document::render::to_html_with_stats`（与 GUI 同一条路径），
+/// 探针只负责把结果与换算表原样交出去。
+///
+/// # 交出去的换算表
+///
+/// - `lines[*]`：每行的 `{byte_start, utf16_start}`（1-based 行号，行间差 1 个 `\n`）；
+/// - `unitMap`：**每个 UTF-16 边界**对应的 UTF-8 字节偏移，长度 = 码元数 + 1。
+///   ⚠️ 代理对**中间**那个边界是 `-1`——那是 `offset::utf16_to_byte_in_line` 自己给的
+///   `None` 口径（"落在代理对中间 ⇒ 口径已经错了"），⛔ 不在这里取整抹平。
+///   两张表都由 `document/offset.rs` 算，⛔ 探针不另写换算。
+///
+/// ⚠️ `text` 是**归一化之后**的全文（恒 LF、无 BOM）；`html` 是产品渲染的**原文**，
+/// ⛔ 探针不改一个字节（不改 schema 是阶段 C 的硬约束）。
+fn probe_render_json(paths: &[String]) {
+    let mut docs: Vec<serde_json::Value> = Vec::new();
+    for p in paths {
+        let raw = std::fs::read(p).unwrap_or_else(|e| panic!("读不到 {p}: {e}"));
+        let env = Envelope::detect_raw(&raw);
+        let text = env
+            .normalize_bytes(&raw)
+            .unwrap_or_else(|e| panic!("{p}: 归一化失败 {e}"));
+
+        let arena = Arena::new();
+        let t0 = Instant::now();
+        let root = parse(&arena, &text, &GUI_OPTS);
+        let parse_ms = t0.elapsed().as_secs_f64() * 1000.0;
+
+        let t1 = Instant::now();
+        let (html, _stats) = document::render::to_html_with_stats(root, &GUI_OPTS);
+        let render_ms = t1.elapsed().as_secs_f64() * 1000.0;
+
+        let blocks: Vec<serde_json::Value> = root
+            .children()
+            .enumerate()
+            .map(|(index, n)| {
+                let d = n.data();
+                serde_json::json!({
+                    "index": index,
+                    "kind": kind_name(&d.value),
+                    "start_line": d.sourcepos.start.line,
+                    "end_line": d.sourcepos.end.line,
+                })
+            })
+            .collect();
+
+        // ── 换算表：全部走 `document/offset.rs` ─────────────────────────────
+        let mut lines: Vec<serde_json::Value> = Vec::new();
+        let mut unit_map: Vec<i64> = Vec::new();
+        let mut byte_start = 0usize;
+        let mut utf16_start = 0usize;
+        for (i, line) in text.split('\n').enumerate() {
+            lines.push(serde_json::json!({
+                "line": i + 1,
+                "byte_start": byte_start,
+                "utf16_start": utf16_start,
+            }));
+            // 本行每一个 UTF-16 边界（含行尾）的字节偏移。
+            let n = document::offset::byte_to_utf16_in_line(line, line.len())
+                .expect("行内字节偏移必然落在字符边界上");
+            for k in 0..=n {
+                let b = document::offset::utf16_to_byte_in_line(line, k).map(|x| x as i64);
+                // `None` = 落在代理对中间 ⇒ 这个边界在字节口径里不存在。
+                unit_map.push(b.map_or(-1, |b| byte_start as i64 + b));
+            }
+            byte_start += line.len() + 1; // `\n`
+            utf16_start += n + 1;
+        }
+        let units = text.encode_utf16().count();
+        assert_eq!(unit_map.len(), units + 1, "{p}: unitMap 长度与码元数不符");
+
+        // 渲染指纹：同一份 text + 同一份 html ⇒ 同一个 renderId。
+        // ⚠️ FNV-1a 不是密码学哈希，这里只要"内容变了就一定变"，⛔ 不用来防篡改。
+        let render_id = {
+            let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+            for b in text.as_bytes().iter().chain(b"\0".iter()).chain(html.as_bytes()) {
+                h ^= *b as u64;
+                h = h.wrapping_mul(0x0000_0100_0000_01b3);
+            }
+            format!("fnv1a:{h:016x}")
+        };
+
+        docs.push(serde_json::json!({
+            "name": p,
+            "text": text,
+            "html": html,
+            "renderId": render_id,
+            "blocks": blocks,
+            "lines": lines,
+            "unitMap": unit_map,
+            "cost": {
+                "parse_ms": parse_ms,
+                "render_ms": render_ms,
+                "text_bytes": text.len(),
+                "html_bytes": html.len(),
+                "units_utf16": units,
+            },
+        }));
+    }
+    let doc = serde_json::json!({ "count": docs.len(), "docs": docs });
+    println!("{}", serde_json::to_string(&doc).unwrap());
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args.is_empty() {
         eprintln!(
-            "用法: live-probe <文件…>（0a/0b）｜`--envelope`（0e 的 Rust 半）｜`--commit-json`（§7.2-7 的 Rust 半）｜`--markup-json <文件…>`（§7.2-9 的 Rust 半）｜`--fixtures`（0a 的对抗性夹具）｜`--giant`（0f 静态半）"
+            "用法: live-probe <文件…>（0a/0b）｜`--envelope`（0e 的 Rust 半）｜`--commit-json`（§7.2-7 的 Rust 半）｜`--markup-json <文件…>`（§7.2-9 的 Rust 半）｜`--render-json <文件…>`（0059 C 的 Rust 半）｜`--fixtures`（0a 的对抗性夹具）｜`--giant`（0f 静态半）"
         );
         std::process::exit(2);
     }
@@ -840,6 +949,15 @@ fn main() {
             std::process::exit(2);
         }
         probe_markup_json(&args[1..]);
+        return;
+    }
+    if args[0] == "--render-json" {
+        // ⚠️ 一个文件都没有 ⇒ 夹具写错了，⛔ 别静默产出空表
+        if args.len() < 2 {
+            eprintln!("✗ --render-json 至少要一个语料文件");
+            std::process::exit(2);
+        }
+        probe_render_json(&args[1..]);
         return;
     }
     if args[0] == "--fixtures" {

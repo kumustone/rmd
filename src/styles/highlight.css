@@ -180,3 +180,20 @@
   max-width: 100%;
   height: auto;
 }
+
+/* ── 回退块（`design/0060` §2.1⑧）─────────────────────────────────
+   ⚠️ 它**不是** `.rmd-diagram` 的一种（类名完全不同），所以不会继承那条
+   `text-align: center`——但这里仍显式写 `left`：整块是「一句原因 ＋ 原文代码块」，
+   居中会让代码行看起来像被截断。 */
+.doc .rmd-diagram-fallback {
+  margin: var(--reader-gap-block) 0;
+  text-align: left;
+}
+
+/* 原因行：真实的 `<p>` 文本（可选中、可被辅助技术读出），⛔ 不是 tooltip。
+   ⚠️ 用 `--ui-text-muted`：它要与正文拉开一档，又⛔ 不能抢过正文。 */
+.doc .rmd-diagram-note {
+  margin: 0 0 0.4em;
+  color: var(--ui-text-muted);
+  font-size: var(--reader-size-small);
+}

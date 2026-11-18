@@ -46,7 +46,7 @@
 #    中文的首字节并进变量名（个人仓库实测踩过，见 skills/personal-run-entry）。
 
 .DEFAULT_GOAL := help
-.PHONY: help doctor build build-gui cm6 dev open verify-0d smoke fidelity test test-js typecheck test-install-guard test-shell-vars lint-theme docs-check docs-check-selftest third-party check-third-party export-public scan-public check-links probe probe-wkwebview probe-find-key probe-editor-key probe-cm6 probe-editor-latency probe-scroll-sync probe-edit-chrome probe-vim-keys probe-image-viewer probe-reading-progress probe-dir-session probe-tree-menu probe-favorites-rootheader probe-i18n probe-link-nav probe-doclist probe-sidebar-search probe-index probe-live-step0 probe-live-commit probe-live-markup probe-live-block probe-menu corpus bench bench-quick bench-search measure-gui check clean clean-corpus install uninstall icon app install-app uninstall-app smoke-app dmg which-default default-app
+.PHONY: help doctor build build-gui cm6 dev open verify-0d smoke fidelity test test-fast test-full test-auto test-js typecheck test-install-guard test-shell-vars lint-theme docs-check docs-check-selftest third-party check-third-party export-public scan-public check-links probe probe-wkwebview probe-find-key probe-editor-key probe-cm6 probe-editor-latency probe-scroll-sync probe-edit-chrome probe-vim-keys probe-image-viewer probe-reading-progress probe-dir-session probe-tree-menu probe-favorites-rootheader probe-failbar probe-i18n probe-link-nav probe-doclist probe-sidebar-search probe-index probe-live-step0 probe-live-commit probe-live-markup probe-live-block probe-input-e2e probe-click-grid probe-menu probe-type-metrics parity-capture parity-l2 corpus bench bench-quick bench-search measure-gui check clean clean-corpus install uninstall icon app install-app uninstall-app smoke-app dmg which-default default-app
 
 # —— 路径与探测 ——
 SRC        := src-tauri
@@ -226,6 +226,7 @@ dev: open
 ## 打开一个窗口。默认打开批 1 的验收用例：10 MB 中文文档
 ##
 ## ⭐ `design/0015` §2.1⑦ 起**后台优先**：装了 .app 就走 `open -g`（终端立刻还给你，
+## ⚠️ 但 `-g` **不阻止应用自我激活**（tao 无条件 activate，`docs/kb/0023` §5）——
 ##    关终端也不杀应用）；没装才回退到前台二进制。
 ## ⚠️ `-g`（background）**不把窗口带到前台**——这是根 `CLAUDE.md` 工作约定 4 的同一条：
 ##    打开一份文档**不值得**把用户正在用的应用挤掉。
@@ -317,6 +318,23 @@ test:
 	@$(MAKE) --no-print-directory test-install-guard
 	@$(MAKE) --no-print-directory test-shell-vars
 
+## 测试门禁两档（`B-14` ①）。⚠️ `test` 的语义**保持不变**：CI、脚本与文档都在用它，
+## 改语义会让既有判据失去含义——所以 `test-fast` 只是别名，`test-full` 在它之上**追加**
+## GUI feature 的 Rust 单测（`commands/**` / `gui/**` 只在 `--features gui` 下编译）。
+##
+##   make test-fast   ＝ 现有 `make test`（默认 feature，快）
+##   make test-full   ＝ `make test` ＋ `cargo test --release --features gui`（提交前默认门禁）
+##
+## ⚠️ `.github/workflows/ci.yml` 已单独跑 GUI 那步；CI 若改用 `test-full` 会重复跑一遍，
+##    所以那里保持 `make test` ＋ 单独一步（本目标不替 CI 做决定）。
+test-fast:
+	@$(MAKE) --no-print-directory test
+
+test-full:
+	@$(MAKE) --no-print-directory test
+##   ⚠️ 同 `test`：`pipefail` 是承重的——`cargo test … | tail` 的退出码是 `tail` 的。
+	@bash -o pipefail -c 'cd $(SRC) && cargo test --release --features gui 2>&1 | tail -20'
+
 ## ⭐ 花括号守卫：`$VAR` 后面紧跟非 ASCII 字节时**必须**写成 `${VAR}`。
 ##
 ## ⚠️ 为什么这条值得常驻：macOS 自带的 **bash 3.2**（`/bin/bash`，CI runner 上就是它）
@@ -357,6 +375,26 @@ test-js:
 typecheck:
 	@test -x node_modules/.bin/tsc || { echo "✗ 没有 node_modules/.bin/tsc —— 先 npm ci（类型检查只要构建侧）"; exit 1; }
 	@node_modules/.bin/tsc -p tsconfig.check.json && echo "✓ typecheck：src/live/** 与 tests/js/live-*.test.js 无类型错误"
+
+## ⭐ 自动化用例矩阵（2026-11-08）：Markdown 语法 / 解析渲染 / 目录 / 搜索 /
+##    块表 / 语言 / 链接 / 前端纯逻辑 / CLI / 工具链，**并行**跑，要求 ≥1000 条。
+## ⚠️ 它**不是** `make test` 的一部分：全量跑要构建隔离 CLI（`target/autotest/`，
+##    ⛔ 不碰 `target/release` 里的 GUI 产物），且条数大，按需执行。
+## ⚠️ 失败、条数不足、框架错误分别退 1 / 3 / 2；报告落在 `target/autotest/report.json`。
+AUTOTEST_JOBS ?= 8
+test-auto:
+	@python3 tests/auto/runner.py --jobs $(AUTOTEST_JOBS) --min-cases 10000 \
+	  --json target/autotest/report.json
+
+## ⭐ GUI 层（`design/0064` P1，2026-11-15）：**第四执行器**——把已接入的离屏探针
+##    当用例跑，结论只取驱动自己的退出码映射与 `--json` 的 `结论` 计数。
+## ⚠️ GUI 条数是**独立分母**（三行汇总：logic / gui / manual），⛔ 不并进 logic 总数。
+## ⚠️ 默认不在 `make test-auto` 里跑：要 `swiftc`、要离屏环境、耗时以分钟计。
+## ⚠️ `--min-gui` 只约束 GUI 自己的通过条数；未接入的驱动记「跳过」，⛔ 不算通过。
+## ⚠️ 失败、GUI 条数不足、框架错误分别退 1 / 3 / 2。
+test-gui:
+	@python3 tests/auto/runner.py --jobs $(AUTOTEST_JOBS) --with-gui --no-rust --no-exec --no-js \
+	  --json target/autotest/report-gui.json
 
 ## 步骤 0：技术风险先行（五步，无需 GUI）
 probe:
@@ -598,6 +636,27 @@ probe-favorites-rootheader:
 	@test -x "$(shell command -v swiftc)" || { echo "✗ 没有 swiftc。需要 Xcode 命令行工具：xcode-select --install"; exit 1; }
 	@bash tools/wkwebview-probe/favorites-rootheader-probe.sh $(ARGS)
 
+## ⭐ 2026-11-15：**全局失败条真的看得见吗**的离屏闸门（`failbar-visible-probe.sh`）
+##
+## 起因：用户报「新建文件，没有任何反应」。应用日志证明 `onNewFile()` 走到了
+##   `raiseFail(fail.new.no-directory)` 且 `onShown` 留了痕（= 产品确实渲染了）
+##   ⇒ 剩下的可能只在**渲染之后那一层**（布局 / 被盖住 / 状态互斥）。
+##   这里把它变成**可断言的数**：真 `index.html` ＋ 真样式表 ＋ **产品那一个**
+##   `services/failbar.js`，在七种 body 状态下量矩形、计算样式、以及在失败条中心
+##   `elementFromPoint` 的命中者（被盖住 = 用户看不见 = "没有反应"）。
+##
+## 判据 17 条：前提 2（真的渲染出来了 / 文案对）＋ 七种状态各 2（可见 / 未被覆盖）
+##   ＋ 编辑态下**预览提示条不与失败条相交**（`#preview-bar` 是 `absolute/bottom:0`，
+##   结构上与失败条会撞——这一条是顺带钉住的）。
+## ⭐ 变异 M1：页面副本里把 `.fail-bar` 改成 `display:none` ⇒ 必须转红（实测 14 条红）。
+## ⚠️ 页面用**真** `src/index.html`（只摘 `<script>`：没有 IPC 时真脚本会走 `reportFatal`
+##   把 DOM 换掉）；样式表按原顺序。
+## ⚠️ 离屏 `.prohibited`、alpha=0、orderBack ⇒ 不弹窗、不抢前台、不合成按键。
+## 用法：`make probe-failbar`；`ARGS="--json"` 只打原始 JSON。
+probe-failbar:
+	@test -x "$(shell command -v swiftc)" || { echo "✗ 没有 swiftc。需要 Xcode 命令行工具：xcode-select --install"; exit 1; }
+	@bash tools/wkwebview-probe/failbar-visible-probe.sh $(ARGS)
+
 ## ⭐ 2026-10-21：**中英文界面**的离屏闸门（`design/0025` §7.2，**9 条判据 ＋ 4 条变异 ＋ E**）
 ##
 ## 判据 0/3/4/5/6 在页面里（真 DOM ＋ 真字典），判据 1/2/7 量**真布局**（横向溢出），
@@ -798,7 +857,19 @@ probe-live-markup:
 ## ⚠️⚠️ H 段的 `⌘S` 走 `main.js::onKeyDown` ＋ `forwardShim`，**必须**用真键位表（Stage A 从
 ##   `gui::SHORTCUTS` 导出注入）——空表下"按了没反应"与"产品没接线"输出一模一样。
 ## ⚠️⚠️ **可见首帧**（其 §7.1 `0c-②`）**不在本目标里**——那要求窗口可见 ⇒ 如实留在人工验收。
-## ⚠️ 五次变异打的都是**页面副本**（⛔ 仓库文件一字未动），各自只钉一条判据：
+## ⭐ 排版度量的**仿射性**探针（`design/0085` §7 第 0 条；C2 的前置实测）。
+##
+## 问一件事：阅读态的块度量随 `--reader-font-size` 变化，是否满足 `px(fs) = k·fs + b`
+## （六个字号档 × 14 个块 × 10 个属性，最小二乘拟合，报最大残差，阈值 **0.5 CSS px**）。
+## 成立 ⇒ `applyBox` 才能把 computed px 写成 `calc(var(--reader-font-size) * k + b)`；
+## 不成立 ⇒ 先查 `typography.css` 里混进来的字面量，⛔ 别放宽阈值。
+## ⚠️ 离屏 `.prohibited` ＋ `alphaValue=0` ＋ `orderBack`：不弹窗、不抢前台、不合成按键；
+##   跑器复用 `tools/live-probe/probe.swift`。退出码：0 成立 / 1 不成立 / 3 跑不起来。
+## 用法：`make probe-type-metrics`；人读加 `ARGS="--pretty"`。
+probe-type-metrics:
+	@bash tools/type-metrics-probe/run.sh $(ARGS)
+
+
 ##   M1 只搬文字层、不搬外边距 ⇒ `B0-5` 红；M2 组合中间态也落事务 ⇒ `D1b` 红；M3 未改动也提交 ⇒ `E1` 红；
 ##   M4/M5 `save()` 先取全文再提交 ⇒ `H4`/`H5` 红（**同一份 `m4.json`**，⛔ 别记成两处变异）；
 ##   ⭐ M6/M7 把 `bugs/0014` 的真缺陷原样打回（`live/selection.js` 里 `const head = r.from;` → `r.head`）
@@ -814,6 +885,50 @@ probe-live-markup:
 probe-live-block:
 	@test -x "$(shell command -v swiftc)" || { echo "✗ 没有 swiftc。需要 Xcode 命令行工具：xcode-select --install"; exit 1; }
 	@bash tools/live-probe/block-probe.sh $(ARGS)
+
+## ⭐ **端到端输入探针**（`design/0062`：原生 `NSEvent` / `NSTextInputClient` 注入）
+##
+## 复用 `probe-live-block` 的构页产物（Stage A 真 comrak 载荷 ＋ 产品 `src/**` ＋ 假后端），
+## 在**第一响应者**与 **NSTextInputClient** 两个面注入，逐条判 A–H 组：
+##   A 到达性（无绑定 `⌘K` 对照）｜B 文本 / 中文 / Emoji / CRLF 粘贴｜C 组合（不提交 / 只落一次）
+##   D 删除 / 换行 / 方向｜E 块内与格内 `Tab` 的焦点归属｜F 菜单抢键（`⌘Z` 基线、`⌘S` 不经菜单）
+##   G 提交字节与"未改不提交"｜H 自证（前台未变 / 非 active / 非 key / alpha 0 / 未 activate）
+## 再跑四条变异（M-E1 删删除分支 / M-E2 组合双插 / M-E3 删 Tab preventDefault / M-E4 菜单无加速键），
+## 每条都必须让对应判据**实际打红**，基线必须全绿 ⇒ 否则退 4/1。
+## ⚠️ 离屏 `.prohibited` ＋ `alphaValue=0` ＋ `orderBack`，⛔ 不调 `makeKey`/`NSApp.activate`；
+##    唯一多出来的是 `window.makeFirstResponder(webView)`（按键要进本窗口的响应者链），
+##    窗口非 key、进程未激活 ⇒ 用户焦点不受影响，H1–H5 每轮自证。
+## ⚠️ 不验真实输入法 / 真实菜单 / 真实 IPC / 真实磁盘（见 `design/0062` §4）。
+## 退出码：0 全绿；1 判据红；3 环境无效；4 变异没打到（靶子漂移）。
+probe-input-e2e:
+	@test -x "$(shell command -v swiftc)" || { echo "✗ 没有 swiftc。需要 Xcode 命令行工具：xcode-select --install"; exit 1; }
+	@bash tools/live-probe/block-probe.sh --e2e $(ARGS)
+
+## ⭐ **点击网格扫描**（`docs/tasks.md` T45 提案 ③，"快速系统地发现 bug"）
+##
+## 把正文**每个顶层块**按 3×3 切开、**逐点真点一下**（先滚到那一块，取它与视口的交集），
+## 检查五条**与动作无关**的后置不变量（T45 提案 ①）：
+##   ① 没有未捕获异常；② 顶层块数变化必须有 `render_preview` 解释；
+##   ③ `editable=0` 的块不许进编辑、也不许留覆盖层（`Table` 的单元格入口单独豁免）；
+##   ④ 被点那一块在**文档坐标**（视口顶＋scrollTop）里不许动，**块高也不许变**（`bugs/0077`）；
+##      ⑤ 没有未知 IPC；
+##   ⑥ 进了编辑焦点必须在编辑面；⑦ 进编辑后**点处**仍在该块；
+##   ⑨ 进编辑时**任何滚动都要有依据**：块高 / 页高 / 块文档坐标三项都没变却滚了 > 0.5 px ⇒ 红
+##       （`bugs/0078`）。⚠️ 2026-11-09 收口：0.5 px 只是量化下限（同一个像素），
+##       ⛔ 不许再写成"容差 2 px"；`INV-LIVE-04` ① 要求进入瞬间逐像素不动，含滚动锚。
+## 点集 = 按块交错：第 N 块的元素目标（任务方框 / 链接 / 图 / `summary` / `td,th`）＋ 它自己的 3×3。
+## ⚠️ 一次页面只点一个点（逐点重开）⇒ 每个红点都能**单独复现**。
+## ⚠️ 离屏 `.prohibited` ＋ `alphaValue=0`（同 `probe-live-block` 那一族）：不弹窗、不抢前台、不合成按键。
+## ⚠️ 要 `swiftc` ＋ 先 `make cm6`。⚠️ **有红点 ⇒ 退出码 1**（那是结果，不是基建失败）；
+##    环境无效（屏幕锁 ⇒ rAF 0/8）⇒ **3**，⛔ 不退 0 冒充全绿。
+## ⚠️ 判据自身的灵敏度用 `ARGS="--mutate M1..M6"` 验（每条对应一条判据，必须真红）；
+##    ⚠️ M3 必须**两道闸一起拆**（`main.js` 的提示闸 ＋ `live/index.js::begin` 的真闸），
+##    只拆一道时 `begin_edit` 仍是 0、判据 ③ 一个红都不出（2026-11-04 实测，不承重）。
+##    `--mutate M7` 不是判据，只把 U6 锚定的 `scrollTop` 补丁换成 `+0`，用来给 ⑨ 归因。
+## 用法：`make probe-click-grid`；`ARGS="--only blocks --max 27"` 只扫一段；`ARGS="--json"` 只打原始 JSON。
+probe-click-grid:
+	@test -x "$(shell command -v swiftc)" || { echo "✗ 没有 swiftc。需要 Xcode 命令行工具：xcode-select --install"; exit 1; }
+	@bash tools/live-probe/clickgrid-probe.sh $(ARGS)
 
 ## ⭐ 2026-10-21：**文档内链接安全导航**的离屏闸门（`design/0026` §7.2，**5 条判据 ＋ E**）
 ##
@@ -857,6 +972,26 @@ probe-menu:
 	@test -x $(BIN) || { echo "✗ 没有 $(BIN)——先跑 make build-gui"; exit 1; }
 	@grep -q "$(GUI_MARKER)" $(BIN) 2>/dev/null || { echo "✗ $(BIN) 不含 GUI —— 先跑 make build-gui"; exit 1; }
 	@RMD_MENU_PROBE=1 RMD_FOREGROUND=1 $(BIN) </dev/null
+
+## ⭐ **端侧对照测试**（`design/0063`）：L1 基线 与 L2 常驻闸门 两层
+##
+## ⚠️ L1（`parity-capture`）**需要 Mardo 在场**，只在"重新取基线"时跑（一次性）：枚举窗口、
+##    按窗口 ID 抓帧、写 provenance（前台应用前后 / DPR / png 尺寸 / sha256），产物落进
+##    `docs/kb/NNNN-Mardo-端侧基线.md`。⛔ 它不判红绿——基线是**测量**，不是判据。
+## ⚠️ L2（`parity-l2`）**不依赖 Mardo**：离屏 WKWebView 渲染夹具 → 取像 → 量行带与 DOM →
+##    跑环境闸门 `P-ENV-01..06` 与族比较。⚠️ **没有 L1 基线时 `-PARITY` 族必须记 `skipped`**，
+##    ⛔ 不退 0 冒充通过；夹具 `sha256` 与基线不一致 ⇒ 报"基线过期"而不是静默比较。
+## ⚠️ 两条都**离屏**（`.prohibited` ＋ `alphaValue = 0` ＋ `orderBack`）：不弹窗、不抢前台、
+##    ⛔ 不合成按键。抓帧只用 `screencapture -l <windowid> -x -o`（**不抬窗口**）。
+## ⚠️ 要 `swiftc`；改过前端还须先 `make build-gui`（资源编译期嵌入）。
+## 用法：`make parity-capture`；`make parity-l2`；`ARGS="--fixtures F1,F5"` 只跑一段。
+parity-capture:
+	@test -x "$(shell command -v swiftc)" || { echo "✗ 没有 swiftc。需要 Xcode 命令行工具：xcode-select --install"; exit 1; }
+	@bash tools/visual-parity/capture.sh $(ARGS)
+
+parity-l2:
+	@test -x "$(shell command -v swiftc)" || { echo "✗ 没有 swiftc。需要 Xcode 命令行工具：xcode-select --install"; exit 1; }
+	@bash tools/visual-parity/l2-run.sh $(ARGS)
 
 ## 生成语料矩阵（17 个文件，约 53 MB）
 corpus:
@@ -930,8 +1065,9 @@ lint-theme:
 
 ## docs/ 的机器可查结构自检（`docs/README.md` 规则 8 留下的接口）
 ##
-## 查四类：编号（四位、同目录不重复）／头部必填行／状态词是否落在模板枚举里／
-## 文档间的 `.md` 引用能不能解析。**只读**，不写任何文件、不改任何状态。
+## 查五类：编号（四位、同目录不重复）／头部必填行／状态词是否落在模板枚举里／
+## 文档间的 `.md` 引用能不能解析／仓库根与 `docs/` 下有没有占位垃圾行（键盘乱序，
+## 如 `sdfdf`；只认整行小写字母串，⛔ 不做通用拼写启发式）。**只读**，不写任何文件、不改任何状态。
 ##
 ## ⚠️ 两种口径：
 ##    ERROR（编号、必填行）→ 一律退出 1，修法是补文档；
@@ -1127,6 +1263,14 @@ install-app: app
 	@echo "  ℹ️ 默认处理器**没有**被改（INV-APP-04）；要改：make default-app"
 	@echo "  ℹ️ 之后 make open 会走后台启动（终端不再被占住）"
 
+## ⭐ 一条命令重装：强关旧实例 → 重编 GUI → 组装**一次** `.app` → 覆盖全部落点（/Applications、
+##    ~/Applications）→ 校验 build-id 与字节一致 → `open -g -j` 后台重启（`-j` = hidden 启动；
+##    ⚠️ `-g` 单独不够：tao 无条件激活，实测见 `docs/kb/0023` §5）。
+## ⚠️ 与 `make install-app` 的区别：那个每装一个落点都重跑一次组装＋签名；本目标只组装一次。
+## 参数：`ARGS="--no-restart"` / `ARGS="--no-build"` / `ARGS="--dirs=/Applications"`
+reinstall:
+	@scripts/reinstall.sh $(ARGS)
+
 ## 删掉 `make install-app` 装的那一份（⛔ 只碰 `$(APP_INSTALLED)`；`$(PREFIX)/rmd` 不动）
 uninstall-app:
 	@if pgrep -f "$(APP_INSTALLED)/Contents/MacOS/rmd" >/dev/null 2>&1; then \
@@ -1143,7 +1287,8 @@ uninstall-app:
 
 ## ⭐ `design/0015` §7.1 · `.app` 的自动验收（9 条判据，进退出码）
 ##
-## ⚠️ 会**真的启动应用**（那正是被测对象），但一律 `open -g`（⛔ 不抢前台）、
+## ⚠️ 会**真的启动应用**（那正是被测对象），但一律 `open -g -j`（hidden 启动，⛔ 不抢前台；
+##    `-g` 单独不够，见 `docs/kb/0023` §5）、
 ##    ⛔ 不 `kill -9`；**已有 rmd 实例时整轮拒绝**，⛔ 不杀用户的进程。
 ## ⚠️ 它**不碰默认处理器**（`INV-APP-04`）——第 8 条只读 `which-default`。
 smoke-app: app
@@ -1179,6 +1324,8 @@ help:
 	@printf '  %-24s %s\n' 'build' '编译 release，只有 CLI（快）；⚠️ 与 build-gui 写同一路径'
 	@printf '  %-24s %s\n' 'build-gui' '编译含 GUI 的 release（链 Tauri，慢）＋ 收尾自动刷新 ~/.local/bin/rmd'
 	@printf '  %-24s %s\n' 'test' '纯逻辑单测 = Rust release ＋ 集成 ＋ node --test tests/js/'
+	@printf '  %-24s %s\n' 'test-fast' '＝现有 make test 的别名（默认 feature，快；语义不变）'
+	@printf '  %-24s %s\n' 'test-full' '提交前默认门禁：test ＋ GUI feature 的 Rust 单测（慢）'
 	@printf '  %-24s %s\n' 'test-js' '只跑前端那批（改 src/*.js 后用它，快）'
 	@printf '  %-24s %s\n' 'typecheck' 'design/0052 U8：src/live/** 的类型闸门（checkJs，几秒；已并入 test）'
 	@printf '  %-24s %s\n' 'help' '本帮助'
@@ -1215,8 +1362,13 @@ help:
 	@printf '  %-24s %s\n' 'probe-i18n' '中英双语的界面（真 DOM；加载真 src/index.html）'
 	@printf '  %-24s %s\n' 'probe-link-nav' '文档内链接的安全导航（离屏；夹具要真写 other.md）'
 	@printf '  %-24s %s\n' 'probe-live-block' '就地编辑：唯一全文模型 ＋ 单块视图的接线与几何（0047；离屏；含 4 处变异）'
+	@printf '  %-24s %s\n' 'probe-input-e2e' '端到端输入：原生键/组合注入（0062；离屏；A–H 组 ＋ 4 条变异）'
 	@printf '  %-24s %s\n' 'probe-live-markup' 'Lezer ↔ comrak 的标记差分表（0052 U9；⚠️ 差异不判红，产物是一份表）'
 	@printf '  %-24s %s\n' 'probe-menu' '原生菜单的就地切换（⚠️ 必带 RMD_FOREGROUND=1，否则退出码不代表结果）'
+	@printf '\n'
+	@printf '%s\n' '端侧对照（design/0063；两层：L1 基线需 Mardo，L2 常驻不依赖它；都离屏、不抢前台）'
+	@printf '  %-24s %s\n' 'parity-capture' 'L1：枚举窗口并按窗口 ID 抓 Mardo 基线帧 ＋ provenance（不判红绿）'
+	@printf '  %-24s %s\n' 'parity-l2' 'L2：离屏渲染夹具 → 行带/DOM → P-ENV-01..06；无基线时 -PARITY 记 skipped'
 	@printf '%s\n' '   取证探针没有断言、跑它不产生红绿（probe / probe-wkwebview / probe-cm6 / probe-editor-latency），'
 	@printf '%s\n' '   别把它们算进测试覆盖面；每份探针的判据数与覆盖面见 .claude/rules/tests.md（本文件不抄，抄了会漂）。'
 	@printf '\n'
@@ -1225,7 +1377,7 @@ help:
 	@printf '  %-24s %s\n' 'app' '组装 build/macos/rmd.app（依赖 build-gui；逐字节 = 那份二进制）'
 	@printf '  %-24s %s\n' 'install-app' '装到 ~/Applications 并刷新 LaunchServices（⛔ 不改默认打开程序）'
 	@printf '  %-24s %s\n' 'uninstall-app' '删掉上面装的那一份（⛔ 只碰 ~/Applications/rmd.app）'
-	@printf '  %-24s %s\n' 'smoke-app' '.app 的自动验收（12 条；open -g 不抢前台；已有实例时拒绝）'
+	@printf '  %-24s %s\n' 'smoke-app' '.app 的自动验收（12 条；open -g -j 不抢前台；已有实例时拒绝）'
 	@printf '  %-24s %s\n' 'dmg' '本地候选 DMG（ad-hoc 签名、不公证、不上传；拒绝覆盖同名文件）'
 	@printf '  %-24s %s\n' 'which-default' '只读：.md 现在默认由谁打开'
 	@printf '  %-24s %s\n' 'default-app' '⛔ 唯一会改系统默认打开程序的入口（回滚：APP=/System/Applications/TextEdit.app）'

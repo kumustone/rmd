@@ -82,15 +82,57 @@ const WEB = 真表.filter(function (r) { return r.owner === 'web'; });
 // deriveWhitelist —— 三条判据（§2.3-4）
 // ─────────────────────────────────────────────────────────────────────────
 
-test('真表：`owner=web` 的项全部被派生出 CM6 串（没有一项该被 `skipped`）', function () {
+/**
+ * ⭐ 真表里**一项都不该**进 `skipped`。
+ *
+ * ⚠️⚠️ **2026-11-11 起这份清单清空**（原先是 `['view.start']`）。
+ * `view.start` 当时是裸 `F2`、**不含 `cmd`** ⇒ 派生规则天然把它挡在编辑区转发之外。
+ * 同日用户实机反馈「F2 不行」（裸 F-键在默认媒体键设置下到不了 WebView，`bugs/0097`）
+ * ⇒ 改成 `⇧⌘H`（2026-11-16 定为 `⌘L`），它**含 `cmd`**，于是**进了**白名单、翻出 `Mod-l`。
+ *
+ * ⭐ **编辑区里按 `⌘L` 仍不会关文档**——但那**不靠**"不在白名单里"，而是靠
+ * `keymap.js::dispatch` 的 `ctx.editable()` 守卫（`INV-SET-05`：焦点在
+ * `contenteditable` 里时应用快捷键整表失效），转发到 CM6 也没有对应绑定。
+ * ⛔ 别把"白名单里有它"读成"编辑区里会关文档"。
+ *
+ * ⛔ 这道闸门问的仍是"`skipped` 是否正好是这份已知清单"：任何**新**冒出来的 skip 都打红。
+ */
+const 已知该跳过 = [];
+
+/**
+ * 真表里**刻意不转发**的 `owner=web` 项（`design/0079`，2026-11-15）。
+ *
+ * ⚠️ `deriveWhitelist` 的规则 3 是"含 `ctrl` ⇒ 进 `notes`、⛔ 不生成 CM6 串"：
+ *    这批键的 `accel` 是 `Ctrl+Cmd+…`（缩放 / 专注），`ctrl` 那一半是**有意**留给
+ *    Vim 面的预留位，因此它们在分栏编辑区里**按不动**——这是决定，不是漏项。
+ * ⚠️ 2026-11-15 合入时 `view.toggle-line-numbers` 由 `⇧⌘L` 改 `⌃⌘L`（与
+ *    `edit.paste-literal` 撞键）⇒ 它也落进这批 Ctrl 预留项。
+ */
+const 已知不转发 = [
+  'view.toggle-line-numbers',
+  'view.toggle-zen',
+  'view.zoom-actual',
+  'view.zoom-in',
+  'view.zoom-out',
+];
+
+test('真表：`owner=web` 的每一条要么派生出 CM6 串，要么落在已登记的 Ctrl 预留里', function () {
   const d = EK.deriveWhitelist(WEB);
   assert.deepStrictEqual(
-    d.skipped, [],
-    '⛔ 真表里有翻不出 CM6 串的 web 项 —— 那一条在编辑区里**按不动**，而界面上看不出任何异常'
+    d.skipped.map(function (r) { return r.id; }),
+    已知该跳过,
+    '⛔ 真表里出现了**没登记过**的 skipped 项 —— 那一条在编辑区里**按不动**，而界面上看不出任何异常'
   );
-  assert.strictEqual(d.specs.length, WEB.length, '⭐ 真表里每一条 web 键都该有一个 CM6 串');
-  // ⚠️ `notes` 也是空的：真表**刻意没有**带 Ctrl 的 `accel`（Ctrl 只在 `aliases` 里）。
-  assert.deepStrictEqual(d.notes, [], '⚠️ 真表的 `accel` 里不该出现 ctrl —— 出现就说明决策 3 的预留被动过了');
+  assert.deepStrictEqual(
+    d.notes.map(function (r) { return r.id; }).sort(),
+    Array.from(已知不转发).sort(),
+    '⚠️ `notes` 只该是登记过的 Ctrl 预留项（`design/0079`）——多一条说明真表里冒出了新的 Ctrl accel'
+  );
+  assert.strictEqual(
+    d.specs.length,
+    WEB.length - 已知该跳过.length - d.notes.length,
+    '⭐ 真表里每一条可转发的 web 键都该有一个 CM6 串'
+  );
 });
 
 test('真表：`cmd` 项变成 `Mod-`，`shift` 项变成 `Shift-Mod-`（不是 `Mod-Shift-`）', function () {
@@ -101,7 +143,8 @@ test('真表：`cmd` 项变成 `Mod-`，`shift` 项变成 `Shift-Mod-`（不是 
     return r.spec;
   };
   assert.strictEqual(找('file.save'), 'Mod-s');
-  assert.strictEqual(找('file.open-directory'), 'Mod-o');
+  assert.strictEqual(找('file.new'), 'Mod-n', '`design/0071` §4.2：`⌘N` 也必须在编辑区里转发');
+  assert.strictEqual(找('file.open'), 'Mod-o');
   assert.strictEqual(找('file.open-file'), 'Shift-Mod-o', '⚠️ 顺序无所谓（CM6 会重排），但**必须**是 Shift 那种拼法');
   assert.strictEqual(找('edit.find-prev'), 'Shift-Mod-g');
 });
@@ -185,6 +228,7 @@ test('`toCM6Spec`：大写字母折小写（CM6 的 `normalizeKeyName` ⛔ 不�
   assert.strictEqual(EK.toCM6Spec('Cmd+='), 'Mod-=');
   assert.strictEqual(EK.toCM6Spec('Cmd+-'), 'Mod--', '⚠️ 尾部那个 `-` 必须保住：CM6 按 `split(/-(?!$)/)` 切，末位的不切');
   assert.strictEqual(EK.toCM6Spec('Cmd+,'), 'Mod-,');
+  assert.strictEqual(EK.toCM6Spec('Cmd+L'), 'Mod-l');
   assert.strictEqual(EK.toCM6Spec('Cmd+0'), 'Mod-0');
   // ⚠️ 翻不出来的**返回 `null`**（⛔ 不是抛、⛔ 不是返回一个像样的串）。
   assert.strictEqual(EK.toCM6Spec('Cmd++'), null);

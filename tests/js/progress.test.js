@@ -231,3 +231,59 @@ test('#22 ⭐ 接线闸门：身份核对与挂载代号真的在源码里', fun
   assert.ok(/mountGen\s*\+=\s*1/.test(js), 'mountDocument 缺 mountGen += 1');
   assert.ok(/pendingRestore\s*=\s*null/.test(js), 'mountDocument 缺 pendingRestore = null');
 });
+
+// ── #23–#24 `bugs/0077`：勾选任务项后正文上跳 ────────────────────────
+
+test('#23 shouldFixKeepScroll：四条判据全等 ⇒ true；任一条不满足 ⇒ false', function () {
+  const base = { mountGen: 3, path: '/a.md', appliedTop: 812, expires: 10000, userAborted: false };
+  // 正向：同代次、同路径、未过期、用户没接管
+  assert.strictEqual(P.shouldFixKeepScroll(base, 3, '/a.md', 5000), true);
+  // ① 挂载代号不同（换文档之后旧图片回调到达）
+  assert.strictEqual(P.shouldFixKeepScroll(base, 4, '/a.md', 5000), false);
+  // ② 路径变了（同一次挂载里 payload.real_path 与 currentPath 不一致）
+  assert.strictEqual(P.shouldFixKeepScroll(base, 3, '/b.md', 5000), false);
+  // ③ 过期（10 s 之后才落定的图片不再回抢）
+  assert.strictEqual(P.shouldFixKeepScroll(base, 3, '/a.md', 10001), false);
+  // ④ 用户接管：滚轮 / 键盘 / 点滚动条都会把它置上
+  assert.strictEqual(
+    P.shouldFixKeepScroll({ mountGen: 3, path: '/a.md', appliedTop: 812, expires: 10000, userAborted: true }, 3, '/a.md', 5000),
+    false
+  );
+  assert.strictEqual(P.shouldFixKeepScroll(null, 3, '/a.md', 5000), false);
+  // ⭐ 与 `shouldCorrect` 的**差别**：它是给重渲后那条路用的，**不排除编辑态**
+  //    ⇒ 签名里没有 `editing` 这一位（多一位就说明有人把阅读态那套判据抄了过来）。
+  assert.strictEqual(P.shouldFixKeepScroll.length, 4, '签名必须是 (pending, mountGen, pathNow, now)');
+  // ⭐ 负对照：同一个 pending 交给 `shouldCorrect` 必须是 false —— 它要求 docSeq，
+  //    而重渲这条路根本没有正确的 docSeq 可比（`doc.innerHTML = payload.html` 不改 docSeq）。
+  assert.strictEqual(P.shouldCorrect(base, 3, '/a.md', 7, false, false, 5000), false);
+});
+
+test('#24 ⭐ 接线闸门：`keepScroll` 真的补了落定后校正（源码级）', function () {
+  const js = fs.readFileSync(path.join(ROOT, 'src', 'main.js'), 'utf8');
+
+  // ① 记录：`keepScroll` 那条分支必须留下锚点 + 当时写下去的 Top
+  const rec = js.match(/keepScrollFix\s*=\s*\{([\s\S]{0,400}?)\};/);
+  assert.ok(rec, 'main.js 里找不到 keepScrollFix 的记录点');
+  assert.ok(/anchor\s*:/.test(rec[1]), '记录点缺 anchor');
+  assert.ok(/appliedTop\s*:/.test(rec[1]), '记录点缺 appliedTop');
+  assert.ok(/mountGen\s*,|mountGen\s*:/.test(rec[1]), '记录点缺 mountGen');
+
+  // ② 校正函数：走纯判据、重算锚点、只写程序来源
+  const fn = js.match(/function correctKeepScroll\(gen\)\s*\{([\s\S]*?)\n  \}/);
+  assert.ok(fn, 'main.js 里找不到 correctKeepScroll');
+  assert.ok(/P\.shouldFixKeepScroll\(/.test(fn[1]), 'correctKeepScroll 没走 shouldFixKeepScroll');
+  assert.ok(/R\.resolveAnchor\(/.test(fn[1]), 'correctKeepScroll 没按同一个锚点重算');
+  assert.ok(/hostSetTop\(/.test(fn[1]), 'correctKeepScroll 必须走 hostSetTop（来源闸记账）');
+  assert.ok(/Math\.abs\(r\.scrollTop - p\.appliedTop\) < 1/.test(fn[1]), '缺「差 <1px 就不写」的闸');
+
+  // ③ 触发点：`onSettled` 必须**同时**校正两条路（漏一条就是 0077 原样复发）
+  const settle = js.match(/onSettled:\s*function\s*\(\)\s*\{([\s\S]*?)\n      \},/);
+  assert.ok(settle, 'main.js 里找不到 onSettled');
+  assert.ok(/correctReadingProgress\(/.test(settle[1]), 'onSettled 丢了 correctReadingProgress');
+  assert.ok(/correctKeepScroll\(/.test(settle[1]), 'onSettled 丢了 correctKeepScroll');
+
+  // ④ 用户接管：滚轮/键盘/滚动条之后必须让两条路都作废
+  assert.ok(/keepScrollFix\.userAborted\s*=\s*true/.test(js), '接管时没作废 keepScrollFix');
+  assert.ok(/if\s*\(!pendingRestore\s*&&\s*!keepScrollFix\)\s*return;/.test(js),
+    'keydown 接管判据还是旧的（只看 pendingRestore）');
+});

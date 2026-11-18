@@ -42,7 +42,7 @@ use std::time::Instant;
 
 use serde::Serialize;
 
-use crate::commands::{AppState, Session};
+use crate::commands::{snapshot, AppState, Session, SessionSnapshot};
 use crate::document::envelope::{Eol, Envelope};
 use crate::document::parser::ParseOpts;
 use crate::document::{blocks, loader, offset::LineIndex, parser, render, toc};
@@ -210,12 +210,31 @@ pub struct DocumentPayload {
     /// 正常文档的状态条上一个字都不会多出来。
     pub code_unhighlighted: usize,
 
+    /// ⭐ `design/0060`：Mermaid 围栏画出来的张数。
+    ///
+    /// ⚠️ 与 `code_unhighlighted` 同一条理由——`report_status` 那条 stderr 前端看不见，
+    /// 「这几张图为什么是一段代码」必须另送一份给状态条。
+    pub mermaid_rendered: usize,
+    /// ⭐ 没能画出来的张数（不支持 / 语法错 / 超限 / 安全拒绝，逐块原因在文内）。
+    ///
+    /// ⛔ **不要把这个数说成"内容丢了"**：回退块是**完整的原文**，
+    /// 前端那句文案见 `src/services/renderstat.js` 的 `mermaidNotice()`。
+    pub mermaid_unrendered: usize,
+
     /// ⭐ **打开会话号**（`design/0017` §2.2 ①）：这份响应属于哪一次打开。
     ///
     /// ⚠️ 前端把它记在当前文档上，写阅读进度时原样带回；后端用
     /// `(current_document, doc_seq)` 双判据判断"这条写入还属不属于当前这份"。
     /// ⭐ `reload_document` 回带**同一个数**——自动重载不是新会话。
     pub doc_seq: u64,
+
+    /// ⭐ **草稿号**（`design/0082` §2.1 ②）：`Some(id)` = 这份载荷属于一份
+    /// **没有路径**的未命名文档；真实文档恒为 `null`。
+    ///
+    /// ⚠️ 草稿载荷的 `real_path` / `doc_dir` 是**空串**（不是缺字段）：
+    /// 前端只有一条挂载路（`mountDocument`），它按本字段**分流**跳过树高亮 / 监视 /
+    /// 阅读进度 / 目录会话——⛔ 别造第二套挂载函数。
+    pub draft: Option<u64>,
 
     /// ⭐ **信封**：这份文档在磁盘上的 BOM 与行尾（`design/0012` §2.4-5 / `INV-EDIT-12`）。
     ///
@@ -257,6 +276,7 @@ struct PreRead {
 #[tauri::command]
 pub async fn open_document(
     state: tauri::State<'_, AppState>,
+    window: tauri::WebviewWindow,
     path: String,
     generation: u64,
     req: u64,
@@ -264,9 +284,12 @@ pub async fn open_document(
     // ⚠️ 后端**不解释** `request_id`，只由前端在提交点比对——它在这里的用途有两个：
     //    原样回显（`DocumentPayload.req`），以及**在第三段用它判断自己是不是最新的**。
     let t_start = Instant::now();
+    // ⭐ 多窗口：整条三段式都只碰**发起这次打开的那个窗口**的会话
+    //    （`design/0068` §2.1）；label 在跨 `await` 之前取成自有字符串。
+    let label = window.label().to_string();
 
     // —— 第一段：持锁取快照 ——
-    let pre = state.with(|s| -> Result<PreRead, Denied> {
+    let pre = state.with(&label, |s| -> Result<PreRead, Denied> {
         let current = s.grants.root_generation();
         if generation != current {
             return Err(Denied::stale(generation, current));
@@ -293,13 +316,13 @@ pub async fn open_document(
     // ⭐ 返回 `Some(doc_seq)` = 真的提交了；`None` = 被版本/请求号判成陈旧。
     //    ⚠️ **会话号在这里一并取回**（⛔ 不在闭包外再读一次）：中间若又有一次打开，
     //    再读一次会把"下一次的号"贴到这一份响应上（`design/0017` 评审 R2）。
-    let committed_seq = state.with(|s| commit_open(s, generation, req, &real, stats));
+    let committed_seq = state.with(&label, |s| commit_open(s, generation, req, &real, stats));
 
     // ⚠️ 从会话里**再读回来**，而不是让闭包多返回一个值：这样"日志里打的那份"
     //    与"`report_status` 里打的那份"**必然是同一个数**（同一处赋值）。
     //    ⚠️ 但**没提交**时那个数是**上一份文档**的 ⇒ 分开打，别让它冒充本次（见下）。
     let Some(seq) = committed_seq else {
-        let current = state.with(|s| s.grants.root_generation());
+        let current = state.with(&label, |s| s.grants.root_generation());
         diag!(
             "▶ open_document {}（T1 {:.1} / T2 {:.1} / T3 {:.1} ms，块表 {:.1} ms）· ⚠️ **未提交**（代次 {} vs {} 或已有更新的请求 {req}）",
             payload.real_path,
@@ -313,7 +336,7 @@ pub async fn open_document(
         return Err(Denied::stale(generation, current));
     };
     payload.doc_seq = seq;
-    let stats_summary = state.with(|s| s.last_render_stats.summary());
+    let stats_summary = state.with(&label, |s| s.last_render_stats.summary());
     // ⚠️ 公式计数**每次打开都打**（含全零）——这一行是 `INV-MATH-05` 那条
     //    "累计触顶必须可观测"在**日志**这一侧的出口。⛔ 不要为了"少打点字"改成
     //    「非零才打」：那样冒烟脚本就分不清"没触顶"和"这一版根本没接上计数"。
@@ -340,13 +363,16 @@ pub async fn open_document(
 #[tauri::command]
 pub async fn reload_document(
     state: tauri::State<'_, AppState>,
+    window: tauri::WebviewWindow,
     generation: u64,
     req: u64,
 ) -> Result<DocumentPayload, Denied> {
     let t_start = Instant::now();
+    // ⭐ 多窗口：重载的是**这个窗口**的当前文档（`design/0068` §2.1）。
+    let label = window.label().to_string();
 
     // —— 第一段 ——
-    let pre = state.with(|s| -> Result<PreRead, Denied> {
+    let pre = state.with(&label, |s| -> Result<PreRead, Denied> {
         let current = s.grants.root_generation();
         if generation != current {
             return Err(Denied::stale(generation, current));
@@ -374,9 +400,9 @@ pub async fn reload_document(
 
     // —— 第三段：代次 **+ 请求号 + 身份** ——
     // ⭐ 返回**当前** `doc_seq`（不 +1）：自动重载不是新会话（`design/0017` §2.2 ①）。
-    let committed_seq = state.with(|s| commit_reload(s, generation, req, &real, stats));
+    let committed_seq = state.with(&label, |s| commit_reload(s, generation, req, &real, stats));
     let Some(seq) = committed_seq else {
-        let current = state.with(|s| s.grants.root_generation());
+        let current = state.with(&label, |s| s.grants.root_generation());
         diag!(
             "▶ reload_document {} ⚠️ **未提交**（代次 {} vs {}／身份已变／已有更新的请求 {req}）",
             payload.real_path, generation, current
@@ -384,7 +410,7 @@ pub async fn reload_document(
         return Err(Denied::stale(generation, current));
     };
     payload.doc_seq = seq;
-    let stats_summary = state.with(|s| s.last_render_stats.summary());
+    let stats_summary = state.with(&label, |s| s.last_render_stats.summary());
     diag!(
         "▶ reload_document {}（T1 {:.1} / T2 {:.1} / T3 {:.1} ms，块表 {:.1} ms，整段 {:.1} ms）· 公式 {}",
         payload.real_path,
@@ -435,6 +461,10 @@ fn commit_open(
     //    `commands::edit::begin_edit`（见那里的模块头：基线的语义是
     //    "编辑器手里那个缓冲是基于哪份磁盘内容来的"）。
     s.end_edit();
+    // ⭐ `design/0082` §2.1 ②：**真实文档胜出**。打开 / 保存草稿都会走到这里，
+    //    草稿标记必须与新的 `current_document` 同批清掉——留着它，前端会把
+    //    一份**有路径的**文档当成草稿（`⌘S` 分流到保存面板）。
+    s.draft = None;
     // ⭐ **打开会话号自增的唯一一处**（`design/0017` §2.2 ①）：
     //    与上面几个字段**同批**提交，⛔ 不在别处 +1（重载不算新会话）。
     s.doc_seq += 1;
@@ -493,16 +523,20 @@ fn commit_reload(
 pub fn watch_document(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
+    window: tauri::WebviewWindow,
     path: String,
 ) -> Result<WatchInfo, Denied> {
-    state.with(|s| {
+    // ⭐ 多窗口：监视属于**发起它的那个窗口**（`Watch.owner`），事件也只投给它
+    //    （`design/0068` §2.6 / 契约 §4）。
+    let owner = window.label().to_string();
+    state.with(&owner, |s| {
         // ⭐ `INV-EXT-03`：这是允许监视哪一条路径的**唯一**判据。
         let real = s.grants.check_readable(Path::new(&path))?;
         let generation = s.grants.root_generation();
         let seq = s.next_watch_seq();
         // ⚠️ `start` 会**同步**起一个 watcher（含一条 FSEventStream）——几十微秒量级，
         //    在锁里可以接受；⛔ 但别在这里加更多活儿。
-        let w = external::watch::start(&app, &real, seq, generation)?;
+        let w = external::watch::start(&app, &real, seq, generation, &owner)?;
         // ⚠️ 摘旧的走 `drop_watch`（顺带清 `current_document`），然后立刻重新写上。
         //    ⛔ 不许把 `s.watch = None` 写在别处——那会绕过"两个字段一起改"这条不变量。
         let old = s.drop_watch();
@@ -536,8 +570,13 @@ pub fn watch_document(
 /// 最后一条监视随进程消亡，而 `Watch::drop` 是异步的（起一次性线程去停），
 /// ⛔ 不会拖住退出。⇒ 前端**没有** `beforeunload` 钩子，这是有意的。
 #[tauri::command]
-pub fn unwatch_document(state: tauri::State<'_, AppState>, seq: u64) {
-    state.with(|s| {
+pub fn unwatch_document(
+    state: tauri::State<'_, AppState>,
+    window: tauri::WebviewWindow,
+    seq: u64,
+) {
+    // ⭐ 多窗口：只摘**本窗口**的监视，⛔ 不跨窗口操作（`design/0068` §2.1）。
+    state.with(window.label(), |s| {
         if s.watch.as_ref().map(|w| w.seq) != Some(seq) {
             diag!("▶ unwatch_document(seq={seq})：当前不是它（可能已失效）——不动");
             return;
@@ -547,6 +586,180 @@ pub fn unwatch_document(state: tauri::State<'_, AppState>, seq: u64) {
             drop(w);
         }
     })
+}
+
+/// ⭐ **读取命令** · 关闭当前文档、回到导航页（`design/0056`）。
+///
+/// 这是"关闭当前文档"的**唯一**路径（`INV-CLOSE-01`）：前端⛔ 不许自己把
+/// `currentDoc` 清掉再假装关掉了——那样后端还握着 `current_document` 与监视，
+/// `⌘R` / 外部编辑器会继续打向一份**看不见的文档**（"静默旧真值"）。
+///
+/// # 它清三样，每一样都有具体后果
+///
+/// ① [`Session::drop_watch`]：清 `current_document` ＋ `end_edit()`
+///    （与换文档走同一条路，⛔ 不另写一份"清文档"的实现）。
+/// ② `startup_document = None`：`Session::mode()`（`commands/mod.rs` 的 `mode()`）
+///    在**没有 roots** 时看的就是它 ⇒ 不清的话单文件模式会停在 `SingleFile`，
+///    侧边栏于是画成"未授权态"，而正文是导航页——**两个说法**。
+/// ③ `doc_seq = 0`：前端拿它当"真的关掉了"的回显（`INV-CLOSE-02`），
+///    同时让迟到的进度写被后端判 `stale`（与 `applySnapshot` 里换根清理同一个理由）。
+///
+/// ⚠️ **不动 `grants`**：与 [`super::fs::close_directory`] 的"`files` 不动"同一条口径
+///    ——收回文档 ≠ 收回可读性；本命令⛔ **不新增**任何可读路径（`INV-FS-04`）。
+///
+/// ⚠️ **身份判据是 `doc_seq`**（与 `set_reading_progress` 同款）：请求在路上时用户
+///    可能已经开了另一份，那时**一个字段都不改**、快照原样返回
+///    ——⛔ 不能"反正关掉也对"，那会把新文档连监视一起摘掉，而双方日志都正常。
+#[tauri::command]
+pub fn close_document(
+    state: tauri::State<'_, AppState>,
+    window: tauri::WebviewWindow,
+    doc_seq: u64,
+) -> SessionSnapshot {
+    // ⭐ 多窗口：关的是**这个窗口**的当前文档，⛔ 别的窗口不受影响。
+    state.with(window.label(), |s| {
+        if !apply_close(s, doc_seq) {
+            diag!(
+                "▶ close_document(doc_seq={doc_seq})：当前是 {}——不动",
+                s.doc_seq
+            );
+        }
+        snapshot(s)
+    })
+}
+
+/// 关闭的**纯逻辑**那一半（判据全在这儿，命令体只负责取锁与回快照）。
+///
+/// 拆分理由与 `commit_open` 一族相同：命令体要 `tauri::State`，单测摸不到；
+/// ⛔ 别让"关得干不干净"只能靠人工点。
+///
+/// @returns 真的关了吗（`false` = 身份不符，**一个字段都没改**）
+fn apply_close(s: &mut Session, doc_seq: u64) -> bool {
+    if s.doc_seq != doc_seq {
+        return false;
+    }
+    // ⚠️ `drop_watch()` 顺带清 `current_document` 与编辑态（`mod.rs` 的实现），
+    //    ⛔ 不在这里再手写一遍。
+    //    ⚠️ 锁内 drop 是**可以的**：`Watch::drop` 起一次性线程去停，不在本线程 join
+    //    （与 `unwatch_document` 同一个理由）。
+    if let Some(w) = s.drop_watch() {
+        diag!("▶ close_document：摘监视 seq={}", w.seq);
+        drop(w);
+    }
+    // ⚠️ 单文件模式没有 roots，`Session::mode()` 看的就是 `startup_document`
+    //    ⇒ 不清它，模式会停在 `SingleFile`（侧栏画成"未授权态"，正文却是导航页）。
+    s.startup_document = None;
+    // ⭐ 前端拿它当"真的关掉了"的回显（`INV-CLOSE-02`），顺带让迟到的进度写被判 stale。
+    s.doc_seq = 0;
+    true
+}
+
+/// ⭐ **进入草稿态** · 新建一份**没有路径**的未命名文档（`design/0082` §2.1 ②）。
+///
+/// # 它**一个字节都不写盘**（`INV-OPEN-06` 原样成立）
+///
+/// 正文在保存之前只活在前端内存里；后端只多一个"当前是草稿"的标记
+/// （[`Session::draft`]）。⇒ 所有按路径工作的既有命令（`save_document` /
+/// `reload_document` / `watch_document` / 阅读进度 / 最近打开）**一行都不用改**：
+/// 草稿期间 `current_document` 是 `None`，它们天然按"没有文档"处理。
+///
+/// # 为什么回包与 `open_document` **同形**
+///
+/// 前端只有一条挂载路（`mountDocument`），它读 `doc_seq` / `doc_dir` /
+/// `line_count` / `toc` / `blocks`。给一份**同形**的空载荷，挂载代码只需按
+/// `draft` 一次分流（标题、树、监视、进度、历史），⛔ 不造第二套挂载函数。
+///
+/// ⚠️ `req` 不是装饰：它沿用 `open_document` 那个请求号计数器，**在持锁段推进
+/// `latest_doc_req`** ——否则一份还在路上的打开会在几秒后把这份草稿**无声顶掉**
+/// （`commit_open` 只在"我是最新请求"时提交）。
+#[tauri::command]
+pub fn new_untitled(
+    state: tauri::State<'_, AppState>,
+    window: tauri::WebviewWindow,
+    generation: u64,
+    req: u64,
+) -> Result<DocumentPayload, Denied> {
+    let label = window.label().to_string();
+    let payload = state.with(&label, |s| -> Result<DocumentPayload, Denied> {
+        let current = s.grants.root_generation();
+        if generation != current {
+            return Err(Denied::stale(generation, current));
+        }
+        Ok(apply_new_untitled(s, generation, req))
+    })?;
+    diag!(
+        "▶ new_untitled 草稿#{}（doc_seq={}）· ⛔ 一个字节都不写盘",
+        payload.draft.unwrap_or(0),
+        payload.doc_seq
+    );
+    Ok(payload)
+}
+
+/// 换文档 / 换草稿的**纯逻辑**那一半（判据全在这儿，命令体只负责取锁）。
+///
+/// ⚠️ 收尾与 [`apply_close`] **同一族**：摘监视、清 `current_document`、退编辑态。
+/// 差别只有一条——**不把 `doc_seq` 归零**，而是 +1（这是一次新的会话，
+/// 不是"回到导航页"）。⛔ 别为了省事去调 `apply_close`：它会顺带把 `doc_seq` 清零。
+fn apply_new_untitled(s: &mut Session, generation: u64, req: u64) -> DocumentPayload {
+    // ⚠️ `drop_watch()` 顺带清 `current_document` / 草稿号 / 编辑态（`mod.rs` 的实现），
+    //    ⛔ 不在这里再手写一遍。锁内 drop 是**可以的**：`Watch::drop` 起一次性线程去停
+    //    （与 `apply_close` 同一个理由）。
+    if let Some(w) = s.drop_watch() {
+        diag!("▶ new_untitled：摘监视 seq={}", w.seq);
+        drop(w);
+    }
+    // ⚠️ 单文件模式看的是 `startup_document`（`Session::mode()`）⇒ 不清它，
+    //    草稿期间侧栏会画成"单文件模式"。
+    s.startup_document = None;
+    s.doc_dir = None;
+    // ⭐ **作废在飞的打开**（见命令头最后一段）：`open_document` 第三段比这个号。
+    s.latest_doc_req = req;
+    // ⭐ 草稿号自增（⛔ 不用 `doc_seq`：那个是"打开会话号"，两者是两件事）。
+    s.draft_seq += 1;
+    s.draft = Some(s.draft_seq);
+    // ⭐ 一次新会话 ⇒ 与 `commit_open` 同一条口径 +1（⛔ 不清零，那不是"关掉"）。
+    s.doc_seq += 1;
+
+    DocumentPayload {
+        generation,
+        req,
+        // ⚠️ 空串（⛔ 不是假路径）：前端只有按 `draft` 分流这一条额外规则。
+        path: String::new(),
+        real_path: String::new(),
+        doc_dir: String::new(),
+        html: String::new(),
+        toc: Vec::new(),
+        // ⚠️ `0` 行、空块表：这份载荷的**正文就是空**（真正的行数等第一次预览渲染回来）。
+        line_count: 0,
+        block_kinds: &blocks::KIND_NAMES,
+        blocks: Vec::new(),
+        table_cells: Vec::new(),
+        task_items: Vec::new(),
+        // 草稿不属于任何 root ⇒ 越权提示无从谈起。
+        outside_roots: false,
+        roots_nonempty: s.grants.has_roots(),
+        // ⚠️ 计时字段恒 0：这条路上**没有读盘、没有解析**（`INV-TIMING-01` 的
+        //    "一眼看出单位与口径"——`t1` 的语义是"读盘花了多久"，这里没读盘）。
+        t1_ms: 0.0,
+        t2_ms: 0.0,
+        t3_ms: 0.0,
+        t_blocks_ms: 0.0,
+        source_bytes: 0,
+        html_bytes: 0,
+        ast_nodes: 0,
+        toc_entries: 0,
+        had_bom: false,
+        code_highlighted: 0,
+        code_unhighlighted: 0,
+        mermaid_rendered: 0,
+        mermaid_unrendered: 0,
+        doc_seq: s.doc_seq,
+        draft: s.draft,
+        // ⭐ 草稿的信封 = 空字节的判定结果（LF、无 BOM）——与 `begin_edit` 的基线
+        //    同一个来源（`Envelope::detect_raw(&[])`），⛔ 不在两边各写一个常量。
+        envelope: Envelope::detect_raw(&[]),
+        verify: None,
+    }
 }
 
 /// ⭐ **读取命令** · 用外部编辑器打开当前文档（`design/0006` §2.1 ② / `INV-EXT-01`）。
@@ -561,9 +774,15 @@ pub fn unwatch_document(state: tauri::State<'_, AppState>, seq: u64) {
 /// 那 97 ms ⛔ 不该占着主线程，也⛔ 不该占着异步运行时的工作线程
 /// ⇒ 交给 `spawn_blocking`。
 #[tauri::command]
-pub async fn open_in_external_editor(state: tauri::State<'_, AppState>) -> Result<(), Denied> {
+pub async fn open_in_external_editor(
+    state: tauri::State<'_, AppState>,
+    window: tauri::WebviewWindow,
+) -> Result<(), Denied> {
+    // ⭐ 多窗口：打开的是**这个窗口**正在看的那一份（`design/0068` §2.1）。
+    let label = window.label().to_string();
     // —— 持锁取"要打开的那份路径 + 配置里的编辑器名" ——
-    let (real, editor, editor_for_log) = state.with(|s| -> Result<_, Denied> {
+    // ⚠️ `s.config` 是会话里的**只读副本**（契约 §0），读它不涉及其它锁。
+    let (real, editor, editor_for_log) = state.with(&label, |s| -> Result<_, Denied> {
         let Some(p) = s.current_document.clone() else {
             return Err(Denied::NoDocument);
         };
@@ -729,6 +948,47 @@ pub(crate) fn render_source(src: &str) -> DocRendered {
     }
 }
 
+/// ⭐ **读盘 ＋ 渲染**的一次完整结果（`design/0076` §2.1.2 步骤 a）。
+///
+/// ⚠️ 一次读盘要同时满足**三条**用途：打开/重载要 PDF 之外的一切、导出只要 HTML、
+/// 而信封（`Eol`/BOM）是打开那条路的写侧前提。⇒ 这里把"读一次盘之后能确定的东西"
+/// **一次全带走**，⛔ 不在导出路径上再读第二遍（TOCTOU 窗口 + 双倍 IO）。
+pub(crate) struct FileRender {
+    pub doc: DocRendered,
+    pub envelope: Envelope,
+    pub source_bytes: usize,
+    pub had_bom: bool,
+    pub t1_ms: f64,
+}
+
+/// 真读 + 解析 + 渲染。**这里没有任何授权判断**——调用方已经查过了。
+///
+/// ⭐ 导出（`commands/export.rs`）与打开（[`read_and_render`]）共用这一份实现：
+/// 两处各调一次 `loader::load`＋`render_source` 的话，"导出与屏幕是不是同一份渲染"
+/// 就只能靠人记得同步（`INV-SINGLE-01` 的同族）。
+pub(crate) fn render_file(real: &Path) -> Result<FileRender, Denied> {
+    // —— T1 读盘 ——
+    let t0 = Instant::now();
+    let loaded = loader::load(real).map_err(|e| Denied::io(real, e))?;
+    let t1 = t0.elapsed();
+    let src = loaded.source;
+    let had_bom = loaded.had_bom;
+
+    let doc = render_source(&src);
+
+    // ⭐ 信封由**这一瞬**正文的字节判定（`detect` 而不是 `detect_raw`：
+    //    这里手上是 `source` ＋ `had_bom` 这两样，见 `loader.rs`）。
+    let envelope = Envelope::detect(&src, had_bom);
+
+    Ok(FileRender {
+        doc,
+        envelope,
+        source_bytes: src.len(),
+        had_bom,
+        t1_ms: t1.as_secs_f64() * 1000.0,
+    })
+}
+
 /// 真读 + 解析 + 渲染。**这里没有任何授权判断**——调用方已经查过了。
 ///
 /// ⚠️ 返回 `(payload, stats)` 两件，`stats` **不进** `payload`：
@@ -742,19 +1002,9 @@ fn read_and_render(
     outside_roots: bool,
     roots_nonempty: bool,
 ) -> Result<(DocumentPayload, crate::document::render::RenderStats), Denied> {
-    // —— T1 读盘 ——
-    let t0 = Instant::now();
-    let loaded = loader::load(real).map_err(|e| Denied::io(real, e))?;
-    let t1 = t0.elapsed();
-    let src = loaded.source;
-    let had_bom = loaded.had_bom;
+    let FileRender { doc: r, envelope, source_bytes, had_bom, t1_ms } = render_file(real)?;
 
-    let r = render_source(&src);
-
-    // ⭐ 信封由**打开这一瞬**正文的字节判定（`detect` 而不是 `detect_raw`：
-    //    这里手上是 `source` ＋ `had_bom` 这两样，见 `loader.rs`）。
-    //    ⚠️ 提前取成变量：块表的 `editable` 要问它的 `eol`（`Eol::Other` ⇒ 整篇不可编辑）。
-    let envelope = Envelope::detect(&src, had_bom);
+    // ⚠️ 提前取成变量：块表的 `editable` 要问它的 `eol`（`Eol::Other` ⇒ 整篇不可编辑）。
     let eol_is_other = envelope.eol == Eol::Other;
 
     Ok((
@@ -776,11 +1026,11 @@ fn read_and_render(
             task_items: blocks::tasks_to_wire(&r.task_items),
             outside_roots,
             roots_nonempty,
-            t1_ms: t1.as_secs_f64() * 1000.0,
+            t1_ms,
             t2_ms: r.t2_ms,
             t3_ms: r.t3_ms,
             t_blocks_ms: r.t_blocks_ms,
-            source_bytes: src.len(),
+            source_bytes,
             html_bytes: r.html_bytes,
             ast_nodes: r.ast_nodes,
             toc_entries: r.toc_entries,
@@ -788,9 +1038,15 @@ fn read_and_render(
             // ⭐ Q22 规模闸门的两个数（见 `DocumentPayload` 上那两条注释）。
             code_highlighted: r.stats.code_highlighted,
             code_unhighlighted: r.stats.code_unhighlighted(),
+            // ⭐ `design/0060`：Mermaid 的两个可见数（同一条理由，见字段注释）。
+            mermaid_rendered: r.stats.mermaid_rendered,
+            mermaid_unrendered: r.stats.mermaid_unrendered(),
             // ⚠️ 占位：真正的值在**第三段提交**时由调用方填（`design/0017` §2.2 ①）。
             //    渲染与提交是两个时刻，这里拿到的任何号都可能是"上一次打开"的。
             doc_seq: 0,
+            // ⚠️ 打开/重载产出的**必然是真实文档**（它读过盘、有规范化路径）
+            //    ⇒ 恒 `None`（`design/0082` §2.1 ②）。⛔ 只有 `new_untitled` 填 `Some(id)`。
+            draft: None,
             envelope,
             // ⚠️ 打开/重载这条路**没有**候选校验（校验只服务"发布前的那一次提交"）——
             //    恒 `None`。⛔ 别在这里填一个"通过"的假判决。
@@ -820,9 +1076,15 @@ mod tests {
             doc_dir: None,
             startup_document: None,
             pending_opens: VecDeque::new(),
+            // ⚠️ `design/0068` §2.5：待打开请求随窗口消亡，测试里恒为 None。
+            pending_navigation: None,
             last_render_stats: Default::default(),
             current_document: None,
             doc_seq: 0,
+            // ⭐ `design/0082`：草稿态在这批测试里默认缺席（每个用例自己置）。
+            draft: None,
+            edit_draft: None,
+            draft_seq: 0,
             edit_target: None,
             self_write: None,
             save_inflight: None,
@@ -897,7 +1159,144 @@ mod tests {
         assert_eq!(s.doc_seq, 4);
     }
 
-    /// ⭐ `design/0035` B6b：改名**不会**让在途的旧路径快照顶上来。
+    /// ⭐ `design/0056`：身份不符的关闭**一个字段都不改**（`INV-CLOSE-02`）。
+    ///
+    /// 真实的交错：F2 发出去之后、命令落地之前，用户又打开了另一份文档
+    /// （`watch_document` 已经把新监视建好）——这时若"反正关掉也对"，
+    /// 就会把**新的那一份**连监视一起摘掉，而双方日志都正常。
+    #[test]
+    fn 关闭时身份不符一个字段都不改() {
+        let mut s = session();
+        s.current_document = Some(PathBuf::from("/new.md"));
+        s.startup_document = Some(PathBuf::from("/new.md"));
+        s.doc_seq = 7;
+
+        assert!(!apply_close(&mut s, 6), "6 不是当前会话号");
+
+        assert_eq!(s.current_document.as_deref(), Some(Path::new("/new.md")));
+        assert_eq!(s.startup_document.as_deref(), Some(Path::new("/new.md")));
+        assert_eq!(s.doc_seq, 7);
+    }
+
+    /// ⭐ `design/0056`：命中之后三样一起清，且模式回到 `Empty`。
+    ///
+    /// ⚠️ 单文件模式（没有 roots）里 `Session::mode()` 看的是 `startup_document`
+    /// ⇒ 只清 `current_document` 是不够的，界面会停在"未授权态"。
+    #[test]
+    fn 关闭命中后清三样且模式回到空会话() {
+        let mut s = session();
+        s.current_document = Some(PathBuf::from("/a.md"));
+        s.startup_document = Some(PathBuf::from("/a.md"));
+        s.doc_seq = 3;
+        assert_eq!(s.mode(), crate::commands::Mode::SingleFile, "前置：单文件模式");
+
+        assert!(apply_close(&mut s, 3));
+
+        assert_eq!(s.current_document, None, "current_document 必须清");
+        assert_eq!(s.startup_document, None, "startup_document 必须清");
+        assert_eq!(s.doc_seq, 0, "会话号归零（回显判据）");
+        assert_eq!(s.mode(), crate::commands::Mode::Empty);
+    }
+
+    /// ⭐ `design/0056`：编辑态**一并结束**（`drop_watch` 那条既有语义）。
+    ///
+    /// ⚠️ 留着 `edit_target` 就是一条"孤儿写授权"（`INV-EDIT-02`：
+    /// 退出编辑态即撤销），而正文已经不在屏上了。
+    #[test]
+    fn 关闭顺带结束编辑态() {
+        let mut s = session();
+        s.current_document = Some(PathBuf::from("/a.md"));
+        s.doc_seq = 2;
+        s.edit_target = Some(PathBuf::from("/a.md"));
+
+        assert!(apply_close(&mut s, 2));
+
+        assert_eq!(s.edit_target, None, "编辑态必须一起结束");
+    }
+
+    // ════════════════════════════════════════════════════════════════════
+    //  ⭐ `design/0082`：草稿态（未命名文档）
+    // ════════════════════════════════════════════════════════════════════
+
+    /// ⭐ `new_untitled` 的会话收尾：**上一份文档的一切都不许留下**。
+    ///
+    /// ⚠️ 真实交错：用户正编辑 `/a.md`（写授权 ＋ 基线都在），按下 `⌘N`——
+    /// 草稿与那份文档毫无关系，任何一样残留都是"另一份文档的授权跟着草稿走"。
+    #[test]
+    fn 新建草稿清掉旧文档的路径与编辑态() {
+        let mut s = session();
+        s.current_document = Some(PathBuf::from("/a.md"));
+        s.startup_document = Some(PathBuf::from("/a.md"));
+        s.doc_dir = Some(PathBuf::from("/"));
+        s.edit_target = Some(PathBuf::from("/a.md"));
+        s.baseline_bytes = Some(b"abc\n".to_vec());
+        s.doc_seq = 3;
+
+        let p = apply_new_untitled(&mut s, 0, 7);
+
+        assert_eq!(s.current_document, None, "草稿没有路径");
+        assert_eq!(s.startup_document, None, "⛔ 否则模式停在单文件");
+        assert_eq!(s.doc_dir, None);
+        assert_eq!(s.edit_target, None, "旧文档的写授权必须撤销");
+        assert_eq!(s.baseline_bytes, None, "旧基线跟着写授权一起走");
+        assert_eq!(s.draft, Some(1));
+        assert_eq!(s.doc_seq, 4, "新会话 +1（⛔ 不是关文档那种归零）");
+        // 回包与挂载路同形：路径空、块表空、`draft` 带上号
+        assert_eq!(p.real_path, "");
+        assert_eq!(p.doc_dir, "");
+        assert_eq!(p.draft, Some(1));
+        assert_eq!(p.doc_seq, 4);
+        assert!(p.blocks.is_empty() && p.toc.is_empty());
+        assert_eq!(p.source_bytes, 0);
+        assert_eq!(p.envelope.eol, crate::document::envelope::Eol::Lf);
+        assert!(!p.envelope.bom);
+        assert_eq!(s.mode(), crate::commands::Mode::Empty, "草稿不是第四种模式");
+    }
+
+    /// ⭐ **`req` 必须在持锁段推进 `latest_doc_req`**（否则在飞的打开会顶掉草稿）。
+    ///
+    /// 场景：用户点开 `/a.md`（`open_document` 已经在放锁渲染），随即按 `⌘N`。
+    /// 那份打开回来时请求号已经更小 ⇒ `commit_open` 必须把它丢弃。
+    #[test]
+    fn 新建草稿作废在飞的打开() {
+        let mut s = session();
+        s.latest_doc_req = 5; // `/a.md` 那次打开
+        let _ = apply_new_untitled(&mut s, 0, 6);
+        // `/a.md` 的第三段现在才到
+        let seq = commit_open(&mut s, 0, 5, Path::new("/a.md"), Default::default());
+        assert_eq!(seq, None, "⚠️ 接受它 = 草稿被无声顶掉");
+        assert_eq!(s.current_document, None);
+        assert_eq!(s.draft, Some(1), "草稿仍在");
+    }
+
+    /// ⭐ **真实文档胜出**：打开一份文档必须清掉草稿号（`design/0082` §2.1 ②）。
+    ///
+    /// ⚠️ 不清的后果是"有路径的文档被前端当草稿"——`⌘S` 会分流到保存面板。
+    #[test]
+    fn 打开真实文档清掉草稿标记() {
+        let mut s = session();
+        let _ = apply_new_untitled(&mut s, 0, 1);
+        assert_eq!(s.draft, Some(1), "前置：确实是草稿");
+        s.latest_doc_req = 2;
+        let seq = commit_open(&mut s, 0, 2, Path::new("/a.md"), Default::default());
+        assert_eq!(seq, Some(2));
+        assert_eq!(s.draft, None, "真实文档胜出");
+        // ⚠️ `current_document` 不在这里断言：它的写入点是 `watch_document`
+        //    （见那个函数里的注释），`commit_open` 只负责清草稿号。
+    }
+
+    /// 草稿号**单调**：连按 `⌘N` 得到两个不同的号（前端据它判"这是不是我这一份"）。
+    #[test]
+    fn 连续新建草稿得到新的号() {
+        let mut s = session();
+        let a = apply_new_untitled(&mut s, 0, 1);
+        let b = apply_new_untitled(&mut s, 0, 2);
+        assert_eq!(a.draft, Some(1));
+        assert_eq!(b.draft, Some(2));
+        assert_ne!(a.doc_seq, b.doc_seq, "每次都是一次新的会话");
+    }
+
+
     ///
     /// 场景：`reload_document` 的第一段已经按**旧路径**读好并放锁渲染，
     /// 这期间用户把当前文档改了名（`current_document` 迁到新路径、`doc_seq` 不变）。

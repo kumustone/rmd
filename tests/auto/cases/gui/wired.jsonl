@@ -1,0 +1,8 @@
+# design/0064 P1：已接入的 5 个驱动，每个驱动 1 条结论用例。
+# ⚠️ 这里只写「跑哪个目标、要什么结论」；判据在驱动自己的 --json 里，⛔ 不抄第二份期望。
+# 「min_checks」是**下限**：防止驱动某天少判几条仍绿（条数萎缩要红）。
+{"id":"gui-i18n","family":"gui-i18n","driver":"i18n","argv":["make","--no-print-directory","probe-i18n"],"args":["--json"],"expect":{"verdict":"pass","min_checks":14},"timeout_s":600}
+{"id":"gui-doclist","family":"gui-doclist","driver":"doclist","argv":["make","--no-print-directory","probe-doclist"],"args":["--json"],"expect":{"verdict":"pass","min_checks":4},"timeout_s":900}
+{"id":"gui-sidebar-search","family":"gui-sidebar-search","driver":"sidebar-search","argv":["make","--no-print-directory","probe-sidebar-search"],"args":["--json"],"expect":{"verdict":"pass","min_checks":9},"timeout_s":600}
+{"id":"gui-link-nav","family":"gui-link-nav","driver":"link-nav","argv":["make","--no-print-directory","probe-link-nav"],"args":["--json"],"expect":{"verdict":"pass","min_checks":11},"timeout_s":600}
+{"id":"gui-tree-menu","family":"gui-tree-menu","driver":"tree-menu","argv":["make","--no-print-directory","probe-tree-menu"],"args":["--json"],"expect":{"verdict":"pass","min_checks":32},"timeout_s":600}

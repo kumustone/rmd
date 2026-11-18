@@ -152,6 +152,27 @@
   }
 
   /**
+   * ⭐ `bugs/0077`：`keepScroll` 重渲的**落定后校正**该不该写。
+   *
+   * 与 `shouldCorrect` 同族，差别只有一条：**不排除编辑态**——
+   * 编辑态下预览栏自己滚，提交后重渲走的正是 `keepScroll`，它同样会被图片撑开。
+   * 会话号也不参与：这条路是"同一份文档重渲"，`mountGen` 已经把换文档挡在外面。
+   *
+   * @param {object|null} pending `{mountGen, path, expires, userAborted}`
+   * @param {number} mountGen 当前挂载代号
+   * @param {string} pathNow 当前文档路径
+   * @param {number} now 现在（ms）
+   */
+  function shouldFixKeepScroll(pending, mountGen, pathNow, now) {
+    if (!pending) return false;
+    if (pending.userAborted === true) return false;
+    if (pending.mountGen !== mountGen) return false;
+    if (pending.path !== pathNow) return false;
+    if (finite(pending.expires) && now > pending.expires) return false;
+    return true;
+  }
+
+  /**
    * 把后端回来的**规范化条目**并入运行期恢复表（`design/0017` §2.3 ③，评审 R1）。
    *
    * ⭐ 后端清洗/盖章后的条目才是真值（前端那份可能刚被夹过 / 舍入过）；
@@ -186,6 +207,7 @@
     restorePlan: restorePlan,
     planSave: planSave,
     shouldCorrect: shouldCorrect,
+    shouldFixKeepScroll: shouldFixKeepScroll,
     mergeWrite: mergeWrite,
   };
 

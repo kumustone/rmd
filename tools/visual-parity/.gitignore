@@ -1,0 +1,8 @@
+# tools/visual-parity 的本地工作产物：⛔ 不入库（bugs/0194 / R5 §3.4）。
+# export-fixtures.sh 的默认工作目录、备份、临时载荷都在 .work/ 下。
+.work/
+__pycache__/
+*.pyc
+# backfill-expect.py 真写前的默认备份（<expect>.bak.<ts>.<pid>）与原子写残留。
+*.bak.*
+*.tmp.*

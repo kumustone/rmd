@@ -47,6 +47,10 @@
             所以它排在**全部** `<link>` 之后 ⇒ 那部分**只能靠特异性赢**（见文件头）。
        ⇒ 排最后不对它有好处，⛔ 但也无害：它对 CM6 那几条的赢法从来不是顺序。 -->
   <link rel="stylesheet" href="styles/editor.css">
+  <!-- ⭐ 这份是 `design/0076` 加的，位置在 **editor.css 之后、live.css 之前**：
+       打印布局只作用于 `@media print`（顶层另有 `@page`），屏幕排版不受影响；
+       ⚠️ `live.css` 仍是**最后一张**（`tests/js/live-wiring.test.js` 守着）。 -->
+  <link rel="stylesheet" href="styles/print.css">
   <!-- ⭐ 这份是 `design/0047` 加的，位置在 **editor.css 之后**（最后一张）：
        阅读—编辑覆盖层把一块正文换成第二个 `EditorView`，它要压过
        `typography.css` 的 `.doc` 规则（块内排版跟正文一致）与 `editor.css` 的
@@ -204,6 +208,35 @@
          分批开发的边界写死在 docs/design/0002 §10.4。 -->
     <div id="status" class="status" data-i18n="status.loading">加载中…</div>
 
+    <!-- ⭐ 全局失败条（`design/0070` §2.3.1／`INV-FAIL-01`）。
+         ⚠️ 它只承载「**没有本地承载面、用户发起、需要用户知道**」的失败（打开 / 关闭 /
+            链接 / 外部编辑器 / 选择目录…）；有锚点的失败必须行内说
+            （启动页段内联 `.start-note`、编辑面 `#edit-status`），
+            后台维护与"这次被拒"只进上面的 `#status` 中性提示。
+         ⚠️ 同一时刻**只有一条**、**不自动消失**（`INV-FAIL-03`）；
+            `P0` 用 `role=alert` ＋ `assertive`，`P1` 用 `role=status` ＋ `polite`
+            ——这两个属性由 `services/failbar.js` 按级别现贴，⛔ 别在 HTML 里写死。
+         ⚠️ 它**不在** `body.chrome-hidden` 的点名里（`INV-CHROME-01`）：
+            失败不是装饰，折叠顶栏时照样可见。
+         ⚠️ 三块子元素由 JS 填充；这里只给骨架（⛔ 不放 `data-i18n`——文案随 key 变）。 -->
+    <div id="fail-bar" class="fail-bar" role="status" aria-live="polite" hidden>
+      <span id="fail-text" class="fail-text"></span>
+      <span id="fail-actions" class="fail-actions"></span>
+      <span id="fail-detail" class="fail-detail" hidden></span>
+    </div>
+
+    <!-- ⭐ 拖入窗口的遮罩（`design/0071` §2.2）。
+         ⚠️ 它**只是视觉反馈**：没有任何可操作内容、⛔ 不接收指针事件
+            （`pointer-events: none`——拖放的落点始终是下面那些真实元素）。
+         ⚠️ 显隐由 `services/drop.js` 的 `hidden` 属性驱动；文案走 `data-i18n`，
+            ⛔ 别在这里写死文字。 -->
+    <div id="drop-overlay" class="drop-overlay" aria-hidden="true" hidden>
+      <div class="drop-overlay-card">
+        <span class="drop-overlay-icon" aria-hidden="true">↓</span>
+        <span class="drop-overlay-text" data-i18n="drop.hint">松开即可打开 Markdown 文件或目录</span>
+      </div>
+    </div>
+
     <!-- ⭐ 目录监视健康（`design/0050` §2.3.4 / `INV-DISK-06`）。
          ⚠️ 为什么**必须**有一行：监视坏掉时"盘上变了、树不动"与"盘上什么都没变"
             在界面上**长得一模一样**——这一行是唯一的区分。
@@ -304,6 +337,18 @@
        ✅ 位次有自动闸门：`tests/js/i18n.test.js` 的「脚本位次」＋ `keymap.test.js`
           那条「脚本加载顺序·依赖先于取值」（⚠️ 那条按 `<script src>` 的**路径串**建索引）。 -->
   <script src="services/i18n.js"></script>
+  <!-- ⭐ `design/0070`：全局失败条（`#fail-bar`）的**模型与渲染**。
+       ⚠️ 它自己**不取**任何 `window.rmd.*`（字典由调用方注入），但 `main.js` 在
+          **加载期**就取 `window.rmd.failBar` ⇒ 必须排在 `main.js` 之前。
+       ✅ 判据在 `tests/js/failbar.test.js`（纯逻辑 ＋ 假 DOM 渲染）。 -->
+  <script src="services/failbar.js"></script>
+  <!-- ⭐ `design/0071` §2.2：拖入窗口的**遮罩状态机**（纯逻辑 ＋ 一个 DOM 开关）。
+       ⚠️ 它与 `failbar.js` 是**两件事**：这一份只回答"遮罩该不该显示"，
+          判定"拖进来的能不能开"全在 Rust（`gui/mod.rs::classify_drop`）。
+       ⚠️ 它**不认路径**（事件只带 `"enter"|"leave"`，`INV-OPEN-01`）。
+       ⚠️ 必须排在 `main.js` 之前——引导流程会就地建它的实例（⛔ 不建也不致命，
+          只是拖进来时没有视觉反馈）。 -->
+  <script src="services/drop.js"></script>
   <script src="services/versions.js"></script>
   <script src="services/chunked.js"></script>
   <!-- ⭐ `design/0041`：文档列表的纯逻辑（不依赖任何 `window.rmd.*`）
@@ -313,6 +358,10 @@
        ⚠️ 它不依赖任何东西，排在 `session.js` 之前之后都行——放这里是因为
           `session.js` 与 `main.js` 都用不到它**在加载期**的副作用（它没有副作用）。 -->
   <script src="services/reload.js"></script>
+  <!-- ⭐ `design/0069`：文档访问历史（后退 / 前进）的**纯逻辑** ＋ 鼠标侧键识别器。
+       ⚠️ 它不取任何 `window.rmd.*`（无加载期依赖），但 `main.js` 在**加载期**
+          就取 `window.rmd.history` ⇒ 必须排在 `main.js` 之前。 -->
+  <script src="services/history.js"></script>
   <!-- ⭐ `design/0017`：阅读进度的**纯逻辑**（形状转换 / 频控 / 恢复三态）。
        ⚠️ 它**不取** `window.rmd.*`（无加载期依赖），但必须在 `main.js` 之前存在；
           ⚠️ 锚点算法仍然只有 `reload.js` 一份，⛔ 这里不抄第二份。 -->
@@ -351,7 +400,8 @@
        ⚠️ 它是**纯函数**、不依赖任何别的模块，唯一的使用者是**最后**加载的根 `main.js`
           ⇒ 位置本来没有自由度。抽出来单独成文件是因为**内联在 `main.js` 里就没有断言**，
           而它的失效形态是"那一句永远不出现、屏幕上一切正常"。
-          ✅ 断言在 `tests/js/renderstat.test.js`（7 条，含"不许印 NaN"与"不许说成内容丢了"）。 -->
+          ✅ 断言在 `tests/js/renderstat.test.js`（11 条，含"不许印 NaN"与"不许说成内容丢了"）。
+          ⭐ `design/0060` 起同一个文件还有 Mermaid 那一句（`mermaidNotice`）。 -->
   <script src="services/renderstat.js"></script>
   <!-- ⭐ 2026-10-29 代码评审第 5 条：提交后**整篇重渲**的文档级成本。
        就地编辑的提交只有一个出口（`mountDocument` 的 `innerHTML` ＋ 强制布局），
@@ -375,6 +425,12 @@
           而且**必须在根 `main.js` 之前**——后者在**加载期**就把 `window.rmd.sync` 取成常量。
        ⚠️ 判据在 `tests/js/sync.test.js`；**接线**那半要真 DOM ⇒ 离屏探针 `make probe-scroll-sync`。 -->
   <script src="services/sync.js"></script>
+  <!-- ⭐ `design/0079`：阅读视图三件套的**纯逻辑**（行号映射 / 缩放档位 / 行号属性开关）。
+       ⚠️ 行号数据只吃 `live/blocks.js` 对齐后的块表，⛔ 不解析 Markdown（`INV-VIEW-01`）。
+       ⚠️ 必须排在根 `main.js` **之前**——后者在加载期就把 `window.rmd.viewstate` 取成常量；
+           它本身**不依赖任何别的 `window.rmd.*`**，放这儿是为了与其余 `services/*` 同群。
+       ⚠️ 判据在 `tests/js/view-p2.test.js`（纯逻辑 ＋ 变异自测 ＋ 源码级单状态闸门）。 -->
+  <script src="services/viewstate.js"></script>
   <!-- ⭐ `design/0018` §2.2：图片预览的**全部数学**（`INV-ZOOM-06`）。
        ⚠️ 必须排在 `components/ImageViewer.js` **之前**（后者在加载期就取
        `window.rmd.imagezoom` 当常量）。它不依赖任何别的 `window.rmd.*`，
@@ -393,6 +449,17 @@
        `services/*` 同群"，⛔ 别挪到 `components/` 之后。
        ⚠️ 判据在 `tests/js/start.test.js`（纯逻辑 ＋ 源码级闸门）。 -->
   <script src="services/start.js"></script>
+  <!-- ⭐ `design/0071` §3：`⌘O` 打开面板的**纯逻辑**（行序 / 上限 / 选中移动）。
+       ⚠️ 它**加载期**取 `window.rmd.start`（`tilde` / `basename` 复用那一份，
+          ⛔ 不抄第二份）⇒ 必须排在 `services/start.js` **之后**；
+       ⚠️ `components/OpenPanel.js` 与 `main.js` 都在加载期取它 ⇒ 必须排在两者**之前**。
+          顺序反了的症状是"`⌘O` 按下没反应、也没有报错"（`0009` 的 `search.js` 同族）。 -->
+  <script src="services/openpanel.js"></script>
+  <!-- ⭐ `design/0071` §5 / `design/0068` §2.4：新窗口「待处理导航」的**纯逻辑**
+       （`{kind, value}` → 该调哪条既有命令）。⛔ 不拼路径、⛔ 不判断可达性。
+       ⚠️ `main.js` 在**加载期**取 `window.rmd.windownav` ⇒ 必须排在它**之前**；
+          它本身不依赖任何别的 `window.rmd.*`，所以排在这一群即可。 -->
+  <script src="services/windownav.js"></script>
   <!-- ⭐ `design/0050`：盘上变更的**前端唯一入口**（内容修订 `seq` ＋ 监视健康 ＋ 两条窄命令）。
        ⚠️⚠️ 它**必须排在 `session.js` 之前**——后者在**加载期**把 `window.rmd.diskEvents`
           取成常量（`listDir` 的提交点要读 `seq`）。顺序反了只有"第一次列目录"时才炸，
@@ -418,6 +485,12 @@
        ⚠️ 它同样必须排在 `FileTree.js` 之前（后者加载期取 `window.rmd.clipboard`）。
        ⚠️ 它**不读也不写**用户剪贴板内容，除非用户真的点了「复制绝对路径」。 -->
   <script src="services/clipboard.js"></script>
+  <!-- ⭐ `design/0077`：多格式复制的**纯逻辑**（MIME 计划 / 块源码片段 / 语境判据）。
+       ⚠️ `main.js` 在加载期取 `window.rmd.copyFormats` ⇒ 必须排在它之前；
+       本文件不依赖剪贴板服务（真正的写入仍在 `clipboard.js`）。 -->
+  <script src="services/copyformats.js"></script>
+  <!-- ⚠️ `design/0082` §2.1：原来的 `services/newfile.js`（`⌘N` 在树里建文件的纯逻辑）
+       已随"先建后存"一起删除——`⌘N` 不再需要目标目录，也⛔ 不再碰 `create_entry`。 -->
   <script src="components/FileTree.js"></script>
   <!-- ⭐ `design/0041`：文档列表（平铺视图）。⚠️ 必须排在 `session.js` /
        `doclists.js` / `chunked.js` 之后（加载期取值，`frontend.md` 的硬约束）。 -->
@@ -430,6 +503,11 @@
        它要拿后者的覆盖层登记处（`registerOverlay` / `closeOtherOverlays`，
        `INV-SET-07`：两层覆盖层互斥，至多一层在屏幕上）。 -->
   <script src="components/QuickOpen.js"></script>
+  <!-- ⭐ `design/0071` §3：`⌘O` 打开面板（第五层覆盖层）。⚠️ 位置是硬要求——
+       它要拿 `Settings.js` 的覆盖层登记处（`registerOverlay` / `closeOtherOverlays`，
+       `INV-SET-07` 的互斥），还要 `openpanel.js`（行序）与 `keymap.js`（组合态判据），
+       三份都必须先于它；它自己必须排在 `main.js` 之前（后者加载期取 `window.rmd.openPanel`）。 -->
+  <script src="components/OpenPanel.js"></script>
   <!-- ⭐ `design/0042`：侧边栏底部的常驻文件名搜索。⚠️ 顺序：它加载期取
        `keymap.js`（认刷新键）/ `search.js`（切命中片段）/ `sidebarsearch.js`（三分支），
        三份都必须先于它；它自己必须排在 `main.js` 之前（`main.js` 加载期就取
@@ -473,6 +551,11 @@
   <script src="editor/save.js"></script>
   <script src="editor/vim.js"></script>
   <script src="editor/main.js"></script>
+  <!-- ⭐ `design/0061` L4：选中浮动格式栏的**挂载点**。
+       ⚠️ 留空：按钮由 `live/formatbar.js` 在运行期建（文案因此不进本文件的
+       `data-i18n*` 扫描面）。`hidden` 是出厂态，只在编辑态且有非空选区时由脚本显示；
+       位置/尺寸完全由脚本按选区算（`position: fixed`，⛔ 不占正文行盒）。 -->
+  <div id="live-formatbar" class="live-formatbar" hidden></div>
   <!-- ⭐ `design/0047`：阅读—编辑连续性（`src/live/**`）。⚠️ **顺序是硬要求**，两层：
        ① 组内：`model.js` → `blocks.js` 是 `index.js` 的**加载期取值**
           （`index.js` 顶部 `window.rmd.liveModel` / `liveBlocks`）；其余四份
@@ -485,11 +568,15 @@
           与 `services/*` 同一条纪律）。
        ⚠️ 反了的表现是**启动就空白窗口**（经典脚本里 `const LC = undefined`，
        而 `LC` 在 `setupLive()` 里才被摸到 ⇒ 也可能是"正文一挂上就炸"）。
-       ⚠️ 这十份**都不碰 DOM / CM6 / IPC**（纯逻辑或纯装配；`box.js` 只吃一个
+       ⚠️ 组内那十份**都不碰 DOM / CM6 / IPC**（纯逻辑或纯装配；`box.js` 只吃一个
        `getComputedStyle()` 的结果对象，自己不摸 DOM）——
        真 DOM 那半在 `main.js` 的注入实现里（`INV-LIVE-17`：判据要能在 node 里跑）。 -->
   <script src="live/model.js"></script>
   <script src="live/blocks.js"></script>
+  <!-- ⭐ `design/0058`：全文变更事务的协调层（五种结果 / T0 成对回滚 / 选区载荷）。
+       ⚠️ 必须在 `live/model.js` **之后**（不改它，但概念上是同一层）、
+       在 `live/index.js` **之前**（后者加载期取 `window.rmd.liveTxn`）。 -->
+  <script src="live/txn.js"></script>
   <!-- ⭐ `design/0054`：**编辑对象的策略表**（允许的操作 / 输入约束 / 呈现 / 写回校验）。
        ⚠️ 必须在 `live/index.js` 与 `main.js` **之前**（两者都在加载期取值）。 -->
   <script src="live/objects.js"></script>
@@ -497,12 +584,33 @@
   <script src="live/cell.js"></script>
   <!-- ⭐ `design/0051`：任务项方框的纯逻辑。⚠️ 同上，必须在 `live/index.js` **之前**。 -->
   <script src="live/task.js"></script>
+  <!-- ⭐ `design/0078`：块命令与表格行列操作的纯计划层。
+       ⚠️ 必须在 `live/index.js` **之前**（后者加载期取 `window.rmd.liveBlockCmd` /
+       `window.rmd.liveTable`），也必须在 `live/formatbar.js` **之前**（格式栏在
+       `install()` 时就按这两张表建菜单）。两者都不碰 DOM / CM6 / IPC。 -->
+  <script src="live/blockcmd.js"></script>
+  <script src="live/table.js"></script>
   <script src="live/selection.js"></script>
+  <!-- ⭐ `design/0065` P1：列表几何的唯一真相（纯函数）。⚠️ 必须在 `live/decorations.js`
+       **之前**——后者加载期就取 `window.rmd.liveGeometry`（取不到会立刻报错，⛔ 不退回第二套公式）。 -->
+  <script src="live/geometry.js"></script>
   <script src="live/decorations.js"></script>
   <script src="live/a11y.js"></script>
   <script src="live/input.js"></script>
   <script src="live/box.js"></script>
+  <!-- ⭐ `design/0061` L4：**选中浮动格式栏**（加粗 / 斜体 / 行内代码 / 删除线 / 链接 /
+       标题级别 / 列表 / 引用）。⚠️ 必须在 `live/index.js` **之前**、在 `main.js` 之前。
+       ⚠️ 它**不参与**上面"组内都不碰 DOM / CM6"那条——与 `preedit.js` 同族：它就是要碰
+       DOM（浮层）与 CM6（`view.dispatch`）。但它**加载期不取任何 `window.rmd.*`**
+       （全部是事件里的惰性查找）⇒ 排在 `index.js` 之前不会拿到 `undefined`。 -->
+  <script src="live/formatbar.js"></script>
   <script src="live/index.js"></script>
+  <!-- ⭐ `design/0047` §2.7（2026-11-02）：IME 组合串的**行内 widget**。
+       ⚠️ 上面那句"都不碰 DOM / CM6"**不覆盖这一份**——它就是要吃 `CM6.WidgetType` /
+       `Decoration`（live 层有独立的扩展白名单，而 `main.js` 里出现那个符号会被
+       `tests/js/keymap.test.js` 的活性自测打红）。
+       ⚠️ 必须在 `main.js` **之前**（后者加载期取 `window.rmd.livePreedit`）。 -->
+  <script src="live/preedit.js"></script>
   <script src="main.js"></script>
 </body>
 </html>

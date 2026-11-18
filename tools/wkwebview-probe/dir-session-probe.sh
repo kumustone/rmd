@@ -52,7 +52,10 @@ TAURIJS="$ROOT/src/services/tauri.js"
 VERSIONS="$ROOT/src/services/versions.js"
 CHUNKED="$ROOT/src/services/chunked.js"
 SEARCHJS="$ROOT/src/services/search.js"
+DISKEVENTS="$ROOT/src/services/diskevents.js"
 SESSIONJS="$ROOT/src/services/session.js"
+TREEREFRESH="$ROOT/src/services/treerefresh.js"
+CLIPBOARD="$ROOT/src/services/clipboard.js"
 HARNESS="$HERE/dir-session-harness.js"
 SWIFT="$HERE/dir-session-probe.swift"
 
@@ -61,7 +64,7 @@ if ! command -v swiftc >/dev/null 2>&1; then
   exit 3
 fi
 for f in "$DIRSESSION" "$FILETREE" "$TAURIJS" "$VERSIONS" "$CHUNKED" "$SEARCHJS" \
-         "$SESSIONJS" "$HARNESS" "$SWIFT"; do
+         "$DISKEVENTS" "$SESSIONJS" "$TREEREFRESH" "$CLIPBOARD" "$HARNESS" "$SWIFT"; do
   if [ ! -f "$f" ]; then
     echo "⛔ 缺 $f" >&2
     exit 3
@@ -86,19 +89,30 @@ build_page() {
   local dir="$1"
   rm -rf "$dir"
   mkdir -p "$dir"
-  cp "$VERSIONS"  "$dir/versions.js"
-  cp "$CHUNKED"   "$dir/chunked.js"
-  cp "$DIRSESSION" "$dir/dirsession.js"
-  cp "$TAURIJS"   "$dir/tauri.js"
-  cp "$SEARCHJS"  "$dir/search.js"
-  cp "$SESSIONJS" "$dir/session.js"
-  cp "$FILETREE"  "$dir/filetree.js"
-  cp "$HARNESS"   "$dir/harness.js"
+  cp "$VERSIONS"    "$dir/versions.js"
+  cp "$CHUNKED"     "$dir/chunked.js"
+  cp "$DIRSESSION"  "$dir/dirsession.js"
+  cp "$TAURIJS"     "$dir/tauri.js"
+  cp "$SEARCHJS"    "$dir/search.js"
+  cp "$DISKEVENTS"  "$dir/diskevents.js"
+  cp "$SESSIONJS"   "$dir/session.js"
+  cp "$TREEREFRESH" "$dir/treerefresh.js"
+  cp "$CLIPBOARD"   "$dir/clipboard.js"
+  cp "$FILETREE"    "$dir/filetree.js"
+  cp "$HARNESS"     "$dir/harness.js"
 
   # ⚠️ `<script>` 顺序照 `src/index.html` 的相对次序（经典脚本按顺序执行、依赖是**加载期取值**）：
-  #    `versions → chunked → dirsession → tauri → search → session → FileTree`。
-  #    ⛔ 别调换：`session.js` 在加载期取 `window.rmd.{tauri,versions,search,dirSession}`，
-  #    `FileTree.js` 又取 `window.rmd.{versions,chunked,session,dirSession}`。
+  #    `versions → chunked → dirsession → tauri → search → diskevents → session
+  #     → treerefresh → clipboard → FileTree`。
+  #    ⛔ 别调换：`session.js` 在加载期取 `window.rmd.{tauri,versions,search,dirSession,diskEvents}`，
+  #    `FileTree.js` 又取 `window.rmd.{versions,chunked,session,dirSession,treeRefresh,clipboard,diskEvents}`。
+  #    ⚠️ 2026-11-05（`bugs/0095`）：补上 `diskevents / treerefresh / clipboard`——此前漏拷，
+  #    `FileTree` 里的 `R` / `CLIP` / `DE` 是 `undefined`，整棵树建不起来（9/10 红）。
+  #    `i18n.js` 仍不拷：`FileTree.js` / `search.js` 对它是**空值兜底**（`I18N ? … : 恒等 t`），
+  #    `tauri.js` 取不到就 `return null` ⇒ 不拷不会改变本探针的判据；
+  #    ⭐ 静态闸门 `tests/js/probe-page-scripts.test.js` 把它登记为**软依赖**，并逐份探针校验
+  #    「页面脚本清单 ⊆ 拷贝清单、加载顺序满足加载期取值」——漏拷会在几秒内变红
+  #    （`bugs/0095`，2026-11-08）。
   cat > "$dir/index.html" <<'HTML'
 <!doctype html>
 <meta charset="utf-8">
@@ -132,7 +146,10 @@ build_page() {
 <script src="dirsession.js"></script>
 <script src="tauri.js"></script>
 <script src="search.js"></script>
+<script src="diskevents.js"></script>
 <script src="session.js"></script>
+<script src="treerefresh.js"></script>
+<script src="clipboard.js"></script>
 <script src="filetree.js"></script>
 <script src="harness.js"></script>
 HTML

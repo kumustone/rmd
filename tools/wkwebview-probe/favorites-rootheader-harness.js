@@ -207,6 +207,8 @@
     // ⭐ `design/0045`：最近目录的两条"忘掉历史"（清空那张表按次数数）
     forget: [],
     clear: [],
+    // ⭐ `design/0081`：「开始」段派发的动作（`[id, source]`）
+    actions: [],
   };
 
   const els = {
@@ -252,6 +254,13 @@
     },
   });
 
+  // ⭐ `design/0081`「开始」段的文案与键位**不归前端**（`INV-START-08`）：真品由 `main.js`
+  //    从后端 `SHORTCUTS` 表经 `labelText`/`accelText` 取。探针页里没有那张表 ⇒ 这里给一份
+  //    **明显是桩的**映射，判据只认两件事：① 传进来什么就画什么；② 点了派发哪个 id。
+  //    ⛔ 别把这几个串当"产品文案"——它们不是 i18n 的产物。
+  const ACT_TEXT = { 'file.open': '打开…', 'file.open-file': '打开文件…', 'file.quick-open': '快速打开…' };
+  const ACT_KEY = { 'file.open': '⌘O', 'file.open-file': '⇧⌘O', 'file.quick-open': '⌘P' };
+
   const screen = SS.createStartScreen({
     onOpen: function (root) { log.opened.push(root); return Promise.resolve(); },
     onOpenFavorite: function (p) {
@@ -275,6 +284,12 @@
     },
     onError: function (e, target) { log.errors.push({ kind: e && e.kind, target: target }); },
     overlayOpen: function () { return false; },
+    // ⭐ `design/0081`：「开始」段的三条依赖（文案/键位/派发）。`canQuickOpen` 固定 `false`
+    //    ⇒ 两个行，与 `services/start.js::actionRows(false)` 一致，判据才不随运行环境漂。
+    labelText: function (id) { return ACT_TEXT[id] || ''; },
+    keyText: function (id) { return ACT_KEY[id] || ''; },
+    runAction: function (id, source) { log.actions.push([id, source]); return true; },
+    canQuickOpen: function () { return false; },
   });
 
   // ── 观察工具（⛔ 不是产品判据）────────────────────────────────────────
@@ -327,7 +342,15 @@
     return Array.prototype.slice.call(document.querySelectorAll('.start-fav-row'));
   }
   function recentRows() {
-    const list = document.querySelector('.start-list:not(.start-fav-list)');
+    // ⚠️ `design/0081` 起启动页有三段 ⇒ 按**显式段名**选，
+    //    ⛔ 不能用 `.start-list:not(.start-fav-list)`（哪天「开始」段也画进来，
+    //    那个选择器会把它的行当成最近行——这正是"段名写死才不漂"的由来）。
+    const list = document.querySelector('.start-recent-list');
+    return list ? Array.prototype.slice.call(list.querySelectorAll('.start-row')) : [];
+  }
+  /** ⭐ `design/0081`「开始」段的行（同样按**显式段名**取）。 */
+  function actRows() {
+    const list = document.querySelector('.start-act-list');
     return list ? Array.prototype.slice.call(list.querySelectorAll('.start-row')) : [];
   }
 
@@ -358,6 +381,7 @@
     log.rootMenu.length = 0;
     log.forget.length = 0;
     log.clear.length = 0;
+    log.actions.length = 0;
     log.failNextFavorite = null;
   }
 
@@ -728,7 +752,9 @@
     const boxEl = document.querySelector('.start');
     const kids = boxEl ? Array.prototype.slice.call(boxEl.children) : [];
     const favList = document.querySelector('.start-fav-list');
-    const recList = document.querySelector('.start-list:not(.start-fav-list)');
+    // ⚠️ `design/0081` 起有三段 ⇒ 按**显式段名**取最近表。
+    //    ⛔ 写 `.start-list:not(.start-fav-list)` 会先匹配到 `.start-act-list`（它在最前）。
+    const recList = document.querySelector('.start-recent-list');
     const favIdx = kids.indexOf(favList);
     const recIdx = kids.indexOf(recList);
     const orderOk = favIdx >= 0 && recIdx > favIdx;
@@ -864,13 +890,22 @@
     };
   }
 
-  // B7：`↑`/`↓` 在**两张表之间**连续走。⚠️ `design/0045` 起顺序是**收藏 → 最近**
-  //     （视觉顺序与 `allEls()` 同源），所以"跨段"的方向也反过来：收藏末行 ↓ 进最近首行。
+  // B7：`↑`/`↓` 在**三段之间**连续走。⚠️ `design/0081` 起顺序是**开始 → 收藏 → 最近**
+  //     （视觉顺序与 `allEls()` 同源），所以"跨段"的两处方向是：开始末行 ↓ 进收藏首行、
+  //     收藏末行 ↓ 进最近首行。
   async function b7() {
     await fresh();
     mountStart();
+    const act = actRows();
     const rec = recentRows();
     const fav = startRows();
+    act[0].focus();
+    key(act[0], 'ArrowDown');
+    await tick(1);
+    const intoAct2 = document.activeElement === act[1];
+    key(act[1], 'ArrowDown');
+    await tick(1);
+    const intoFav = document.activeElement === fav[0];
     fav[1].focus();
     key(fav[1], 'ArrowDown');
     await tick(1);
@@ -884,18 +919,22 @@
     key(rec[1], 'ArrowUp');
     await tick(1);
     const back = document.activeElement === rec[0];
-    // ⚠️ 先把焦点放回**第一条收藏行**再按 ↑：`move()` 读的是 `document.activeElement`，
-    //    只把事件派给 `fav[0]`（不聚焦）测到的是"从下一段再走一步"（探针自己写错过一次）。
+    // ⚠️ 先把焦点放回**目标行**再按键：`move()` 读的是 `document.activeElement`，
+    //    只把事件派给某个节点（不聚焦）测到的是"从下一段再走一步"（探针自己写错过一次）。
     fav[0].focus();
     key(fav[0], 'ArrowUp');
     await tick(1);
-    const atTop = document.activeElement === fav[0];
-    const ok = intoRecent && toNextRecent && atEnd && back && atTop;
+    const backToAct = document.activeElement === act[1];
+    act[0].focus();
+    key(act[0], 'ArrowUp');
+    await tick(1);
+    const atTop = document.activeElement === act[0];
+    const ok = intoAct2 && intoFav && intoRecent && toNextRecent && atEnd && back && backToAct && atTop;
     return {
       ok: ok,
-      criterion: '收藏末行 ↓ ⇒ 进最近首行；最近内 ↓↑ 连续；两端不越界（焦点留在原地）',
-      value: { 进最近: intoRecent, 最近间移动: toNextRecent, 末端不动: atEnd,
-        向上回来: back, 顶端不动: atTop },
+      criterion: '开始内 ↓ 连续 ∧ 开始末行 ↓ 进收藏首行 ∧ 收藏末行 ↓ 进最近首行 ∧ 最近内 ↓↑ 连续 ∧ 两端不越界（焦点留在原地）',
+      value: { 开始内: intoAct2, 进收藏: intoFav, 进最近: intoRecent, 最近间移动: toNextRecent,
+        末端不动: atEnd, 向上回来: back, 回到开始: backToAct, 顶端不动: atTop },
     };
   }
 
@@ -1052,13 +1091,92 @@
     };
   }
 
+  // B13：⭐ `design/0081`「开始」段**存在且只画传进来的东西**：
+  //      段标题来自 i18n、两行（`canQuickOpen()=false`）、文案/键位照 deps 现取、**行上没有数字**。
+  async function b13() {
+    await fresh();
+    mountStart();
+    const act = actRows();
+    const list = document.querySelector('.start-act-list');
+    const title = document.querySelector('.start-act-title');
+    const names = act.map(function (r) {
+      const n = r.querySelector('.start-name');
+      return n ? n.textContent : null;
+    });
+    const keys = act.map(function (r) {
+      const k = r.querySelector('.start-key');
+      return k ? k.textContent : null;
+    });
+    const noNum = act.every(function (r) { return r.querySelector('.start-num') === null; });
+    const ok = !!list && act.length === 2 &&
+      !!title && title.textContent === t('start.act-title') &&
+      names.join('|') === '打开…|打开文件…' &&
+      keys.join('|') === '⌘O|⇧⌘O' &&
+      act[0].dataset.action === 'file.open' && act[1].dataset.action === 'file.open-file' &&
+      noNum;
+    return {
+      ok: ok,
+      criterion: '「开始」段标题 = `start.act-title` ∧ 两行（打开…/打开文件…）∧ 文案与键位照 deps 原样 ∧ `data-action` 是那两个 id ∧ ⛔ 行上没有数字',
+      value: { 段在: !!list, 标题: title && title.textContent, 行文案: names, 键位: keys,
+        动作id: act.map(function (r) { return r.dataset.action; }), 无数字: noNum },
+    };
+  }
+
+  // B14：⭐ 三段**视觉顺序 = `allEls()` 顺序**（开始 → 收藏 → 最近），且从"没有焦点"起步
+  //      按一下 ↓ 落到**开始首行**。⚠️ 这条对 `allEls()` 与版式脱钩敏感（变异 M12）。
+  async function b14() {
+    await fresh();
+    mountStart();
+    const box = document.querySelector('.start');
+    const kids = box ? Array.prototype.slice.call(box.children) : [];
+    const actIdx = kids.indexOf(document.querySelector('.start-act-list'));
+    const favIdx = kids.indexOf(document.querySelector('.start-fav-list'));
+    const recIdx = kids.indexOf(document.querySelector('.start-recent-list'));
+    const orderOk = actIdx >= 0 && favIdx > actIdx && recIdx > favIdx;
+    document.activeElement && document.activeElement.blur && document.activeElement.blur();
+    if (document.activeElement && document.activeElement !== document.body) document.activeElement.blur();
+    key(document, 'ArrowDown');
+    await tick(1);
+    const fromNone = document.activeElement === actRows()[0];
+    const ok = orderOk && fromNone;
+    return {
+      ok: ok,
+      criterion: '三段按 开始 → 收藏 → 最近 排列（文档序）∧ 无焦点时 ↓ 落到**开始首行**',
+      value: { 开始段序: actIdx, 收藏段序: favIdx, 最近段序: recIdx, 顺序对: orderOk,
+        无焦点起步落点: document.activeElement && document.activeElement.textContent },
+    };
+  }
+
+  // B15：⭐ 点「开始」段的行 ⇒ `runAction(id, 'menu')` **恰好一次**，
+  //      ⛔ 不碰 `onOpen` / `onOpenFavorite`（那是收藏段/最近段的两条路）。
+  async function b15() {
+    await fresh();
+    mountStart();
+    const act = actRows();
+    act[0].click();
+    await tick(1);
+    act[1].click();
+    await tick(2);
+    const ok = log.actions.length === 2 &&
+      log.actions[0].join('|') === 'file.open|menu' &&
+      log.actions[1].join('|') === 'file.open-file|menu' &&
+      log.opened.length === 0 && log.openedFavorite.length === 0;
+    return {
+      ok: ok,
+      criterion: '点两行 ⇒ `runAction` 依次收到 `(file.open, menu)` / `(file.open-file, menu)` ∧ ⛔ 打开/收藏两条回调一次都没碰',
+      value: { 派发: log.actions, 打开: log.opened, 打开收藏: log.openedFavorite },
+    };
+  }
+
+
   // ── 总装 ────────────────────────────────────────────────────────────
   window.__RUN = async function () {
     const t0 = Date.now();
     const 判据 = [c1, c2, c3, c4, c5, c6, c7, c8, c9, c10, c11, c12,
-      b1, b2, b3, b4, b5, b6, b7, b8, b9, b10, b11, b12];
+      b1, b2, b3, b4, b5, b6, b7, b8, b9, b10, b11, b12, b13, b14, b15];
     const IDS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12',
-      'B1', 'B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'B8', 'B9', 'B10', 'B11', 'B12'];
+      'B1', 'B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'B8', 'B9', 'B10', 'B11', 'B12',
+      'B13', 'B14', 'B15'];
     for (let i = 0; i < 判据.length; i++) {
       let r;
       try {
@@ -1118,6 +1236,9 @@
     'B10': '启动页：`清空` 两下才清、清完最近段消失',
     'B11': '启动页：最近行菜单「从列表移除」带原串、只删一条',
     'B12': '启动页：最近行 `Shift+F10` 开菜单、`Escape` 焦点回行',
+    'B13': '启动页：「开始」段存在、文案/键位照 deps、行上无数字',
+    'B14': '启动页：三段序 开始→收藏→最近，无焦点 ↓ 落开始首行',
+    'B15': '启动页：点开始行派发 `runAction(id, menu)`',
   };
 
   } catch (e) {

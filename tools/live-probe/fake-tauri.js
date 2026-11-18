@@ -213,8 +213,87 @@
     return { ok: true, reason: '', detail: '' };
   }
 
+  // ── 信封：BOM / 行尾（`bugs/0081`）─────────────────────────────────────
+  //
+  // ⚠️ 真后端 `Envelope::detect_raw` ＋ `normalize_bytes` 会做两件事，替身**必须同口径**，
+  //    否则拿 CRLF / BOM / 混合行尾的夹具跑出来的结论与产品**相反**：
+  //      ① 剥掉开头那个 U+FEFF，回给前端的 `text` 一律**无 BOM**；
+  //      ② 编辑缓冲**恒 LF**（`\r\n` 与裸 `\r` 都收敛成 `\n`）；
+  //      ③ `Eol::Other`（混合行尾 / 裸 `\r`）⇒ 整篇 `editable=false`（`design/0047` §2.2）。
+  //    实现逐字抄 `src-tauri/src/document/envelope.rs` 的 `scan_eol` / `to_lf`，
+  //    ⛔ 别用 `split('\n')` 之类似是而非的东西：它们对裸 `\r` 的判法不同。
+
+  const BOM = '\uFEFF'; // 隐藏字符写成转义：源码里肉眼看不见，抄错一个字节就永远剥不掉
+
+
+  /** `envelope.rs::scan_eol` 的仿写：`\r\n` / 单独 `\n` / 裸 `\r` 三种计数。 */
+  function 扫行尾(body) {
+    let crlf = 0;
+    let lf = 0;
+    let cr = 0;
+    for (let i = 0; i < body.length; i++) {
+      const ch = body.charAt(i);
+      if (ch === '\r') {
+        if (body.charAt(i + 1) === '\n') {
+          crlf += 1;
+          i += 1;
+        } else {
+          cr += 1;
+        }
+      } else if (ch === '\n') {
+        lf += 1;
+      }
+    }
+    // ⚠️ 判定顺序与 Rust 侧**穷尽**：裸 `\r` 或混合都落 `other`，⛔ 别写成 `if (lf > 0)`。
+    if (cr > 0 || (crlf > 0 && lf > 0)) return 'other';
+    if (crlf > 0) return 'crlf';
+    return 'lf';
+  }
+
+  /** `envelope.rs::to_lf` 的仿写：`\r\n` 与裸 `\r` **都**收敛成 `\n`。 */
+  function 收敛行尾(s) {
+    return String(s).replace(/\r\n?/g, '\n');
+  }
+
+  /** `Envelope::detect_raw` 的仿写（入参是**磁盘原文**，可能带 BOM）。 */
+  function 信封(raw) {
+    const s = String(raw);
+    const bom = s.charAt(0) === BOM;
+    const eol = 扫行尾(bom ? s.slice(1) : s);
+    // ⚠️ `lossy` 与 `envelope.rs::is_lossy` 同口径：只有 `Other` 才算"保存会改行尾"。
+    return { bom: bom, eol: eol, lossy: eol === 'other' };
+  }
+
+  /**
+   * `Envelope::restore` 的仿写：编辑缓冲（恒 LF）⇒ 待写字节（加回行尾与 BOM）。
+   * ⚠️ `other` 也写 LF（保存后统一），与 Rust 侧那支逐字一致。
+   */
+  function 还原原样(buffer, env) {
+    const lf = 收敛行尾(buffer);
+    const body = env && env.eol === 'crlf' ? lf.replace(/\n/g, '\r\n') : lf;
+    return (env && env.bom ? BOM : '') + body;
+  }
+
+  /** 编辑缓冲（`normalize_bytes` 的仿写）：剥 BOM ＋ 收敛行尾，`\r` 一个都不留。 */
+  function 编辑缓冲(raw) {
+    const s = String(raw);
+    return 收敛行尾(s.charAt(0) === BOM ? s.slice(1) : s);
+  }
+
+  /**
+   * `blocks.rs::to_wire` 的 `eol_is_other` 那一道：整篇 `editable=false`，**行号一个不动**。
+   * ⚠️ 只在 `Eol::Other` 时压；`crlf` 是**可编辑**的（保存时按原行尾写回）。
+   */
+  function 压可编辑(blocks, eol) {
+    if (eol !== 'other' || !blocks) return blocks;
+    return blocks.map(function (b) {
+      return [b[0], b[1], b[2], 0];
+    });
+  }
+
   /** 与后端 `DocumentPayload` 同形。⚠️ `t1_ms..t3_ms` 必须是数字（`mountDocument` 会 `.toFixed(1)`）。 */
   function docPayload(gen, req, text) {
+    const 当前信封 = 信封(D.text);
     return {
       gen: gen,
       req: req,
@@ -225,7 +304,7 @@
       toc: D.toc || [],
       line_count: D.line_count,
       block_kinds: D.block_kinds,
-      blocks: D.blocks,
+      blocks: 压可编辑(D.blocks, 当前信封.eol),
       // ⭐ `design/0049`：单元格区间（Stage A 用 `blocks::cells_to_wire` 导出）。
       //    ⚠️ 缺了它产品会走 `status.cell-unavailable` —— 与"后端没实现对"同形。
       //    ⭐⭐ 2026-10-28：**有文本时按文本重算列**（见 `切格` / `重算格子` 的注释）——
@@ -290,6 +369,10 @@
     take_pending_open: function () { return []; },
 
     open_document: function (a) { return docPayload(a.generation, a.req); },
+    // ⚠️ 2026-11-04（点击网格扫描）：点击路径上**只有出错时**才走到它（`begin_edit`
+    //    被拒 ⇒ 回落到重读）。缺了它，"错误路径走通了"会被记成**未知 IPC**，
+    //    而未知 IPC 是五条后置不变量之一 ⇒ 一次假红。
+    reload_document: function (a) { return docPayload(a.generation, a.req, D.text); },
     // ⚠️ 假渲染：html 恒为原件。见文件头"它不渲染 Markdown"。
     // ⭐ **例外：`line_count` 如实回**（2026-10-28，`bugs/0024`）。它是**文本的纯函数**
     //    （后端 `LineIndex::line_count()` ＝ `split('\n').length`，见 `document/offset.rs`），
@@ -322,9 +405,13 @@
     begin_edit: function () {
       return {
         real_path: PATH,
-        text: D.text,
+        // ⚠️ 回给前端的**永远是无 BOM、恒 LF** 的编辑缓冲（`bugs/0081`）：
+        //    真后端 `normalize_bytes` 同口径。⛔ 别再回 `D.text` 原文——
+        //    CRLF 夹具会让前端把 `\r` 当成正文的一部分（行号/列号全错一格）。
+        text: 编辑缓冲(D.text),
         // ⭐ 三键：`bom` / `eol` / `lossy`（`Envelope` 的 Serialize 实现）。
-        envelope: { bom: false, eol: 'lf', lossy: false },
+        //    ⚠️ 由**磁盘原文**判定，⛔ 不是由上面那份归一化后的缓冲判定。
+        envelope: 信封(D.text),
       };
     },
     end_edit: function () { return null; },
@@ -336,7 +423,10 @@
     //    ⛔ 别用 `written: 0` 当作"什么都没发生"：这里改的是**磁盘内容**，不是"写了几次"。
     //    ⚠️ 只记 `text`，⛔ `html` / `blocks` / `line_count` 仍是原件——本探针不渲染 Markdown。
     save_document: function (a) {
-      if (a && typeof a.text === 'string') D.text = a.text;
+      // ⚠️ 存回的是**磁盘形态**（`bugs/0081`）：真后端 `restore()` 会把行尾与 BOM 加回去。
+      //    ⛔ 别直接存前端那份恒 LF 的缓冲——那样 `begin_edit` 的 `envelope` 会在保存后
+      //    从 `crlf` 静默变成 `lf`，而产品不会（它仍按原行尾写盘）。
+      if (a && typeof a.text === 'string') D.text = 还原原样(a.text, 信封(D.text));
       return { written: 1, bytes: D.text.length, ms: 0 };
     },
 

@@ -90,6 +90,12 @@
    * @param {string} opts.nextId 下一个那个动作 id
    * @param {string} opts.prevId 上一个那个动作 id
    * @param {() => boolean} [opts.isAvailable] 现在能不能用（没有已挂载的文档 ⇒ 按了没反应）
+   * @param {object} [opts.replace] ⭐ `design/0075` 替换适配器（**只在有可见源码面时**可用）：
+   *        `available()` 现在能不能替换；`apply({query, replacement, mode})` 执行一处
+   *        （`mode='one'`）或全部（`mode='all'`），返回计划形状 `{ok, reason, count, wrapped}`。
+   *        ⚠️ 真正的写入在 `main.js`（CM6 单事务），本文件⛔ 不碰源码、⛔ 不解析 Markdown。
+   * @param {string} [opts.replaceToggleId] 「先进入分栏编辑」那句里的键位**动作 id**
+   *        （默认 `edit.toggle`；键位显示走 `keyText`，⛔ 本文件不写键位字面量）
    * @param {boolean} [opts.forceFallback] ⚠️ **只给探针用**：强制走 `<mark>` 回退路线
    *        （本机 0a 已通过 ⇒ 这条路线跑不到，⛔ 但它必须写、也必须有办法被验，见 §6）
    */
@@ -101,6 +107,8 @@
     const prevId = opts.prevId;
     const isAvailable = opts.isAvailable || function () { return true; };
     const forceFallback = !!opts.forceFallback;
+    const replaceAdapter = opts.replace || null;
+    const replaceToggleId = opts.replaceToggleId || 'edit.toggle';
 
     let opened = false;
     let restoreTo = null;
@@ -155,13 +163,47 @@
     closeBtn.setAttribute('data-i18n-aria-label', 'find.close');
     closeBtn.setAttribute('aria-label', t('find.close'));
 
+    // ⭐ `design/0075`：第二行 = 替换。⚠️ 两个输入框各住一个 `.find-row`，
+    //    面板本身改成纵向两行；`.find-note` 仍绝对定位在面板下方。
+    //    ⚠️ 这里**只建控件**：替换真正写进源码在 `main.js` 的适配器里（CM6 单事务），
+    //    本文件⛔ 不碰源码、⛔ 不解析 Markdown（`INV-REPL-06`）。
+    const replaceInput = el('input', 'find-input find-replace-input');
+    replaceInput.type = 'text';
+    replaceInput.setAttribute('autocomplete', 'off');
+    replaceInput.setAttribute('spellcheck', 'false');
+    replaceInput.setAttribute('data-i18n-placeholder', 'find.replace.placeholder');
+    replaceInput.setAttribute('placeholder', t('find.replace.placeholder'));
+    replaceInput.setAttribute('data-i18n-aria-label', 'find.replace.input-label');
+    replaceInput.setAttribute('aria-label', t('find.replace.input-label'));
+
+    // ⚠️ 文本按钮的文案走 `data-i18n`（切语言时 `applyDom` 会重贴），⛔ 不能只在构造时 `t()` 一次。
+    const replaceOneBtn = el('button', 'find-btn find-replace-btn find-replace-one');
+    replaceOneBtn.type = 'button';
+    replaceOneBtn.setAttribute('data-i18n', 'find.replace.one');
+    replaceOneBtn.textContent = t('find.replace.one');
+    const replaceAllBtn = el('button', 'find-btn find-replace-btn find-replace-all');
+    replaceAllBtn.type = 'button';
+    replaceAllBtn.setAttribute('data-i18n', 'find.replace.all');
+    replaceAllBtn.textContent = t('find.replace.all');
+    // ⚠️ 这句是**动态**的（可用 / 不可用是两句不同的话）⇒ 由 `refreshReplaceState()` 现算。
+    const replaceHint = el('span', 'find-replace-hint');
+
+    const findRow = el('div', 'find-row find-find-row');
+    findRow.appendChild(input);
+    findRow.appendChild(count);
+    findRow.appendChild(prevBtn);
+    findRow.appendChild(nextBtn);
+    findRow.appendChild(closeBtn);
+    const replaceRow = el('div', 'find-row find-replace-row');
+    replaceRow.appendChild(replaceInput);
+    replaceRow.appendChild(replaceOneBtn);
+    replaceRow.appendChild(replaceAllBtn);
+    replaceRow.appendChild(replaceHint);
+
     const note = el('div', 'find-note');
 
-    panel.appendChild(input);
-    panel.appendChild(count);
-    panel.appendChild(prevBtn);
-    panel.appendChild(nextBtn);
-    panel.appendChild(closeBtn);
+    panel.appendChild(findRow);
+    panel.appendChild(replaceRow);
     panel.appendChild(note);
     root.appendChild(panel);
     document.body.appendChild(root);
@@ -180,6 +222,87 @@
       nextBtn.title = nk ? t('find.next-title', { key: nk }) : t('find.next');
       prevBtn.setAttribute('aria-label', prevBtn.title);
       nextBtn.setAttribute('aria-label', nextBtn.title);
+    }
+
+    /** 替换现在能不能用（`main.js` 的适配器说"有可见源码面"才算）。 */
+    function replaceAvailable() {
+      return !!(replaceAdapter && typeof replaceAdapter.available === 'function' &&
+        replaceAdapter.available());
+    }
+
+    /**
+     * 刷新替换行的**可用性**与提示（`design/0075` §2.1 ⑧）。
+     *
+     * ⚠️ 它要在四个时刻跑：打开、关键词变化、文档/编辑态变化（`invalidate` /
+     *    `refreshReplace`）、切语言。少一处就会出现"按钮看着能点、按下去没反应"，
+     *    或者反过来的静默不一致。
+     */
+    function refreshReplaceState() {
+      const can = replaceAvailable();
+      const hasQuery = !!F.normalizeQuery(input.value);
+      replaceInput.disabled = !can;
+      replaceOneBtn.disabled = !can || !hasQuery;
+      replaceAllBtn.disabled = !can || !hasQuery;
+      if (can) {
+        replaceHint.textContent = t('find.replace.scope');
+        replaceHint.classList.remove('find-replace-hint-off');
+      } else {
+        const k = keyText(replaceToggleId);
+        replaceHint.textContent = k
+          ? t('find.replace.need-edit', { key: k })
+          : t('find.replace.need-edit-nokey');
+        replaceHint.classList.add('find-replace-hint-off');
+      }
+    }
+
+    /**
+     * 执行一次替换（`mode` = `'one'` / `'all'`）。
+     *
+     * ⚠️ 写入口**只有** `replaceAdapter.apply()`：它返回计划形状
+     *    （`find.js::replace*Plan`），真正的 `view.dispatch` 在 `main.js`。
+     * ⭐ **失败也有一句话**：空关键词 / 没有命中 / 编辑器不可用，三者给不同说明，
+     *    ⛔ 不静默——静默会让"按了但正文没变"看起来像 bug。
+     */
+    function doReplace(mode) {
+      const q = F.normalizeQuery(input.value);
+      if (!q) {
+        noteText = t('find.replace.empty-query');
+        renderNote();
+        return;
+      }
+      if (!replaceAvailable()) {
+        const k = keyText(replaceToggleId);
+        noteText = k ? t('find.replace.need-edit', { key: k }) : t('find.replace.need-edit-nokey');
+        renderNote();
+        refreshReplaceState();
+        return;
+      }
+      const out = replaceAdapter.apply({
+        query: q,
+        replacement: replaceInput.value,
+        mode: mode === 'all' ? 'all' : 'one',
+      });
+      if (!out || out.ok !== true) {
+        noteText = (out && out.reason === 'empty')
+          ? t('find.replace.empty-query')
+          : (out && out.reason === 'none')
+            ? t('find.replace.none')
+            : t('find.replace.failed');
+        renderNote();
+        refreshReplaceState();
+        return;
+      }
+      // ⭐ 替换改了源码 ⇒ 渲染域的段偏移**立刻作废**（与 `INV-FIND-02` 同一条纪律）。
+      //    ⚠️ 预览提交时 `mountDocument` 还会再 invalidate 一次；`buildToken` 会取消
+      //    这一轮在途构建，不会把旧结果写回。
+      invalidate();
+      if (mode === 'all') {
+        noteText = t('find.replace.done-all', { count: F.group(out.count) });
+      } else {
+        noteText = t(out.wrapped ? 'find.replace.done-one-wrapped' : 'find.replace.done-one');
+      }
+      renderNote();
+      refreshReplaceState();
     }
 
     /**
@@ -401,6 +524,8 @@
       clearHighlights();
       renderCount();
       renderNote();
+      // ⭐ 文档/编辑态可能一起变了（例如退出分栏编辑）⇒ 替换行要跟着变灰或变可用。
+      refreshReplaceState();
       if (opened) startBuild();
     }
 
@@ -747,14 +872,38 @@
       if (K.isComposingEvent(e)) return;
 
       if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); return; }
+      // ⭐ `design/0075`：焦点在**替换输入框**里时，语义按那一行走——
+      //    `Enter` = 替换一处、`Shift+Enter` = 全部替换；方向键是**移动文本光标**，
+      //    ⛔ 不能再被"上/下一个命中"截走（那会让替换串根本改不了中间的字）。
+      const inReplace = e.target === replaceInput;
       if (e.key === 'Enter') {
         e.preventDefault(); e.stopPropagation();
-        move(e.shiftKey ? -1 : 1);
+        // ⚠️ 焦点在**按钮**上时按回车：`preventDefault` 已经挡掉了按钮原生的 click 激活
+        //    ⇒ 这里必须自己补上那条动作，⛔ 不能一律当成"下一个命中"（那样"全部替换"
+        //    的按钮按回车会只替换一处，且没有任何提示）。
+        if (inReplace) doReplace(e.shiftKey ? 'all' : 'one');
+        else if (e.target === replaceAllBtn) doReplace('all');
+        else if (e.target === replaceOneBtn) doReplace('one');
+        else move(e.shiftKey ? -1 : 1);
+        return;
+      }
+      if (inReplace) {
+        // Tab 在两个输入框之间循环；`⌘G`/`⇧⌘G` 仍从后端表里认（`INV-SET-01`）。
+        if (e.key === 'Tab') { e.preventDefault(); e.stopPropagation(); input.focus(); return; }
+        const rid = K.matchEvent(keymap ? keymap.bindings : [], e);
+        if (rid === nextId) { e.preventDefault(); e.stopPropagation(); move(1); return; }
+        if (rid === prevId) { e.preventDefault(); e.stopPropagation(); move(-1); return; }
         return;
       }
       if (e.key === 'ArrowDown') { e.preventDefault(); e.stopPropagation(); move(1); return; }
       if (e.key === 'ArrowUp') { e.preventDefault(); e.stopPropagation(); move(-1); return; }
-      if (e.key === 'Tab') { e.preventDefault(); e.stopPropagation(); input.focus(); return; }
+      if (e.key === 'Tab') {
+        e.preventDefault(); e.stopPropagation();
+        // 查找行 → 替换行（可用时）；其余一律回到查找框。
+        if (!replaceInput.disabled) replaceInput.focus();
+        else input.focus();
+        return;
+      }
 
       // ⭐ `⌘G`/`⇧⌘G`：**从后端那张表里认**（`INV-SET-01`）——
       //    ⛔ 本文件里没有键位字面量，且与全局分发器用**同一份匹配算法**。
@@ -768,7 +917,7 @@
     //    ⚠️ 静态属性（`data-i18n*` 那三处）由 `setLang()` 里的 `applyDom` 管，
     //    ⛔ 这里不许再贴一遍——两份都在写同一批属性，谁后写谁赢，那就成了两份真值。
     if (I18N) {
-      I18N.subscribe(function () { refreshKeyTips(); renderNote(); });
+      I18N.subscribe(function () { refreshKeyTips(); refreshReplaceState(); renderNote(); });
     }
 
     // ⚠️ 用 **capture**（与搜索浮层同一条理由）：`Esc`/方向键/回车都得在页面其余部分
@@ -776,7 +925,19 @@
     //    `Esc` 仍然要能关掉它。
     document.addEventListener('keydown', onKeydown, true);
 
-    input.addEventListener('input', function () { guard('find.what-search', function () { runSearch(input.value); }); });
+    input.addEventListener('input', function () {
+      guard('find.what-search', function () {
+        runSearch(input.value);
+        // 关键词从空变非空（或反过来）⇒ 两个替换按钮的禁用态要跟着变。
+        refreshReplaceState();
+      });
+    });
+    replaceOneBtn.addEventListener('click', function () {
+      guard('find.what-replace', function () { doReplace('one'); });
+    });
+    replaceAllBtn.addEventListener('click', function () {
+      guard('find.what-replace', function () { doReplace('all'); });
+    });
     nextBtn.addEventListener('click', function () { guard('find.what-next', function () { next(); }); });
     prevBtn.addEventListener('click', function () { guard('find.what-prev', function () { prev(); }); });
     closeBtn.addEventListener('click', function () { guard('find.what-close', function () { close(); }); });
@@ -792,7 +953,7 @@
      * @returns {boolean} 真的能用吗（没有已挂载的文档 ⇒ 按了没反应）
      */
     function open() {
-      if (opened) { input.focus(); return true; }
+      if (opened) { refreshReplaceState(); input.focus(); return true; }
       if (!isAvailable()) return false;
       // ⭐ 开一层就关另外两层（`INV-FIND-06`）：设置覆盖层 / `⌘P` 浮层。
       St.closeOtherOverlays(NAME);
@@ -801,6 +962,7 @@
       root.hidden = false;
       document.body.classList.add('find-open');
       refreshKeyTips();
+      refreshReplaceState();
       renderNote();
       // ⭐ **浮层先可输入**：`startBuild()` 是**分段**的，输入框这一刻已经能打字了
       //    （§2.1 ① 末尾 / §9.4 第 8 条）。⚠️ 索引**只按需建**（`INV-FIND-08`）。
@@ -919,6 +1081,13 @@
       isOpen: function () { return opened; },
       /** ⭐ 文档提交成功时调（`INV-FIND-02`）。 */
       invalidate: invalidate,
+      /** ⭐ `design/0075`：进/出分栏编辑后刷新替换行的可用性（文档没变，只有编辑态变了）。 */
+      refreshReplace: refreshReplaceState,
+      /** ⭐ 把焦点交给替换输入（不可用时回落到查找框）。 */
+      focusReplace: function () {
+        if (opened && !replaceInput.disabled) replaceInput.focus();
+        else input.focus();
+      },
       /** ⭐ 冒烟的前端自证（`design/0011` §3）。 */
       probe: probe,
       /** 只给回报/单测读的观测量。⚠️ 不许拿它当第二份真值。 */

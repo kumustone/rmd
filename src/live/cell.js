@@ -136,6 +136,102 @@
   }
 
   /**
+   * `↑` 的目标：**同列的上一行**（`bugs/0104`，与 {@link flatBelow} 对称）。
+   *
+   * ⚠️ 到边界给 `-1`，调用方据此**原地不动**（⛔ 不退出编辑态——方向键不是"离开"，
+   * 离开是 `Tab` / `Esc` / `⌘↵`）。
+   *
+   * @returns {number} 扁平下标；没有上一行 ⇒ `-1`
+   */
+  function flatAbove(tableNode, flat) {
+    if (!Number.isInteger(flat) || flat < 0) return -1;
+    const counts = rowCounts(tableNode);
+    let start = 0;
+    for (let r = 0; r < counts.length; r++) {
+      const end = start + counts[r];
+      if (flat >= start && flat < end) {
+        if (r === 0) return -1;
+        const col = flat - start;
+        if (col >= counts[r - 1]) return -1; // 上一行短一格（GFM 里不该出现，但不猜）
+        return start - counts[r - 1] + col;
+      }
+      start = end;
+    }
+    return -1;
+  }
+
+  /** 几何兜底的容差（px）：一格左右内边距 ＋ 边框的量级。 */
+  const EDGE_SLOP = 16;
+
+  /** 元素的视口矩形（拿不到 ⇒ `null`，⛔ 不拿 `0` 冒充）。 */
+  function rectOf(el) {
+    if (!el || typeof el.getBoundingClientRect !== 'function') return null;
+    const r = el.getBoundingClientRect();
+    if (!r || typeof r.left !== 'number' || typeof r.top !== 'number') return null;
+    return { left: r.left, right: r.right, top: r.top, bottom: r.bottom };
+  }
+
+  /**
+   * ⭐ **几何兜底**：点落在表格的**块盒子**上（不在任何一格里）时，按坐标取最近的一格。
+   *
+   * ⚠️ 为什么必须有（`bugs/0066`）：`.doc table` 是 `display:block`
+   *    （`typography.css` 让 `overflow-x` 生效的代价），块盒子**铺满正文宽度**，
+   *    而里面那张匿名表按内容收缩 ⇒ 窄表右边那一大片**来源是 `<table>` 元素本身**。
+   *    真 WKWebView 实测（2026-11-03）：3 列短表在 800 px 正文里格子只到 158.8 px，
+   *    从 158.8 px（**含边界那一像素**）到 800 px 全部命中 `<table>`。
+   *    ⇒ 瞄准"行尾"点下去，`cellFromTarget` 的 DOM 上溯一步都走不动 ⇒ `null`
+   *    ⇒ 用户拿到的是"表格请点格子改字"的提示，而不是光标（"经常出不来"）。
+   *
+   * ⚠️ 判据是**几何上的最近**，⛔ 不是"这个点真的被某一格盖住"——
+   *    后者的形态是"边界外一像素永远点不中"，正是本条要修的缺陷。
+   * ⚠️ 只在"目标确实是表格本身"时调用（`main.js::onLiveDocDown` 的 `Table` 分支），
+   *    ⛔ 不能拿它去抢别的块 / 正文空白的点击。
+   *
+   * @param {object} tableNode 表格元素（就是块序号对应的那个节点）
+   * @param {number} x 视口坐标（`event.clientX`）
+   * @param {number} y 视口坐标（`event.clientY`）
+   * @param {number} [slop] 水平容差像素（默认 {@link EDGE_SLOP}）
+   * @returns {object|null} 最近的一格；离得太远 ⇒ `null`（⛔ 不隔空抢点击）
+   */
+  function cellAtPoint(tableNode, x, y, slop) {
+    if (!tableNode || !tableNode.rows || !tableNode.rows.length) return null;
+    if (typeof x !== 'number' || typeof y !== 'number'
+      || !isFinite(x) || !isFinite(y)) return null;
+    const s = typeof slop === 'number' && isFinite(slop) && slop >= 0 ? slop : EDGE_SLOP;
+
+    // ① 按 y 挑行：先找**真的盖住这个 y** 的那一行；都在外面就取最近一行，
+    //    但距离超过**那一行自己的高度** ⇒ 说明点根本不在表上，⛔ 不猜。
+    let row = null;
+    let bestDist = Infinity;
+    let rowH = 0;
+    for (let r = 0; r < tableNode.rows.length; r++) {
+      const cand = tableNode.rows[r];
+      if (!cand || !cand.cells || cand.cells.length === 0) continue;
+      const rect = rectOf(cand.cells[0]);
+      if (!rect) continue;
+      const h = Math.max(0, rect.bottom - rect.top);
+      if (y >= rect.top && y <= rect.bottom) { row = cand; bestDist = 0; rowH = h; break; }
+      const d = y < rect.top ? rect.top - y : y - rect.bottom;
+      if (d < bestDist) { bestDist = d; row = cand; rowH = h; }
+    }
+    if (!row || bestDist > rowH) return null;
+
+    // ② 按 x 取那一行里的格子：命中谁算谁，越过两端就按容差夹到首/末格。
+    let firstR = null;
+    let lastR = null;
+    const cells = row.cells;
+    for (let c = 0; c < cells.length; c++) {
+      const rect = rectOf(cells[c]);
+      if (!rect) return null;
+      if (c === 0) firstR = rect;
+      lastR = rect;
+      if (x >= rect.left && x <= rect.right) return cells[c];
+    }
+    if (x < firstR.left) return (firstR.left - x) <= s ? cells[0] : null;
+    return (x - lastR.right) <= s ? cells[cells.length - 1] : null;
+  }
+
+  /**
    * ⭐ `|` 转义（`INV-CELL-02`）：**已有奇数个反斜杠时不再加**。
    *
    * ⚠️ 判据是"**紧邻的**连续反斜杠个数"——`\\|`（两个反斜杠）在 GFM 里是
@@ -254,7 +350,8 @@
    * ⚠️ 变体表由**真 comrak 夹具**钉住（`parser.rs::单元格里的_br_转义语义` 六条），
    * 对应判据在 `tests/js/live-cell.test.js`——两份用**同一串源码**，⛔ 别只改一边。
    * ⚠️ `decode` 与 `encode` **各自独立地处理反斜杠**（不经对方的口径）：`encode` 只在
-   * "换行前是奇数个反斜杠"时补一个，`decode` 不吞任何反斜杠（视图 = 源码）。
+   * "换行前是奇数个反斜杠"时补一个、在裸竖线前补一个，`decode` **只吞 `\|` 那一个**
+   * （它是 `escapePipes` 的逆变换，见下），其余反斜杠原样留着（视图 = 源码）。
    *
    * @param {string} text
    * @returns {string}
@@ -267,6 +364,19 @@
       const ch = s.charAt(i);
       // ① 转义对：整对字面（`\<br>` 的尖括号、`\`` 的反引号都不再是语法）
       if (ch === '\\' && isEscapable(s.charAt(i + 1))) {
+        // ⭐⭐ `\|` 是**唯一的例外**：它是 [`encode`] → `escapePipes` 的产物
+        //    （用户在视图里打的字面竖线），⇒ 视图里必须是**一个** `|`，⛔ 不能把反斜杠
+        //    一起搬过去。否则「提交之后这一格永远判脏」（`bugs/0047` 的根因）：
+        //    发布之后源码里是 `x\|y`、视图里是用户打的 `x|y` ⇒ `decode(源码) !== 视图`
+        //    ⇒ `commitTarget` 每轮都"编码之后没有改动"、`stillDirty` 又每轮都"脏"
+        //    ⇒ 预算耗尽、`⌘↵`/`Tab`/点别处**全都退不出这一格**，且第二次提交会把字写重。
+        //    ⚠️ 其余转义对仍原样保留：`encode` **只补竖线**（`\` ＋ `<` 若被吞掉，
+        //    写回时没人再补 ⇒ 字面 `<br>` 会变成真换行）。
+        if (s.charAt(i + 1) === '|') {
+          out += '|';
+          i += 2;
+          continue;
+        }
         out += s.slice(i, i + 2);
         i += 2;
         continue;
@@ -355,16 +465,88 @@
   }
 
   /**
+   * ⭐⭐ **编辑对象的表示绑定**（`design/0058` §2.1 规则 0）。
+   *
+   * `raw`（原始源码切片）与 `initialView`（进入时的编辑文本）**同一时刻**产出，
+   * 并一起绑到 `{objectId, revision}` 上：修订一变，这份基线就已经不是"这一次编辑"的了。
+   *
+   * @param {{raw?:string|null, from?:number, to?:number,
+   *          objectId?:string|null, revision?:object|null}} [o]
+   * @returns {{raw:string|null, initialView:string, from:number, to:number,
+   *   objectId:string|null, revision:object|null}}
+   */
+  function bind(o) {
+    const s = o || {};
+    const raw = s.raw === null || s.raw === undefined ? null : String(s.raw);
+    return {
+      raw: raw,
+      initialView: raw === null ? '' : decode(raw),
+      from: typeof s.from === 'number' ? s.from : 0,
+      to: typeof s.to === 'number' ? s.to : 0,
+      objectId: s.objectId === undefined || s.objectId === null ? null : s.objectId,
+      revision: s.revision || null,
+    };
+  }
+
+  /**
+   * ⭐⭐⭐ **候选判定的唯一入口**：三值之一，脏状态、提交、退出**共用同一个结果**
+   * （`design/0058` §2.1 规则 3；`INV-MUT-02`）。
+   *
+   * 判定**顺序**是承重的（评审 P1-1）：
+   * ① 区间不可信 ⇒ `rejected`（⛔ 不许读成"没改动"）；
+   * ② **先比编辑文本**：`currentView === initialView` ⇒ `unchanged`。
+   *    ⚠️ 这一步**不能**换成"候选字节 == 原始源码"：用户在源码为 `a\|b` 时打了字面的
+   *    `a\|b`，编码后恰好等于原源码 ⇒ 按字节判会把**真实输入当成无操作吞掉**。
+   * ③ 编辑文本变了 ⇒ 编码，并验**往返**：`decode(编码结果) === currentView` 才 `valid`，
+   *    否则 `rejected`（保留输入、报错、⛔ 不清脏；`INV-MUT-03`）。
+   *    ⭐ `INV-MUT-01b`：变了但编码后与原源码同形 ⇒ 照常 `valid`（那是"真的写入了同样内容"）。
+   *
+   * @param {{raw:string|null, initialView:string, from:number, to:number}} binding [`bind`] 的产物
+   * @param {string} line 这一格**当前**的源码行
+   * @param {string} currentView 视图里此刻的文本（多行已用 `\n` 拼好）
+   * @returns {{status:'unchanged'|'valid'|'rejected', why?:string,
+   *   encoded?:string, replacement?:string, nextLine?:string}}
+   */
+  function judge(binding, line, currentView) {
+    const b = binding || /** @type {any} */ ({});
+    const view = String(currentView === undefined || currentView === null ? '' : currentView);
+    if (b.raw === null || b.raw === undefined) return { status: 'rejected', why: 'range' };
+    // ① 区间不可信 ⇒ `rejected`（⛔ 不许读成"没改动"）。
+    //    ⚠️ 这一条必须在"没动过"**之前**：坐标坏了照样可能 `view === initialView`，
+    //    先返回 `unchanged` 就是拿一个坏绑定去说"这次没改"，调用方据此零字节写回、
+    //    却把"区间对不上"这件事永远藏起来（`design/0058` §2.1 规则 3 的顺序）。
+    if (!Number.isInteger(b.from) || !Number.isInteger(b.to)
+      || b.from < 0 || b.to < b.from || b.to > String(line).length) {
+      return { status: 'rejected', why: 'range' };
+    }
+    // ② 没动过 ⇒ 原样保留（⛔ 不写、⛔ 不压栈）
+    if (view === b.initialView) return { status: 'unchanged' };
+    let encoded;
+    let replacement;
+    let nextLine;
+    try {
+      encoded = encode(view);
+      replacement = padFor(line, b.to, encoded);
+      nextLine = splice(line, b.from, b.to, replacement);
+    } catch (e) {
+      // ⚠️ `splice`/`padFor` 抛错 = 区间与这一行对不上（陈旧坐标 / 载荷坏了）：
+      //    这是**没写进去**的失败，⛔ 不是"没改动"。
+      return { status: 'rejected', why: e && e.message ? e.message : String(e) };
+    }
+    if (decode(encoded) !== view) return { status: 'rejected', why: 'inexpressible' };
+    return { status: 'valid', encoded: encoded, replacement: replacement, nextLine: nextLine };
+  }
+
+  /**
    * ⭐⭐ **无改动判据**：这一格在视图里**一个字都没动**吗？（`bugs/0040` 的 (b)）
    *
-   * ⚠️⚠️ 判据必须是「视图文本 == `decode(源码)`」，⛔ **不是**「`encode(视图)` == 源码」。
-   * `decode` 会把 `<br />` / `<BR>` / `<br/>` 归一成 `\n`，`encode` 再一律写回 `<br>`
-   * ⇒ 两个串**永远不相等**，于是"点进去、什么都不改、再点出来"会把用户的源码
-   * **静默改写成另一种写法**（`<br />` → `<br>`，屏幕上一点变化都没有）。
-   * 这正是 `INV-EDITOBJ` 家族反复强调的「无改动 ⇒ 零字节变化」。
+   * ⚠️ 判据必须是「视图文本 == `initialView`（= `decode(源码)`）」，⛔ **不是**
+   * 「`encode(视图)` == 源码」。`decode` 会把 `<br />` / `<BR>` / `<br/>` 归一成 `\n`，
+   * `encode` 再一律写回 `<br>` ⇒ 两个串**永远不相等**，于是"点进去、什么都不改、
+   * 再点出来"会把用户的源码**静默改写成另一种写法**（`<br />` → `<br>`，
+   * 屏幕上一点变化都没有）。
    *
-   * ⚠️ 区间不可信（`textOf` 给 `null`）时返回 `false`：那不是"没改动"，
-   * 而是"这一格现在没法写"——交给 [`splice`] 抛错，⛔ 别在这里静默吞掉。
+   * ⚠️ `design/0058` 之后它只是 [`judge`] 的一个谓词视图——判据仍只有一处。
    *
    * @param {string} line 这一格的源码行
    * @param {number} from 行内 UTF-16 右开区间起点
@@ -374,9 +556,7 @@
    */
   function isUnchanged(line, from, to, viewText) {
     const raw = textOf(line, from, to);
-    if (raw === null) return false;
-    const now = String(viewText === undefined || viewText === null ? '' : viewText);
-    return decode(raw) === now;
+    return judge(bind({ raw: raw, from: from, to: to }), line, viewText).status === 'unchanged';
   }
 
   /**
@@ -461,6 +641,20 @@
    * 屏幕上看只是"表格跳了一下"，没有任何报错。搬过来之后 `live-cell.test.js` 用假节点就能验。
    * ⚠️ 留在 `main.js` 的只有**接线**（什么时候调、谁是那一格）。
    *
+   * ⭐⭐ **2026-11-09 第二版：光切 `table-layout: fixed` 根本管不住列宽**（`bugs/0297`）。
+   *
+   * `.doc table` 是 `display: block; overflow-x: auto`（宽表要能横滚）—— 这个元素的
+   * **块盒子**才是那个 `fixed` 与 `width` 的作用对象，而真正排版的是一张**匿名内表**，
+   * `table-layout` 是**非继承**属性 ⇒ 匿名内表仍是 `auto` ⇒ 换入 CM6 宿主（`inline-block`、
+   * 窄）之后，**那一列按"内容宽度"重算**：非最大化窗口里实测整表高 +21 / −12 / +63 px，
+   * 列宽 −6 / −80 / −18 px，表格下面的所有块跟着位移。
+   * ⇒ 编辑期间**必须让表格真的是一张表**（`display: table`），而 `display: table` 下
+   * `overflow-x` 不再是滚动容器 ⇒ 用一层**临时外壳**接住原来的滚动职责与外边距，
+   * 退出时把表格挪回去、摘掉外壳、逐字写回原 `style`。
+   * ⚠️ 外壳的横向 overflow 按**进入前的状态**选：原本就在横滚 ⇒ `auto`（滚动条位置照旧，
+   * 高度与原来逐像素相等）；原本不横滚 ⇒ `clip`（列宽和与容器只差**亚像素**，
+   * 用 `auto` 会凭空多出一条 12 px 的经典滚动条 —— 实测 `PROBE_W=1200` 整表 +12 px）。
+   *
    * @param {any} cellEl 那一格（产品传 `<td>`/`<th>`）
    * @returns {Function|null} 还原函数（`null` = 没做成；§6：仍可编辑，只是会跳）
    */
@@ -485,13 +679,45 @@
       }
     }
     const total = table.getBoundingClientRect().width;
+    // ⚠️⚠️ 进入前它是不是**横向滚动容器**：两条路都要判——`scrollWidth` 是整数取整，
+    //    亚像素溢出量不出来；经典滚动条 12 px 会实打实吃掉 `offsetHeight - clientHeight`。
+    const 原横滚 = table.scrollWidth > table.clientWidth + 0.5
+      || table.offsetHeight - table.clientHeight >= 4;
+    let 列和 = 0;
+    for (let i = 0; i < widths.length; i++) if (widths[i] > 0) 列和 += widths[i];
     // ⚠️⚠️ **必须 `border-box`**：`getBoundingClientRect().width` 量的是**边框盒**，
     //    而 `width` 默认按**内容盒**解释 ⇒ 直接写回去会让每一列涨 `padding + border`
     //    （探针实测 3 列各 **+15 px**：左右内边距 14 ＋ 边框 1；Q2 就是这么红的）。
     //    ⚠️ 表格自己同理：`width` 与量到的边框宽对不上时，固定布局会把整张表撑宽。
-    if (total > 0) {
+    // ⭐ 表格宽度用**列宽和**而不是块盒宽：`display:block` 的块盒铺满正文栏（短表也一样），
+    //    拿它当表宽会把短表拉成满宽；列宽和才是匿名内表真正的宽度。
+    const 表宽 = 列和 > 0 ? 列和 : total;
+    // ⭐ 临时外壳：接住 `.doc table` 原本由 **表格自己**承担的两件事——
+    //    横向滚动（`overflow-x`）与它的下外边距（挪出去，否则外壳会凭空高 15 px）。
+    const 父 = table.parentNode;
+    let 壳 = null;
+    const 边距 = typeof getComputedStyle === 'function' ? getComputedStyle(table).marginBottom : '';
+    if (父 && total > 0 && typeof document !== 'undefined' && document.createElement) {
+      壳 = document.createElement('div');
+      壳.className = 'rmd-table-freeze';
+      壳.setAttribute('style', 'display:block;width:' + total + 'px;'
+        + 'overflow-x:' + (原横滚 ? 'auto' : 'clip') + ';'
+        + 'overflow-y:' + (原横滚 ? 'auto' : 'visible') + ';'
+        + 'margin-bottom:' + 边距 + ';');
+      const 左移 = table.scrollLeft || 0;
+      父.insertBefore(壳, table);
+      壳.appendChild(table);
+      try { 壳.scrollLeft = 左移; } catch (e) { /* 量不到滚动位置不影响冻结本身 */ }
+    }
+    if (表宽 > 0) {
       table.style.boxSizing = 'border-box';
-      table.style.width = total + 'px';
+      table.style.width = 表宽 + 'px';
+    }
+    if (壳) {
+      // ⚠️ 只有 `display: table` 才能让 `table-layout: fixed` 落到**真正排版的那张表**上；
+      //    没有外壳时保持原样（`display:block` ⇒ 冻结照旧不生效，但不新增失败路径）。
+      table.style.display = 'table';
+      table.style.marginBottom = '0';
     }
     table.style.tableLayout = 'fixed';
     for (let r = 0; r < table.rows.length; r++) {
@@ -504,10 +730,20 @@
       }
     }
     return function () {
+      // ⭐ 编辑期间用户可能横向滚过：把滚动位置还给还原后的表格（它自己也是滚动容器）。
+      const 留 = 壳 ? (壳.scrollLeft || 0) : (table.scrollLeft || 0);
+      if (壳) {
+        if (table.parentNode === 壳) {
+          if (壳.parentNode) 壳.parentNode.insertBefore(table, 壳);
+          else 壳.removeChild(table);
+        }
+        if (壳.parentNode) 壳.parentNode.removeChild(壳);
+      }
       for (let i = 0; i < saved.length; i++) {
         if (saved[i].style === null) saved[i].el.removeAttribute('style');
         else saved[i].el.setAttribute('style', saved[i].style);
       }
+      try { table.scrollLeft = 留; } catch (e) { /* 同上 */ }
     };
   }
 
@@ -519,11 +755,21 @@
     cellAtIndex: cellAtIndex,
     flatAfter: flatAfter,
     flatBelow: flatBelow,
+    flatAbove: flatAbove,
+    // ⭐ `main.js::crossCellVertical` 的几何落点要它（`bugs/0104`）：方向键跨格时目标格
+    // 还没建视图，只能按**元素矩形**算"同一视觉列"。⚠️ 2026-11-06 之前它只是模块内部函数，
+    // 未导出 ⇒ 调用点 `LCell.rectOf(...)` 是 `undefined` ⇒ 跨格在 `after` 里抛
+    // `TypeError` ⇒ 全局 `unhandledrejection` 报成「启动失败：Script error.」，
+    // 用户看到的是"按 ↓ 什么都不发生"（正是他复报的那个形态）。
+    rectOf: rectOf,
+    cellAtPoint: cellAtPoint,
     freezeTableLayout: freezeTableLayout,
     escapePipes: escapePipes,
     trailingBackslashes: trailingBackslashes,
     encode: encode,
     decode: decode,
+    bind: bind,
+    judge: judge,
     isUnchanged: isUnchanged,
     padFor: padFor,
     splice: splice,

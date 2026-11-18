@@ -37,6 +37,10 @@
   const ST = window.rmd.start;
   /** ⭐ `design/0038`：启动页的**渲染与局部键盘模型**。⚠️ 同一条加载期纪律。 */
   const SS = window.rmd.startScreen;
+  /** ⭐ `design/0071` §5：新窗口的**待处理导航**规划（纯逻辑）。
+      ⚠️ 加载期取值 ⇒ `services/windownav.js` 必须排在**本文件之前**（`index.html` 已注明）。
+      ⛔ 别在这里再写一份 `kind → 命令` 的映射（`INV-OPEN-02` 的同族：判据只许一份）。 */
+  const WN = window.rmd.windownav;
   const T = window.rmd.tauri;
   const V = window.rmd.versions;
   const Sidebar = window.rmd.sidebar;
@@ -55,6 +59,23 @@
   const ThSw = window.rmd.themeSwitcher;
   const M = window.rmd.measure;
   const K = window.rmd.keymap;
+  /** ⭐ `design/0077`：多格式复制的纯逻辑（MIME 计划 / 块源码片段 / 语境判据）。 */
+  const CF = window.rmd.copyFormats;
+  /** ⭐ `design/0077`：多格式写入与读取（现有 `copy(text)` 仍归 `FileTree` 使用）。 */
+  const CLIP = window.rmd.clipboard;
+  /** ⭐ `design/0069`：文档访问历史（后退 / 前进）的**模块 api**
+      （`createHistory` / `installGestures`）。
+      ⚠️ 加载期取值 ⇒ `services/history.js` 必须排在本文件之前（`index.html` 已注明）。 */
+  const HMod = window.rmd.history;
+  /**
+   * ⭐ `design/0069` §2.1.1：**栈实例**——`noteOpen` / `neighbor` / `replacePath` 都在
+   *   **实例**上，⛔ 不在模块 api 上。
+   *   ⚠️ 2026-11-13 的教训：把实例方法直接调在模块 api 上不会在加载期报错，而是
+   *      **每次打开文档**都抛 `noteOpen is not a function`——正文因此挂不上去，
+   *      启动页留在屏幕上，点收藏时还会顶出「打不开这条收藏：它可能已被移动、
+   *      删除或改成了软链」这条**误导性**提示。
+   */
+  const H = HMod.createHistory({ limit: 50 });
   /** ⭐ `design/0025`：界面文案的**唯一**字典。⚠️ `index.html` 里它是 `services/` 的第一条
       `<script>`（`INV-I18N-06`）；取不到就退化成"整屏 key"这种**看得见**的样子，⛔ 不静默。 */
   const I18N = window.rmd.i18n || null;
@@ -72,11 +93,17 @@
   /** ⭐ `design/0009` 的文件名搜索浮层。⚠️ 它要用 `Settings` 的覆盖层登记处，
       所以脚本顺序上必须排在 `Settings.js` 之后（`index.html` 里已注明）。 */
   const QuickOpen = window.rmd.quickOpen;
+  /** ⭐ `design/0071` §3：`⌘O` 打开面板。⚠️ 纯逻辑在 `services/openpanel.js`（行序 / 上限 /
+      选中移动，可单测），本文件只接线。加载顺序：`openpanel.js` → `OpenPanel.js` → `main.js`。 */
+  const OpenPanelUI = window.rmd.openPanel;
   /** ⭐ `design/0042`：侧边栏底部常驻的文件名搜索（与 `⌘P` 共用同一份匹配实现）。 */
   const SidebarSearchUI = window.rmd.sidebarSearch;
   /** ⭐ `design/0011` 的正文内查找浮层。它要用 `find.js`（判据）、`keymap.js`
       （认 `⌘G`/`⇧⌘G`）与 `Settings` 的覆盖层登记处 ⇒ 脚本顺序排在最后三个之后。 */
   const FindBar = window.rmd.findBar;
+  /** ⭐ `design/0075`：查找替换的**纯逻辑**（源码域命中 / 计划）。⚠️ 本文件只做接线与
+      CM6 单事务写入，⛔ 不在这里另写一份匹配或替换拼接（`INV-REPL-02`）。 */
+  const Find = window.rmd.find;
   /** ⭐ `design/0018` 的图片缩放预览层。⚠️ 它要用 `Settings` 的覆盖层登记处
       与 `services/imagezoom.js` 的数学 ⇒ 脚本顺序排在两者之后。
       ⭐ **这一层只调一次 `installDelegation`**：事件委托与缩放数学都在
@@ -97,6 +124,11 @@
       （`tests/js/renderstat.test.js`）——写在这一层的话测试碰不到，
       而它的失效形态是"那一句永远不出现、屏幕上一切正常"。 */
   const RS = window.rmd.renderstat;
+  /** ⭐ `design/0070`：全局失败条（`#fail-bar`）的模型与渲染。
+      ⚠️ 加载期取值 ⇒ `services/failbar.js` 必须排在本文件之前（`index.html` 已注明）。
+      ⛔ 不要把"打开 / 关闭 / 链接 / 编辑"那几类失败写回 `setStatus`——用户投诉的
+      就是"失败挤在一条会截断的测量行里、把有用信息遮住"（`bugs/0319`）。 */
+  const FB = window.rmd.failBar;
   /** ⭐ 2026-10-29 代码评审第 5 条：提交后**整篇重渲**的那一句「本次重渲整篇 N ms」。
       ⚠️ 同 ← `RS` 的纪律：判定与文案**不在这里**（`main.js` 不进 `tests/js/`），
       这一层只负责把这次挂载的耗时喂进去。**加载期取值** ⇒ `services/renderbudget.js`
@@ -146,6 +178,10 @@
    */
   const LC = window.rmd.liveController;
   const LB = window.rmd.liveBlocks;
+  /** ⭐ `design/0079`：行号映射与缩放档位的**纯逻辑**（`services/viewstate.js`）。
+      ⚠️ 行号只吃下面 `LB` 对齐后的块表，⛔ 本文件不解析 Markdown（`INV-VIEW-01`）。
+      ⚠️ 加载期取值 ⇒ `index.html` 里必须排在**本文件之前**（`keymap.test.js` 的脚本顺序闸门）。 */
+  const VS = window.rmd.viewstate;
   const LSel = window.rmd.liveSelection;
   /** ⚠️ 全局名是 `liveMarks`（⛔ 不是 `src/live/decorations.js`）——理由写在那份文件的尾部：
       源码级闸门不许**非 `live/**`** 的文件里出现那个 CM6 扩展名的子串。 */
@@ -156,6 +192,10 @@
   /** ⭐ `design/0054`：**编辑对象的策略表**（允许的操作 / 输入约束 / 呈现 / 写回校验）。
       ⚠️ 同一条约束⛔ 不许在本文件里再写一半——粘贴折行、`cellContext`、走格分支全部读它。 */
   const LObj = window.rmd.liveObjects;
+  /** ⭐ `design/0047` §2.7（2026-11-02 修订）：IME 组合串的**行内 widget**。
+      ⚠️ 装饰的**构造**住在 `src/live/preedit.js`（live 层有独立的扩展白名单），
+      本文件只负责"什么时候画、画在哪里"——⛔ 别把 `Decoration` 挪回来。 */
+  const LPreedit = window.rmd.livePreedit;
   /** ⭐ `design/0049`：表格单元格的纯逻辑（扁平下标 / 写回 / 转义）。 */
   const LCell = window.rmd.liveCell;
   /** ⭐ `design/0051`：任务项方框的纯逻辑（识别 / 块内扁平下标 / 同长度翻转）。 */
@@ -174,6 +214,8 @@
   let settings = null;
   /** ⭐ `design/0009`：文件名搜索浮层。在 `setupKeys` 里建（它要 `keymap`）。 */
   let quickOpen = null;
+  /** ⭐ `design/0071` §3：`⌘O` 打开面板（最近优先）。同样在 `setupKeys` 里建。 */
+  let openPanel = null;
   /** ⭐ `design/0042`：侧边栏底部常驻搜索。同样在 `setupKeys` 里建（它要 `keymap`）。 */
   let sidebarSearch = null;
   /** ⭐ `design/0011`：正文内查找浮层。同样在 `setupKeys` 里建。 */
@@ -189,6 +231,141 @@
    * 所以必须是**函数**、⛔ 不能把当时的值抄下来。
    */
   let startScreen = null;
+
+  // ════════════════════════════════════════════════════════════════
+  // ⭐ `design/0070`：失败的三个容器（`INV-FAIL-01`）
+  //
+  // ① **行内**——有锚点就必须行内说：启动页的 `.start-note`（`StartScreen.note`）、
+  //    编辑面的 `#edit-status`（`setEditStatus(…, true)`）。
+  // ② **全局失败条** `#fail-bar`——没有本地承载面、用户发起、需要用户知道
+  //    （打开 / 关闭 / 链接 / 外部编辑器 / 选择目录）。它就是下面这个 `failBar`。
+  // ③ **中性状态条** `#status`——"这次被拒"与后台维护（P2/P3），⛔ 不是失败横幅。
+  //
+  // ⚠️ 每显示一条失败都留一行诊断（`INV-FAIL-07`）：`console.error` 进不了
+  //    `rmd.log`（WebView 的控制台没人看得到），所以走 `diag_note`。
+  // ════════════════════════════════════════════════════════════════
+  let failBar = null;
+
+  /**
+   * 一行诊断（`INV-FAIL-07` / `INV-LOG-11`）。
+   *
+   * ⚠️ 红线在后端（`commands::diag_note`）：`area` 白名单、`key` 形状、`detail`
+   *    ≤200 字符且只进 stderr。这里**只负责发**，⛔ 不拼正文、⛔ 不把 detail 塞进
+   *    界面文案（用户看到的是字典键那一句）。
+   * ⚠️ 它失败就失败：日志出口坏了不该再弹一条失败（那会绕成环）。
+   */
+  function diagNote(area, key, detail) {
+    if (!T || typeof T.call !== 'function') return;
+    try {
+      const p = T.call('diag_note', {
+        area: area,
+        key: key,
+        detail: detail == null || detail === '' ? null : String(detail),
+      });
+      if (p && typeof p.catch === 'function') p.catch(function () {});
+    } catch (e) { /* 诊断出口自身失败：静默（见上）。 */ }
+  }
+
+  /** 取（必要时建）全局失败条。⛔ DOM 缺失时 `available()` 会走降级出口。 */
+  function ensureFailBar() {
+    if (failBar || !FB) return failBar;
+    failBar = FB.createFailBar({
+      doc: document,
+      t: t,
+      onShown: function (spec) {
+        diagNote(spec.area || 'failbar', spec.key || 'unknown', spec.detail || '');
+      },
+      // ⚠️ 被 `P0` 挡下的那条也要留痕：界面上没显示 ≠ 没发生（评审意见 3）。
+      onRejected: function (spec) {
+        diagNote(spec.area || 'failbar', 'rejected.' + (spec.key || 'unknown'), 'level-blocked');
+      },
+      // ⚠️ `#fail-bar` 没建出来是**降级，不是静默**：退回中性状态条说那一句。
+      onFallback: function (text) { setStatus(text); },
+    });
+    return failBar;
+  }
+
+  /** 当前文档的作用域；没有文档时 `none`（只按关闭 / 重试收起）。 */
+  function failScope() {
+    return S.state.currentPath
+      ? { kind: 'doc', path: S.state.currentPath }
+      : { kind: 'none' };
+  }
+
+  /**
+   * 让当前文档 / 启动页的可见性收掉已经离开作用域的那条失败。
+   * ⚠️ `doc:<path>` 跟着**当前文档**走：打开另一份之后，前一份的失败不该还挂着。
+   */
+  function syncFailScope() {
+    if (!failBar) return;
+    failBar.syncScope({
+      docPath: S.state.currentPath || null,
+      startVisible: !!(startScreen && startScreen.visible()),
+    });
+  }
+
+  /**
+   * 显示一条全局失败。
+   *
+   * @param {{key:string, vars?:object, level?:string, scope?:object,
+   *          actions?:Array<{label:string, run:Function}>, detail?:string,
+   *          area?:string}} spec
+   */
+  function raiseFail(spec) {
+    const bar = ensureFailBar();
+    if (!bar) {
+      // ⛔ 前端模块没加载 = 看得见的坏（与 `I18N` 缺位同一条纪律）。
+      console.error('fail-bar 不可用，失败未展示：' + (spec && spec.key));
+      return false;
+    }
+    return bar.raise(spec);
+  }
+
+  /**
+   * 启动页的**段级内联失败**（`design/0070` §2.4 / `INV-FAIL-01` 第 1 条）。
+   *
+   * ⚠️ 锚点就在那一张表上——用户的眼睛在那里，抬头看顶栏会丢掉"我刚点的是哪一行"。
+   * ⚠️ 启动页不在屏上（理论上不该发生）⇒ 退回中性状态条，⛔ 不假装行内说过。
+   *
+   * @param {('favorite'|'recent')} section
+   * @param {string} key  字典键
+   * @param {object|null} vars
+   * @param {Function|null} retry 返回 `Promise<boolean>`；`null` = 不给重试按钮
+   */
+  function noteStartFailure(section, key, vars, retry) {
+    const detail = (vars && vars.msg) || '';
+    // ⚠️ 判据是**真的挂上去了**（`note()` 会回答"这一段有没有挂载点"），
+    //    ⛔ 不是"方法存在"——启动页刚被重画掉时方法还在，而提示无处可去。
+    const shown = !!(startScreen && typeof startScreen.note === 'function' &&
+      startScreen.note(section, {
+        key: key, vars: vars || null, detail: detail, retry: retry || null,
+      }));
+    if (!shown) setStatusT(key, vars || {});
+    // ⚠️ 两条出口都要留痕（`INV-FAIL-07`）：行内不等于"日志里可以没有"。
+    diagNote('start', key, detail);
+    return shown;
+  }
+
+  /**
+   * 一条启动页打开结果在**没有"被点的那一行"**时的报告出口
+   * （侧边栏「打开上次的目录」是启动页的第二入口，`design/0038` §2.1 ⑤）。
+   *
+   * @param {{ok:boolean, failedAt?:string, note?:object|null, err?:Error, section?:string}} res
+   */
+  function reportStartOpen(res) {
+    if (!res || res.ok !== false) return;
+    // `note === null` = 已由别处报告（`openDocument` 的全局条）。
+    if (res.note === null) return;
+    if (res.note && res.note.key) {
+      noteStartFailure(res.section || 'recent', res.note.key, res.note.vars || null,
+        res.note.retry || null);
+      return;
+    }
+    // 刷新列表失败（`design/0070` §2.2 末行）：P2 中性提示，⛔ 不进全局条。
+    const msg = (res.err && (res.err.wording || res.err.message)) || '';
+    setStatusT('doclist.failed', { msg: msg });
+    diagNote('start', 'doclist.failed', msg);
+  }
   /** 后端 `get_shortcuts` 返回的**真表**。⚠️ 自检与冒烟回报都要用它。 */
   let shortcutTable = [];
   /**
@@ -223,19 +400,39 @@
   }
 
   /**
+   * ⭐ 从后端那张表里取某个动作的**动作名**（`design/0081` §2.1 ③，启动页「开始」段用）。
+   *
+   * ⚠️ 为什么不能在前端字典里再写一份「打开…」：菜单里那一项的名字来自 `SHORTCUTS`
+   *    （`INV-START-06`：菜单文案由 `menu_label` 从表派生）⇒ 这里也从表取，两处只有一份真值。
+   *    两份分叉的表现是"菜单叫「打开…」、导航页叫「打开目录…」"，没有任何报错。
+   * ⚠️ 按**当前语言**选 `label_zh` / `label_en`（`Settings.js` 已有先例）——
+   *    `display` 那半不分语言，所以 `accelText` 不用改。
+   * ⚠️ 表还没拿到 / 没这一项 ⇒ 空串，调用方**要能承受**（启动页会整行不画）。
+   */
+  function labelText(id) {
+    const lang = I18N.lang ? I18N.lang() : 'zh';
+    for (let i = 0; i < shortcutTable.length; i++) {
+      if (shortcutTable[i].id !== id) continue;
+      const row = shortcutTable[i];
+      return (lang === 'en' ? row.label_en : row.label_zh) || row.label_zh || '';
+    }
+    return '';
+  }
+
+  /**
    * ⭐ 空会话那两句引导文案。键位**现算**（`accelText`），⛔ 不写死。
    * ⚠️ 表没拿到时退成"不提键位"的说法——**宁可少说，不能说错**。
    */
   function openHint() {
-    const dir = accelText('file.open-directory');
+    const dir = accelText('file.open');
     const file = accelText('file.open-file');
     if (dir && file) return t('status.hint-open', { dir: dir, file: file });
     return t('status.hint-open-no-keys');
   }
 
   function readyHint() {
-    const dir = accelText('file.open-directory');
-    return t('status.ready', { hint: dir ? t('status.ready-open-dir', { dir: dir }) : t('status.ready-no-table') });
+    const dir = accelText('file.open');
+    return t('status.ready', { hint: dir ? t('status.ready-open', { dir: dir }) : t('status.ready-no-table') });
   }
 
   /**
@@ -276,6 +473,26 @@
 
   /** 最近一次打开的各段耗时（前端口径）。⚠️ 只给 `reportMeasure` 用。 */
   let lastOpen = null;
+
+  /**
+   * ⭐ `design/0087` S0：**启动分段**的采样点（`performance.now()`，相对页面导航开始）。
+   *
+   * ⚠️ 只在 `RMD_MEASURE=1` 时收集（`INV-BOOT-03`：生产路径零行为差异）。
+   * ⚠️ 每个名字**只记第一次**：`bootInner` 里每一步都只走一次，重复调用只能是接线错误，
+   *    留第一次比覆盖更诚实。
+   */
+  let bootMarks = null;
+  function markBoot(name) {
+    if (!MEASURE) return;
+    if (!bootMarks) bootMarks = {};
+    if (!(name in bootMarks) && measure) bootMarks[name] = measure.now();
+  }
+
+  /** 取某个启动分段；没采到是 `null`，⛔ 不填 0（`INV-MEASURE-01` 同族）。 */
+  function bootMarkOf(name) {
+    if (!bootMarks || typeof bootMarks[name] !== 'number') return null;
+    return M ? M.round(bootMarks[name]) : null;
+  }
 
   /** 拿 DOM。⛔ 不用 `innerHTML` 读，也不给正文容器拼字符串。 */
   function $(id) { return document.getElementById(id); }
@@ -338,6 +555,83 @@
     const grip = $('chrome-grip');
     if (grip) grip.addEventListener('click', function () { setChromeHidden(false); });
     syncChromeHints();
+    // ⭐ `design/0079`：专注模式的 `Esc` 出口。
+    //   ⚠️ 挂在**冒泡**阶段、且只认 `!defaultPrevented`：各覆盖层自己的 `Esc` 先消费事件
+    //   （`stopPropagation` / `preventDefault`）⇒ 第一次只关覆盖层，第二次才退专注。
+    //   ⚠️ 这里不写键位字面量那种"应用快捷键"（`INV-SET-01` 管的是 `Cmd+…` 形态）；
+    //   `Escape` 是浏览器事件名，与 `FindBar` / `QuickOpen` 里的同形。
+    document.addEventListener('keydown', function (e) {
+      if (!zenOn || e.key !== 'Escape' || e.defaultPrevented) return;
+      e.preventDefault();
+      setZen(false);
+    });
+  }
+
+  // ⭐ `design/0079`：**行号 / 专注 / 缩放**三项视图状态。
+  //
+  // ⚠️ 三项**都只在内存里**（⛔ 不写 `config.json`）——理由与 `chromeHidden` 同族：
+  //    这是当次阅读的姿态，不是外观偏好；落盘会让"某天打开文档界面全变了"没有来源。
+  // ⚠️ 专注模式**只有一个状态、一个写入口**（`setZen`），`body.zen` 只由它切换
+  //    （`INV-VIEW-04`；`tests/js/view-p2.test.js` 有源码级判据）。
+  // ⚠️ 行号的数据只来自后端块表（`LB.fromPayload` / `LB.topNodes` / `LB.align`），
+  //    ⛔ 本文件不解析 Markdown（`INV-VIEW-01`）。
+  let zenOn = false;
+  let lineNumbersOn = false;
+  /** [`refreshLinePlan`] 算出来的"节点 → 源码行"表；对齐失败时为空。 */
+  let docLinePlan = [];
+  /** 当前缩放百分比；只在内存里。 */
+  let zoomLevel = 100;
+
+  /** 专注 / 收回。⭐ **唯一写入口**（菜单、快捷键、`Esc` 都走它）。 */
+  function setZen(next) {
+    const on = next === true;
+    if (on && editing) return; // 编辑态拒绝：退出编辑的可见入口不许被藏掉
+    zenOn = on;
+    document.body.classList.toggle('zen', on);
+  }
+
+  function toggleZen() { setZen(!zenOn); }
+
+  /** 行号的开关（菜单 / 快捷键共用）。 */
+  function setLineNumbers(next) {
+    lineNumbersOn = next === true;
+    applyLineNumbersNow();
+  }
+
+  /** 把当前状态写到 `#doc` 上（⛔ 不动正文内容）。 */
+  function applyLineNumbersNow() {
+    const doc = $('doc');
+    if (!doc) return;
+    // ⚠️ 对齐失败时 `docLinePlan` 为空 ⇒ **整篇不显示**（`INV-VIEW-02`）：
+    //    宁可不显示，也不显示部分或猜测的行号。
+    VS.applyLineNumbers(doc, docLinePlan, lineNumbersOn && docLinePlan.length > 0);
+  }
+
+  /**
+   * 挂载新正文后重算行号表。⚠️ 必须在 `doc.innerHTML` **之后**调用。
+   *
+   * ⚠️ `fromPayload.issues` 非空或 `align.ok === false` ⇒ 清空、不显示
+   * （`INV-VIEW-02`）；正文照常阅读，⛔ 不抛错打断挂载。
+   */
+  function refreshLinePlan(payload) {
+    const doc = $('doc');
+    if (!doc || !LB || !VS) { docLinePlan = []; return; }
+    const parsed = LB.fromPayload(payload);
+    if (parsed.issues.length > 0) { docLinePlan = []; return; }
+    const aligned = LB.align(LB.topNodes(doc), parsed.blocks);
+    docLinePlan = aligned.ok ? VS.linePlan(aligned.slots) : [];
+  }
+
+  /** 把当前缩放档位写到 `#doc` 的 CSS 变量上（⛔ 不碰字号 / 内容宽度）。 */
+  function applyZoom() {
+    const doc = $('doc');
+    if (!doc) return;
+    doc.style.setProperty('--rmd-canvas-zoom', String(VS.zoomScale(zoomLevel)));
+  }
+
+  function setZoom(next) {
+    zoomLevel = VS.normalizeZoom(next);
+    applyZoom();
   }
 
   /** 字节数 → 人读得懂的单位。只用于状态条。 */
@@ -349,11 +643,12 @@
 
   /** ⭐ 状态条那一行的"重画配方"（`design/0025` §2.5.1 ②）。`null` = 重画不出来。 */
   let statusRepaint = null;
-  let statusIsError = false;
   /** ⭐ 编辑提示带上那行的"重画配方"（`design/0025` §2.5.1 ②）。 */
   let editNoteRepaint = null;
   /** ⭐ 正文区空态那一句的"重画配方"。 */
   let docEmptyRepaint = null;
+  /** ⭐ `design/0083` §2.3：上一次**真的发出去**的窗口标题（去重，见 `syncWindowTitle`）。 */
+  let windowTitleSent = null;
 
   /**
    * 状态条上的一行字。⛔ 不写进正文容器——正文里必须是**纯渲染结果**。
@@ -361,24 +656,30 @@
    * ⭐ `design/0025` §2.5.1 ②：换语言后那一行要能**重画**，所以同时记下"它当初是
    * 怎么算出来的"（`statusRepaint`）。用原文调它的调用方（诊断串、拼好的整句）
    * 一律把 recipe 清掉——那种行重画不出来，也不该假装能。
+   *
+   * ⭐ `design/0070` §2.5：`.status` 只剩下三件职责——测量行（`design/0002`）、
+   * 文档摘要、「这次被拒 / 后台维护」这类**中性**提示。
+   * ⛔ **没有 `isError` 了**：失败归 `#fail-bar`（P0/P1）或行内（启动页 / 编辑面）。
+   *    它的失效形态是"这句话被塞进一条 `nowrap` ＋ `ellipsis` 的测量行、自己把自己截没"。
+   * ⚠️ 文案可能长于一行 ⇒ 同一句放进 `title`，悬停能读全（⛔ 不改 `nowrap`：
+   *    那是测量行的形状，改了就动到 `design/0002`）。
    */
-  function setStatus(text, isError) {
+  function setStatus(text) {
     statusRepaint = null;
-    statusIsError = !!isError;
     const el = $('status');
     el.textContent = text;
-    el.classList.toggle('status-error', !!isError);
+    el.title = text;
   }
 
   /** ⭐ 按字典键写状态条，并**记下重画的方法**（§2.5.1 ②）。 */
-  function setStatusT(key, vars, isError) {
-    setStatus(t(key, vars), isError);
+  function setStatusT(key, vars) {
+    setStatus(t(key, vars));
     statusRepaint = function () { return t(key, vars); };
   }
 
   /** ⭐ 传一个**返回整句**的函数（文档摘要那种），同样记下来供换语言时重画。 */
-  function setStatusFn(fn, isError) {
-    setStatus(fn(), isError);
+  function setStatusFn(fn) {
+    setStatus(fn());
     statusRepaint = fn;
   }
 
@@ -412,6 +713,12 @@
     //    ⭐ `design/0043` §2.6：收藏段同样只读快照（`S.state.favorites`）。
     if (startScreen) startScreen.render(box, S.state.recent, S.state.favorites);
     doc.setAttribute('aria-busy', 'false');
+    // ⭐ `design/0070`：回到空态 ⇒ 当前文档身份没了（`doc:` 作用域的失败该收起），
+    //    启动页的可见性也换了 ⇒ 让失败条按新上下文复核一次。
+    syncFailScope();
+    // ⭐ `design/0083` §2.3：空态 = 没有在显示的文档 ⇒ 标题回到 `rmd`
+    //    （⚠️ 原生标签的标签名跟着变，否则标签上会留着上一份文档的名字）。
+    syncWindowTitle();
   }
 
   /** ⭐ 空态那句也按字典键现翻（换语言要跟着变）。 */
@@ -424,6 +731,40 @@
   function showDocEmptyFn(fn) {
     showDocEmpty(fn());
     docEmptyRepaint = fn;
+  }
+
+  /**
+   * ⭐ `design/0083` §2.3：把**当前文档名**写进窗口标题。
+   *
+   * ⚠️ 为什么这件事在前端做：标题问的是"**这个窗口现在显示的是哪份文档**"，
+   *    而那个真值只有会话状态知道（`currentDoc` / `currentPath`）。后端再拼一次
+   *    就是**第二个真值**（后端那边已有 `current_document` / 草稿 / 在途打开请求三处状态）。
+   *    ⇒ 前端算名字，后端只**清洗 + `set_title`**（`gui/mod.rs::sanitize_window_title`）。
+   *
+   * ⚠️ 原生标签的**标签名就是窗口标题**——所以这里同时决定了标签栏上那一行字。
+   *
+   * 三种状态：
+   * · 草稿 ⇒ `doc.untitled`（跟语言走 ⇒ `relabelDynamic` 里也要调一次）；
+   * · 有文档 ⇒ 文件名（`baseName`，与侧边栏／历史用的是同一份规则）；
+   * · 都没有（导航页 / 目录模式 / 空会话）⇒ `rmd`。
+   *
+   * ⭐ **去重**是必需的，不是优化：`mountDocument` 在"编辑态预览重渲"时也会被调到
+   *    （`keepScroll`），那一路一次提交就是一轮 IPC；标题没变时按值跳过，
+   *    免得每次重渲都往主线程塞一条 `setWindowTitle`。
+   * ⚠️ 失败**只记日志**：标题贴不上不影响读/写，⛔ 不弹失败条、⛔ 不打断当前动作。
+   *    但缓存要清掉——否则这一份名字**永远**不会再试一次。
+   */
+  function syncWindowTitle() {
+    const name = isDraftDoc()
+      ? t('doc.untitled')
+      : (S.state.currentPath ? baseName(S.state.currentPath) : '');
+    const title = name || 'rmd';
+    if (title === windowTitleSent) return;
+    windowTitleSent = title;
+    T.call('set_window_title', { title }).catch(function (e) {
+      windowTitleSent = null;
+      console.warn('⛔ 设置窗口标题失败：', e);
+    });
   }
 
   /**
@@ -449,7 +790,7 @@
    * 状态条、空态、重载条、决策条、编辑按钮这几处是 JS 写的 ⇒ 它们**只能**靠订阅者。
    */
   function relabelDynamic() {
-    if (statusRepaint) setStatusFn(statusRepaint, statusIsError);
+    if (statusRepaint) setStatusFn(statusRepaint);
     // ⚠️ 先把配方取出来再重画：`showDocEmpty` 开头会把它清空（那是给"用原文直接调"的
     //    调用方准备的），于是**第二次**换语言时 `docEmptyRepaint` 已经是 `null`，
     //    空态那句话（`design/0038` 起还有启动页的标题/标记）就永远停在旧语言。
@@ -471,6 +812,11 @@
     // ⭐ `design/0041`：形态按钮的文案/`title`/`aria-label` 是 JS 贴的，
     //    `applyDom()` 只会顶回出厂那句 ⇒ 换语言时必须在这里重贴一次。
     if (sidebar) sidebar.relabelFileView();
+    // ⭐ `design/0083` §2.3：草稿的标题是**译文**（`doc.untitled`）⇒ 换语言要重贴。
+    //    ⚠️ 缓存按**值**比，这里必须先清一次：新语言的 `doc.untitled` 与旧的那个不同，
+    //    两者恰好相同时（例如都没变）跳过也无害，所以只用清缓存、不用强推。
+    windowTitleSent = null;
+    syncWindowTitle();
   }
 
   /**
@@ -579,6 +925,39 @@
   let editGrant = null;
   /** ⭐ `ctx.editable()` 垫片（§2.3-5）。⚠️ 它必须**注入** `createKeymap`，见 `setupKeys`。 */
   let forwardShim = null;
+  /**
+   * ⭐ `design/0077`：**菜单路径**允许穿过可编辑焦点闸门的动作 id。
+   *
+   * ⚠️ 只有这五个：四种复制格式与「粘贴为字面 Markdown 源码」——它们在编辑态本来就该可用。
+   * ⛔ 别把整个表放进来：`keymap.dispatch` 的可编辑焦点闸门保护的是搜索框 / 设置里的
+   * 普通输入（`INV-SET-05`）；键盘路径仍由 `handleKeydown` 挡，不经过这个白名单。
+   */
+  const CLIP_ACTION_IDS = [
+    'edit.copy-markdown', 'edit.copy-html', 'edit.copy-plain', 'edit.copy-rich',
+    'edit.paste-literal',
+  ];
+  /**
+   * ⭐ `bugs/0322`（2026-11-15）：菜单路径**额外**放行的文档级动作。
+   *
+   * ⚠️ 用户实测：「从 file 中点击导出 PDF 后，没有任何反应」——当时是**就地编辑态**，
+   *    焦点在 `contenteditable` 块里，而点菜单**不会**把焦点移开 ⇒
+   *    `keymap.dispatch(id, 'menu')` 撞上可编辑焦点闸门，`allowEditable` 只认
+   *    `CLIP_ACTION_IDS` 那五个 ⇒ 这一击被**静默**吞掉：没有 IPC、没有状态条、
+   *    `rmd.log` 里一个字都没有。⚠️ 同一条闸门也吞掉 `File ▸ 保存`（编辑态最该能点的一项）。
+   * ⭐ 这三条的共同点：**handler 自己就有编辑态/脏态判据，而且必然给反馈**——
+   *    `exportBlocked()` 出 `status.export-needs-save`、`saveNow()` 走 `liveSaveNow()`
+   *    或出 `status.not-editing`；⛔ 没有一条是静默返回。
+   * ⛔ 别扩大成整张表：`INV-SET-05` 的闸门仍要挡住那些"在输入框里点了会打架"的动作；
+   *    键盘路径则根本没经过这个白名单（它在 `handleKeydown` 就挡住了，编辑区里自有
+   *    `editor/keys.js` 的转发白名单与 `live/index.js` 的 `onKeyDown`）。
+   */
+  const MENU_EDITABLE_IDS = CLIP_ACTION_IDS.concat([
+    'file.save',
+    'file.export-html',
+    'file.export-pdf',
+  ]);
+  /** `render_preview` 的请求号（只用于诊断/回包配对，⛔ 不参与会话状态）。 */
+  let copyRenderSeq = 0;
   /** 转发白名单的 CM6 扩展。⚠️ 每次 `mount` 都要**重建**（扩展是绑在 state 上的）。 */
   let forwardExt = null;
   /** ⭐ 转发白名单的**派生自检**（§2.3-6）：翻不出来的项必须**响亮报**，⛔ 不许静默。 */
@@ -595,6 +974,13 @@
   let editReqSeq = 0;
   /** 用户对"外部改动 ∧ 脏"表过态之后就不再自动弹（换文档/重新进编辑态时复位）。 */
   let externalChangeSettled = false;
+  /**
+   * ⭐ `design/0076` §2.1.9：导出的**单飞闸**。
+   * ⚠️ 面板是模态的，但"重试"动作与菜单/快捷键可能同时进来；两次并发导出会各自
+   * 弹一次保存面板，而用户只看见后一个——前一个的落点就成了"替他选过"的。
+   * ⛔ 它只是**前端防抖**，不是授权或正确性判据（真正的闸门在 `check_export_target`）。
+   */
+  let exporting = false;
 
   // ════════════════════════════════════════════════════════════════════
   // ⭐ 阅读—编辑连续性的运行时状态（`design/0047`）
@@ -635,6 +1021,16 @@
    * 等 `ImageView` 报"落定"再兑现。⛔ 直接放弃就是"打开大图文档永远回到顶部"。
    */
   let pendingRestore = null;
+  /**
+   * ⭐ `bugs/0077`：`keepScroll` 重渲的**落定后校正**（与 `pendingRestore` 同族、不同来源）。
+   *
+   * ⚠️ 它存在的理由是**同一个**：`innerHTML` 换树那一刻，新树里的 `<img>` 高度≈0，
+   *    `headingPositions()` 量出来的位置**偏小**；图片落定后又撑开 ⇒ 视口停在原处上方。
+   *    `pendingRestore` 那条路一直有落定校正，`keepScroll` 这条路此前**漏了**——
+   *    表现就是「勾选 TODO 后正文往上跳几千像素」。
+   * ⚠️ 与 `pendingRestore` 互斥：挂载时就清空后者；这里只服务"同一份文档的重渲"。
+   */
+  let keepScrollFix = null;
   /** ⭐ **挂载代号**：每次 `mountDocument` +1。⚠️ 它是"迟到回调"的第一道闸。 */
   let mountGen = 0;
   /** 切换/隐藏/退出前的冲刷最多等这么久（§2.3 ④）——⛔ 不许让一次写盘拖住切换。 */
@@ -903,7 +1299,9 @@
     // ⚠️ 这一支**必须**排在未授权态之前——否则空会话会被画成"未授权态"，
     //    而那个界面是给**单文件模式**用的：它会显示「所在目录：（未知）」，
     //    那是在解释一个根本不存在的东西（§2.1.4 的未授权态不是"欢迎页"）。
-    if (st.mode === 'empty' && !st.currentDoc) {
+    // ⭐ `design/0082`：**未命名草稿不算"有文档"**（它没有路径、也不在任何根里）⇒
+    //    裸跑时按 ⌘N 之后侧边栏仍是这一屏，⛔ 不滑到"未授权态"去解释一个不存在的位置。
+    if (st.mode === 'empty' && (!st.currentDoc || st.currentDoc.draft)) {
       lastRoot = null;
       lastGen = st.generation;
       tree.reset(null);
@@ -1032,7 +1430,13 @@
     } catch (e) {
       // ⚠️ 失败要重试得起来：把脏标记放回去，下一次 `renderSidebar` 会再拉一次。
       docListDirty = true;
-      throw e;
+      // ⭐ `design/0070` §2.2：清单是**背景维护**（用户要的是"看这个目录"，
+      //    不是"拉一份清单"）⇒ 它失败**不进失败条**（`INV-FAIL-01` 第 3 条），
+      //    一句话进中性状态条；⛔ 也**不再往上报错**——`applySidebarView` 的调用方
+      //    大半是启动 / 刷新路径，抛出去只会变成一条没人接的 Promise 拒绝。
+      setStatusT('doclist.failed', { msg: (e && (e.wording || e.message)) || String(e) });
+      diagNote('refresh', 'doclist.failed', (e && (e.wording || e.message)) || '');
+      return;
     }
   }
 
@@ -1043,7 +1447,13 @@
       await S.setSidebarFileView(next);
     } catch (e) {
       // ⚠️ **本次切换照样生效**（后端内存里已经改了）——只是没存下来。
-      setStatusT('fileView.save-failed', {}, true);
+      // ⭐ `design/0070` §10 的实施偏差：设计把它指到 `#save-warn`，但那个元素是
+      //    **设置覆盖层里**「主题未保存」的专用位（`ThemeSwitcher.js` 独占），
+      //    覆盖层关着时它根本不可见 ⇒ 在这里等于静默。改走中性状态条（P2）。
+      setStatusT('fileView.save-failed', {});
+      // ⚠️ `key` 必须是**后端认的形状**（全小写 ASCII ＋ `.`/`-`）——写成
+      //    `fileView…` 会被 `diag_note` 拒掉，而那条拒绝只进 `console`（日志缺席）。
+      diagNote('config', 'fileview.save-failed', (e && (e.wording || e.message)) || '');
       console.error('侧边栏形态未能保存：', e);
     }
     await applySidebarView(false);
@@ -1137,6 +1547,68 @@
   }
 
   /**
+   * ⭐ **切换文档之前那道唯一的脏闸**（`INV-EDIT-06`）。
+   *
+   * ⚠️ 两种编辑会话各有一套"保存"：分栏是 `saveNow()`（编辑器缓冲），就地是
+   *    `liveSaveNow()`（提交 ＋ 写盘）——⛔ 揉进一个函数里，早晚有一条走错
+   *    （`INV-LIVE-11` ④）。⚠️ 两个会话**不可能同时活着**：进分栏之前
+   *    `liveToSplitEdit()` 会先 `leave()`，反向的"分栏 → 就地"这条路没做（§4.2 单向）。
+   *
+   * ⚠️ 为什么是函数而不是在调用点各写一遍：`openDocument` 与 `⌘N`（`design/0082`）
+   *    是**两条**会换掉"用户手里这份字"的路，⛔ 各写一份判据正是 `design/0017`
+   *    那次事故的形状（漏一条 = 静默丢字）。
+   *
+   * @param {string} name 问句里"要切去哪"的那个名字（草稿传 `doc.untitled`）
+   * @param {Function} proceed 用户选了"存 / 丢"之后真正要做的事（**重入调用方**）
+   * @returns {Promise<boolean>} `true` = 现在就可以往下走；
+   *   `false` = 已经交给询问条 / 被提交拒绝拦下（调用方**什么都不做**）
+   */
+  async function gateSwitchDoc(name, proceed) {
+    if (editing) {
+      if (editDirty) {
+        // ⚠️ 走这条之前**先退出编辑态**（不是直接再调一次调用方）：
+        //    脏标记要等 `exitEdit()` 之后才清得掉，否则那一次重入会**再弹一次**
+        //    ——同一个问题问两遍，而且第二遍的答案还是同一个。
+        // ⚠️ `proceed` 由调用方给：`openDocument` 要把 `opts`（历史导航的 `reason` /
+        //    `expectIndex`）原样带回去，丢了它光标会被推到栈尾（`design/0069` §2.1.2）。
+        promptLeaveEdit('edit.ask-switch', { name: name }, function () {
+          exitEdit().then(proceed);
+        });
+        return false;
+      }
+      // ⚠️ 不脏时**静默退出编辑态**：那时缓冲与磁盘一致，没有东西可丢，
+      //    而"切了文档还留在旧文档的编辑态里"是更坏的状态（预览会显示新文档、
+      //    缓冲还是旧文档 ⇒ 保存会写错文件）。
+      await exitEdit();
+    }
+    if (!editing && live) {
+      if (live.isDirty()) {
+        liveAskSwitch(name, proceed);
+        return false;
+      }
+      if (live.isEditing()) {
+        // ⚠️ 不脏 ⇒ **静默退出**：提交是幂等的，没有东西可丢，多问一次只会让人
+        //    学会忽略这条带子（与上面那一段同一条口径）。
+        //    ⚠️ 必须 `await`：调用方紧接着就要换身份，而 `leave()` 里的
+        //    `commitTarget` 还在用**旧**身份渲染（换早了会把那一块提交进新文档）。
+        // ⭐ `design/0054` §7 第 5 条：提交**被拒** ⇒ ⛔ 不切文档。切了就是
+        //    "用户唯一那份输入被销毁"，而且是**无提示**的（脏标记在 `isEditing()` 那一侧）。
+        const left = await liveSerial(function () { return leaveLive({}); });
+        if (left && left.ok === false) return false;
+        // ⭐⭐ **提交之后再核对一次**（2026-10-29 复评 P1）：`leave()` 会把视图里的输入
+        //    提交进会话，而 `liveSerial` 排队那段时间用户还能继续打字 ⇒ 此刻的"脏"是
+        //    「已提交、未落盘」。⛔ 别拿上面那个 `isDirty()` 当 `await` 之后的结论：
+        //    紧接着换文档会把这份输入**无声**丢掉（脏带子连弹都不会弹）。
+        if (live.isDirty()) {
+          liveAskSwitch(name, proceed);
+          return false;
+        }
+      }
+    }
+    return true;
+  }
+
+  /**
    * ⭐ 打开一份文档并按 §2.1.3 的提交点 ① 落地。
    *
    * @param {string} path
@@ -1152,50 +1624,9 @@
     // ⭐ `design/0012` §6：**编辑态下切文档要过闸**（`INV-EDIT-06`）。
     //   ⚠️ 挂在这里是因为**所有**打开路径都经过它：树里点、搜索浮层、`⇧⌘O`、
     //      启动参数。⛔ 挂在某一条上就会留下一个"从另一条进来就把用户的字丢了"的口子。
-    //   ⚠️ 不脏时**静默退出编辑态**：那时缓冲与磁盘一致，没有东西可丢，
-    //      而"切了文档还留在旧文档的编辑态里"是更坏的状态（预览会显示新文档、
-    //      缓冲还是旧文档 ⇒ 保存会写错文件）。
-    if (editing) {
-      if (editDirty) {
-        // ⚠️ 走这条之前**先退出编辑态**（不是直接再调一次 `openDocument`）：
-        //    脏标记要等 `exitEdit()` 之后才清得掉，否则那一次重入会**再弹一次**
-        //    ——同一个问题问两遍，而且第二遍的答案还是同一个。
-        promptLeaveEdit('edit.ask-switch', { name: baseName(path) }, function () {
-          exitEdit().then(function () { return openDocument(path); });
-        });
-        return null;
-      }
-      await exitEdit();
-    }
-    // ⭐ `design/0047` §2.5：**就地编辑的脏内容同样要过闸**。
-    //   ⚠️ 与上面那一段分开写，⛔ 不合并：分栏的"保存"是 `saveNow()`（编辑器缓冲），
-    //      就地编辑的"保存"是"提交 ＋ 写盘"（`liveSaveNow()`）——两条路各有一个存活的
-    //      会话，把它们揉进一个闸里，早晚有一条走错（`INV-LIVE-11` ④）。
-    //   ⚠️ 两个会话**不可能同时活着**：进分栏之前 `liveToSplitEdit()` 会先 `leave()`，
-    //      反向的"分栏 → 就地"这条路本次没做（§4.2 的方向是单向的）。
-    if (!editing && live) {
-      if (live.isDirty()) {
-        liveAskSwitch(baseName(path), function () { openDocument(path, opts); });
-        return null;
-      }
-      if (live.isEditing()) {
-        // ⚠️ 不脏 ⇒ **静默退出**：提交是幂等的，没有东西可丢，多问一次只会让人
-        //    学会忽略这条带子（与上面 `editDirty` 那段同一条口径）。
-        //    ⚠️ 必须 `await`：`openDocument` 紧接着就要换身份，而 `leave()` 里的
-        //    `commitTarget` 还在用**旧**身份渲染（换早了会把那一块提交进新文档）。
-        // ⭐ `design/0054` §7 第 5 条：提交**被拒** ⇒ ⛔ 不切文档。切了就是
-        //    "用户唯一那份输入被销毁"，而且是**无提示**的（脏标记在 `isEditing()` 那一侧）。
-        const left = await liveSerial(function () { return leaveLive({}); });
-        if (left && left.ok === false) return null;
-        // ⭐⭐ **提交之后再核对一次**（2026-10-29 复评 P1）：`leave()` 会把视图里的输入
-        //    提交进会话，而 `liveSerial` 排队那段时间用户还能继续打字 ⇒ 此刻的"脏"是
-        //    「已提交、未落盘」。⛔ 别拿上面那个 `isDirty()` 当 `await` 之后的结论：
-        //    紧接着换文档会把这份输入**无声**丢掉（脏带子连弹都不会弹）。
-        if (live.isDirty()) {
-          liveAskSwitch(baseName(path), function () { openDocument(path, opts); });
-          return null;
-        }
-      }
+    //   ⭐ 判据本身在 `gateSwitchDoc`（唯一一份）：`⌘N` 建草稿也走同一条闸（`design/0082`）。
+    if (!(await gateSwitchDoc(baseName(path), function () { return openDocument(path, opts); }))) {
+      return null;
     }
     // ⭐ `design/0017` §2.3 ④：**切文档之前冲刷**。
     //   ⚠️ 时机是"此刻"——后端的 `current_document` 还是**旧**那一份，
@@ -1223,15 +1654,40 @@
     try {
       out = await S.openDocument(path);
     } catch (e) {
-      setStatusT('status.open-failed', {
-        msg: e.wording || e.message,
-        path: e.path ? t('common.in-parens', { path: e.path }) : '',
-      }, true);
+      // ⭐ `design/0070`：**用户发起的打开**失败了 ⇒ 全局失败条（P1）＋ 重试 ＋ 详情。
+      //    ⚠️ 作用域绑到**目标**那份路径：用户改去打开别的文档之后，这条自动收起。
+      raiseFail({
+        key: 'status.open-failed',
+        vars: {
+          msg: e.wording || e.message,
+          path: e.path ? t('common.in-parens', { path: e.path }) : '',
+        },
+        level: 'P1',
+        scope: { kind: 'doc', path: path },
+        area: 'open',
+        detail: [e.wording || e.message, e.path || ''].filter(Boolean).join(' · '),
+        actions: [{
+          label: 'fail.retry',
+          run: function () {
+            // ⚠️ `openDocument` 自己会再报一次失败 ⇒ 这里只回答"成没成"。
+            return openDocument(path).then(function (p) { return !!p; },
+              function () { return false; });
+          },
+        }],
+      });
       return null;
     }
     const t4b = measure ? measure.now() : 0;
     // ⛔ 提交点判定不通过 → **什么都不做**。这正是"慢的 A 不覆盖快的 B"。
     if (!out.payload) return null;
+    // ⭐ `design/0069` §2.1.2：**历史只在提交成功之后变更**（`INV-HIST-01`）。
+    //   ⚠️ 必须落在提交点之后：失败 / 被更新请求顶掉 / 脏内容取消都在上面返回了，
+    //      那时栈不动，屏幕与光标永远一致。
+    //   ⚠️ 路径用后端回包的 `real_path`（`INV-HIST-02`），⛔ 不用调用方传进来的那个字符串。
+    H.noteOpen(out.payload.real_path, {
+      reason: reason,
+      expectIndex: opts && opts.expectIndex,
+    });
     const spans = mountDocument(out.payload);
     // ⭐ `design/0017` §2.3 ⑤：挂完之后立刻尝试恢复（**在 `ensureWatch` 之前**）。
     //   ⚠️ 必须是**挂载之后**：恢复要读 `scrollHeight`，而那要等新正文进了布局。
@@ -1263,6 +1719,181 @@
   }
 
   // ════════════════════════════════════════════════════════════════════
+  //  ⭐ 文档访问历史：后退 / 前进（`design/0069`，`⌘[` / `⌘]` ＋ 鼠标侧键）
+  // ════════════════════════════════════════════════════════════════════
+
+  /** 历史导航在飞（连按不并发；多出来的步数进 `pendingDelta`）。 */
+  let navInFlight = false;
+  /** 在飞期间累积的净步数（只保留方向之和，见 `design/0069` §4 代价 5）。 */
+  let pendingDelta = 0;
+
+  /**
+   * ⭐ `design/0069` §2.1.3：历史导航的**唯一编排入口**。
+   *
+   * ⚠️ 它**只决定目标并调用 `openDocument`**；光标移动由提交点里的 `H.noteOpen` 完成
+   *   （`INV-HIST-01`：⛔ 这里不先行改栈）。
+   * ⚠️ 脏内容 / 授权失败 / 文件不存在全走 `openDocument` **既有那一段闸**
+   *   （`INV-HIST-06`：⛔ 不写第二套判据）。
+   * ⚠️ 失败或取消 ⇒ **丢弃累积**：⛔ 不级联弹第二个询问。
+   *
+   * @param {number} delta `-1` 后退 / `+1` 前进
+   */
+  async function historyGo(delta) {
+    if (delta !== -1 && delta !== 1) return;
+    if (navInFlight) { pendingDelta += delta; return; }
+    // ⚠️ 浮层 / 编辑询问 / 关文档在飞：一律不动作（与 `⌘E` / `⌘S` 在浮层里的口径同族）。
+    if (overlayOpen() || editPromptState || closeInFlight) return;
+    // ⚠️ 导航页不是历史节点（`design/0069` §2.1.5）：没有当前文档就没有"上一份"。
+    if (!S.state.currentDoc) return;
+    const target = H.neighbor(delta);
+    if (!target) return;                    // 到头：静默（侧键仍已被 preventDefault）
+    navInFlight = true;
+    try {
+      const payload = await openDocument(target.path, {
+        reason: 'history',
+        expectIndex: target.index,
+      });
+      if (!payload) { pendingDelta = 0; return; }
+    } catch (e) {
+      // ⚠️ `openDocument` 自己会接住 `open_document` 的失败；走到这里的是更外围的异常
+      //     （例如冲刷进度 / 退出编辑态抛错）。⛔ 不让它变成未处理的 Promise 拒绝。
+      console.error('⛔ 文档历史：导航出错：', e);
+      pendingDelta = 0;
+      return;
+    } finally {
+      navInFlight = false;
+    }
+    if (pendingDelta) {
+      const d = pendingDelta;
+      pendingDelta = 0;
+      // ⚠️ 让这一轮先彻底收尾（`finally` 已复位），再走下一步。
+      setTimeout(function () { historyGo(d); }, 0);
+    }
+  }
+
+  // ════════════════════════════════════════════════════════════════════
+  //  ⭐ 关掉当前文档、回到导航页（`design/0056`，`⌘L`；2026-11-11 由 `F2` 改来、2026-11-16 定为 `⌘L`）
+  // ════════════════════════════════════════════════════════════════════
+
+  /** `close_document` 在飞（连按 `⌘L` 不并发）。 */
+  let closeInFlight = false;
+
+  /**
+   * ⭐ `design/0056` §2.1 ④：**关掉当前文档、回到导航页**（`view.start`，`⌘L`）。
+   *
+   * ⚠️ 这里的**顺序本身就是判据**，⛔ 别只挑几行抄：
+   *   ① 重入闸 → ② 没有文档就返回 → ③ 编辑态闸 → ④ 冲刷阅读进度
+   *   → ⑤ 后端关（`S.closeDocument`）→ ⑥ 清界面 → ⑦ 挂导航页 → ⑧ 侧边栏与状态条。
+   * ⛔ ⑤ 之前**不许**清任何前端文档身份：`flushReadingProgress` 与退出编辑态都要用**旧**
+   *   身份（`set_reading_progress` / `end_edit` 的 `doc_seq` 判据一旦对不上就是静默无副作用）。
+   * ⚠️ ③ 不是可选的：脏内容没处理就关，等于把用户刚敲的字扔掉（`INV-EDIT-06`）。
+   * ⚠️ ⑤ 之后**以返回的快照为准**：`mode` 由后端按 `roots`/`startup_document` 推
+   *   （`commands/mod.rs::Session::mode`），⛔ 前端不另算一份（`INV-CLOSE-03`）。
+   * ⚠️ ⑤ 返回 `false`（`doc_seq` 不符）⇒ **界面一个字节都不动**：那一刻后端说"你说的
+   *   那份不是现在这份"，而界面已经在别处重画过了；`S.closeDocument` 已把原因写到 stderr。
+   */
+  async function returnToStartPage() {
+    // ① 重入闸（真正的"在飞"判定在下面第二次出现——上面那些 `return` 要把机会交还，
+    //    因为提问之后的"存/丢"会**再进来一次**）。
+    if (closeInFlight) return;
+    // ② 已经在导航页：⛔ 不报错、⛔ 不乱闪
+    const cur = S.state.currentDoc;
+    if (!cur) return;
+
+    // ③ 编辑态闸——与 `openDocument` 开头**同一套**（⛔ 不各写一份判据）。
+    const name = baseName(cur.real_path);
+    if (editing) {
+      if (editDirty) {
+        // ⚠️ 与 `openDocument` 同一处细节：先 `exitEdit()` 再重入，
+        //    否则脏标记还没清，重入会**再问一遍**。
+        promptLeaveEdit('edit.ask-switch', { name: name }, function () {
+          exitEdit().then(function () { return returnToStartPage(); });
+        });
+        return;
+      }
+      await exitEdit();
+    }
+    if (!editing && live) {
+      if (live.isDirty()) {
+        liveAskSwitch(name, function () { return returnToStartPage(); });
+        return;
+      }
+      if (live.isEditing()) {
+        const left = await liveSerial(function () { return leaveLive({}); });
+        // ⚠️ 提交被拒（`design/0054` §7 第 5 条）⇒ ⛔ 不关：身份一换，那一块就再也提交不进去了。
+        if (!left || left.ok === false) return;
+        // ⚠️ 设计 §2.1 ④ 明文：`await` 之后再判一次脏（`leave()` 期间可能有新输入落了盘）
+        if (live.isDirty()) {
+          liveAskSwitch(name, function () { return returnToStartPage(); });
+          return;
+        }
+      }
+    }
+
+    // 到这里才是"真的关"。⚠️ 闸放在**这一步**：上面的 `return` 都把机会交还了。
+    if (closeInFlight) return;
+    closeInFlight = true;
+    try {
+      // ④ 用**旧**身份冲刷（它自己要 `currentPath` ＋ `doc_seq`）
+      await flushReadingProgress();
+      // ⑤ 后端是唯一真值
+      let closed = false;
+      try {
+        closed = await S.closeDocument();
+      } catch (e) {
+        // ⭐ `design/0070`：关闭是用户发起的动作 ⇒ 全局失败条（P1）＋ 重试。
+        //    ⚠️ 作用域是**当前这份**：它没被关掉，所以那条失败仍然属于它。
+        raiseFail({
+          key: 'status.close-failed',
+          vars: { msg: e.wording || e.message },
+          level: 'P1',
+          scope: failScope(),
+          area: 'close',
+          detail: [e.wording || e.message, e.path || ''].filter(Boolean).join(' · '),
+          actions: [{
+            label: 'fail.retry',
+            run: function () {
+              return returnToStartPage().then(function () { return !S.state.currentDoc; },
+                function () { return false; });
+            },
+          }],
+        });
+        console.error('关闭文档失败（close_document）：', e);
+        return;
+      }
+      if (!closed) return;
+
+      // ⑥ 清界面（⚠️ 必须在 ⑦ **之前**：`showDocEmpty` 只重建 `#doc`）
+      if (tree) tree.setCurrent(null);
+      if (sidebar) sidebar.setToc([]);
+      if (findBar) findBar.invalidate();
+      if (imageViewer) imageViewer.close({ restoreFocus: false });
+      pendingNotice = null;
+      pendingNoticeVars = null;
+
+      // ⑦ 导航页（⚠️ 之后**不需要**手工 `startScreen.clear()`：这一趟不动正文，
+      //    而下一次打开文档时 `mountDocument` 已在 `innerHTML` 之前 `clear()`）
+      if (S.state.mode === 'empty') {
+        showDocEmptyFn(openHint);
+      } else {
+        showDocEmptyT('doc.empty-choose');
+      }
+
+      // ⑧ 侧边栏 / 重载条 / 编辑按钮 / 状态条（⚠️ 与 boot 第 3/4 步那两支同口径）
+      await renderSidebar();
+      // ⚠️ 导航页上那条"上一次的目录"是快照派生的 ⇒ 侧边栏画完再确认一次可见性
+      syncReloadBar();
+      syncEditToggle();
+      // ⭐ `design/0070`：文档身份换成"没有" ⇒ 那条 `doc:` 作用域的失败该收起了。
+      syncFailScope();
+      if (S.state.mode === 'empty') setStatusFn(readyHint);
+      else setDirectoryStatus();
+    } finally {
+      closeInFlight = false;
+    }
+  }
+
+  // ════════════════════════════════════════════════════════════════════
   //  ⭐ 文档内链接（`design/0026`，收口 `docs/bugs/0001`）
   // ════════════════════════════════════════════════════════════════════
 
@@ -1277,7 +1908,10 @@
     const doc = $('doc');
     const el = Links.anchorFor(fragment, doc);
     if (!el) {
-      setStatusT('link.anchor-missing', { anchor: fragment || '' }, true);
+      // ⭐ `design/0070` §2.2：锚点不存在是**这次点击落空了**，但不是"系统坏了"——
+      //    中性状态条（P3），⛔ 不占失败条（否则一篇文章里点几个坏锚点就把条占满）。
+      setStatusT('link.anchor-missing', { anchor: fragment || '' });
+      diagNote('link', 'anchor-missing', fragment || '');
       return;
     }
     const host = scrollHost();
@@ -1294,7 +1928,11 @@
    */
   async function openLinkedDocument(path, fragment) {
     if (!path) {
-      setStatusT('link.failed', { message: 'document' }, true);
+      // ⚠️ 走到这里说明后端说"这是内部链接"却没给路径——内部一致性坏了，说清楚。
+      raiseFail({
+        key: 'link.failed', vars: { message: 'document' }, level: 'P1',
+        scope: failScope(), area: 'link', detail: 'missing document path',
+      });
       return;
     }
     const payload = await openDocument(path);
@@ -1322,14 +1960,30 @@
   /** 把 `links.js::plan` 的那一格变成界面上的一件事（§2.7 那张表）。 */
   function applyLinkPlan(p) {
     switch (p.action) {
-      case 'status': setStatusT(p.key, p.vars, p.isError); return;
+      case 'status':
+        // ⭐ `design/0070` §2.2：链接**失败**（打不开外部程序 / 目标不存在 / 未授权…）
+        //    是用户发起的动作没做成 ⇒ 全局失败条（P1）。而 `isError` 为假的那些
+        //    （"已在新文档打开"这类）仍旧是中性一句，⛔ 不占失败条。
+        if (p.isError) {
+          raiseFail({
+            key: p.key, vars: p.vars, level: 'P1',
+            scope: failScope(), area: 'link',
+            detail: (p.vars && p.vars.message) || '',
+          });
+        } else {
+          setStatusT(p.key, p.vars);
+        }
+        return;
       case 'anchor': scrollToFragment(p.fragment); return;
       case 'open': openLinkedDocument(p.path, p.fragment); return;
       case 'ask-auth': askLinkAuthorization((p.vars && p.vars.href) || ''); return;
       default:
         // ⚠️ 走到这里说明 `plan` 返回了这张 switch 不认识的动作（它自己那条 default
         //    已经把未知 `kind` 兜成 `status` 了）⇒ 仍然要**说一句**，⛔ 不静默。
-        setStatusT('link.failed', { message: String(p.action || '') }, true);
+        raiseFail({
+          key: 'link.failed', vars: { message: String(p.action || '') }, level: 'P1',
+          scope: failScope(), area: 'link', detail: String(p.action || ''),
+        });
     }
   }
 
@@ -1350,7 +2004,18 @@
     } catch (e) {
       // ⚠️ 这一条最可能的原因就是 ACL 少了 `allow-open-link`（`kb/0007` 的静默拒形态）。
       console.error('⛔ open_link 调用失败（多半是 ACL 少了 allow-open-link）：', e);
-      setStatusT('link.failed', { message: (e && (e.wording || e.message)) || String(e) }, true);
+      const msg = (e && (e.wording || e.message)) || String(e);
+      raiseFail({
+        key: 'link.failed', vars: { message: msg }, level: 'P1',
+        scope: failScope(), area: 'link', detail: msg,
+        actions: [{
+          label: 'fail.retry',
+          run: function () {
+            return followLink(href).then(function () { return true; },
+              function () { return false; });
+          },
+        }],
+      });
       return;
     }
     if (!Links.isAlive(seq, S.state.docSeq)) {
@@ -1358,6 +2023,18 @@
       return;
     }
     applyLinkPlan(Links.plan(out));
+  }
+
+  /**
+   * 从事件目标往上找**带 href 的**链接；不越过 `#doc`（委托只挂在 `#doc` 上，目标必然在里面）。
+   *
+   * ⚠️ **只许这一份**：链接委托（`installLinkDelegation`）与"点链接不进编辑"
+   *    （`onLiveDocDown`）必须用同一条判据——两份判据一定会漂移，而漂移的表现是
+   *    「点得开」与「点进去」在边界上打架（`bugs/0059`）。
+   */
+  function linkOf(target) {
+    if (!target || typeof target.closest !== 'function') return null;
+    return target.closest('a[href]');
   }
 
   /**
@@ -1379,39 +2056,122 @@
   function installLinkDelegation(docEl) {
     if (!docEl) return function () {};
 
-    /** 从事件目标往上找**带 href 的**链接；不越过 `#doc`。 */
-    function linkOf(target) {
-      if (!target || typeof target.closest !== 'function') return null;
-      return target.closest('a[href]');
+    /**
+     * 这一次激活该不该由我们接管：即"它算不算**打开这条链接**的意思"
+     * （`K.isOpenGesture`，`services/keymap.js`）。
+     *
+     * ⚠️⚠️ 口径是「**系统把这个手势派给的动作，本程序有没有**」：
+     *    `⌘`（新标签页）/ `⇧`（新窗口）/ `⌥`（下载）派给的动作本程序**都没有**
+     *    ⇒ 落点**退化为"就在这儿打开"**，⛔ 不是"什么都不做"。
+     *    曾经这里写的是 `!K.hasModifier(e)`（带修饰键一律放过），用户看到的是
+     *    「⌘+点击链接什么也不发生」（`bugs/0058`）——⛔ 别把它改回去。
+     * ⚠️ `⌃`-点击是右键上下文菜单——那个动作本程序**有且有用** ⇒ 唯一不抢的一个。
+     *
+     * ⚠️ 判据**只能转调** `K.isOpenGesture`——在调用侧再写一遍
+     *    `e.metaKey || …` 就是第二份"这个事件是什么手势"的判断，而
+     *    `keymap.test.js` 的「修饰键标识符只允许出现在 keymap.js」会红
+     *    （与 `components/ImageViewer.js` 同一条纪律）。
+     */
+    function owns(e) {
+      return K.isOpenGesture(e);
     }
 
     /**
-     * 这一次激活该不该由我们接管：带 `⌘`/`⌃`/`⌥` 的点击**不是**"打开这条链接"的意思
-     * （那是系统与未来的"新窗口"那一档），⛔ 我们不替用户猜。
-     *
-     * ⚠️ 判据**只能转调** `K.hasModifier`（`services/keymap.js`）——在调用侧再写一遍
-     *    `e.metaKey || …` 就是第二份"这个事件带不带修饰键"的判断，而
-     *    `keymap.test.js` 的「修饰键标识符只允许出现在 keymap.js」会红
-     *    （与 `components/ImageViewer.js` 同一条纪律）。
-     * ⚠️ `⇧` 不在那个判据里 ⇒ ⇧-点击按普通点击处理：它在浏览器里的含义是"新窗口打开"，
-     *    而本项目没有多窗口（`on_new_window` 一律拒绝，`design/0026` §2.1）。
+     * 中键（"后台新标签页打开"）的落地：**本程序没有标签页** ⇒ 就在这儿打开。
+     * ⚠️ 它没有修饰键，`isOpenGesture` 管不到它 ⇒ 这里按 `button` 单独收。
      */
-    function owns(e) {
-      return !K.hasModifier(e);
+    const MIDDLE = 1;
+
+    /**
+     * ⚠️⚠️ **中键可能来两次**：现代 WebKit 只发 `auxclick`，老 WebKit 还会额外发一次
+     * `click`（`button === 1`）。两个监听器各自都判不到对方 `preventDefault` 过
+     * （不同的 `Event` 对象）⇒ 用一个很短的时间窗去重，否则一次中键会开两次
+     * （第二次多半回 `stale`，状态条上多一行莫名其妙的提示）。
+     */
+    let 中键已处理于 = 0;
+
+    /**
+     * ⭐ 最近一次由本委托打开的**那条**链接。
+     *
+     * ⚠️ 给**后端那条通道**去重用（见下面的 `activateAtPointer`）：同一个 ⌘-点击
+     * 可能**既有** `click`（有的 WebKit 会派给页面）**又有**「想开新窗口」的请求
+     * （`on_new_window` / `on_navigation`）⇒ 两条路都到的话，⛔ 不许开两次。
+     * ⚠️ 比的是**元素身份**而不是 `href` 字符串：同一击落到的是同一个 `<a>`；
+     *    而同一份链接在正文里出现两次时，字符串比较会把第二次点击也吃掉。
+     * ⚠️ 窗口只有 150 ms：同一**击**的两条路在毫秒级内到达，而人工连点两下
+     * （≥180 ms）必须照常各算一次。
+     */
+    let 最近打开 = { a: null, at: 0 };
+
+    /**
+     * 一次"打开这条链接"——左键 / 中键 / 键盘激活 / 后端事件共用的最后一步。
+     * ⚠️ **调用方已经 `preventDefault()`**（`INV-LINK-02`：先拦，再问）。
+     */
+    function 打开链接(a) {
+      最近打开 = { a: a, at: Date.now() };
+      followLink(a.getAttribute('href'));
+    }
+
+    /**
+     * ⭐⭐ **指针最后停在哪条链接上**（`bugs/0058` 第二版）。
+     *
+     * 存在的理由只有一条：macOS 的 WKWebView 把 **`⌘`-点击 / 中键**当成"用新窗口
+     * 打开这条链接"，由 UI 进程直接处理 ⇒ **页面里收不到 `click`**（用户实测：
+     * `owns()` 改成"⌘ 也算打开"之后仍然毫无反应）。那条请求真正露面的地方是
+     * 后端的 `on_new_window` / `on_navigation`，而那两个回调**只拿得到 URL**——
+     * 相对链接在那个 URL 里已经被解析成 `tauri://localhost/…`，**倒推不回文档目录**
+     * （倒推出来的路径会指错文件，比不打开更糟）。
+     * ⇒ 用 DOM 侧的事实代替：指针下的那条 `#doc a[href]` 就是用户点的那一条。
+     */
+    let 悬停链接 = null;
+    function onHover(e) {
+      悬停链接 = linkOf(e.target);
+    }
+
+    /** 指针下的那条链接：先用 hover 期间记下的，退一步用 `:hover` 自己找。 */
+    function 指针下的链接() {
+      if (悬停链接 && 悬停链接.isConnected === true && docEl.contains(悬停链接)) return 悬停链接;
+      return docEl.querySelector('a[href]:hover');
+    }
+
+    /**
+     * ⭐ **后端说"这一击想开新窗口 / 想把页面导航走" ⇒ 落点仍是"就在这儿打开"**
+     * （`bugs/0058` 第二版，口径仍见 `K.isOpenGesture` 的头注释）。
+     *
+     * @returns {boolean} 真的处理这一击了吗（`false` = 指针下没有链接，不猜）
+     */
+    function activateAtPointer() {
+      const a = 指针下的链接();
+      if (!a) return false;
+      // `click` 那条路已经开过同一击（有的 WebKit 两条都来）⇒ ⛔ 不开第二次。
+      if (a === 最近打开.a && Date.now() - 最近打开.at < 150) return true;
+      打开链接(a);
+      return true;
     }
 
     function onClick(e) {
       // ⚠️ **第一句**：图片缩放那一层已经处理过这一击（`e.preventDefault` + `stopPropagation`）。
       //    `stopPropagation` 拦不住**同一元素上的**另一个监听器 ⇒ 只能靠这个标记分家。
       if (e.defaultPrevented) return;
-      if (e.button !== 0) return;
+      if (e.button !== 0 && e.button !== MIDDLE) return;
       const a = linkOf(e.target);
       if (!a) return;
       if (!owns(e)) return;
-      // ⭐ `INV-LINK-02`：**先拦，再问**。哪怕后端最后说"不支持"，也⛔ 不许让
-      //    WebKit 拿着这个 href 去导航一次。
       e.preventDefault();
-      followLink(a.getAttribute('href'));
+      if (e.button === MIDDLE) 中键已处理于 = Date.now();
+      打开链接(a);
+    }
+
+    /** 中键的**现代**那条路（`click` 只为左键发的浏览器里，中键只到这里）。 */
+    function onAuxClick(e) {
+      if (e.button !== MIDDLE) return;
+      if (e.defaultPrevented) return;
+      if (Date.now() - 中键已处理于 < 100) return;  // 老 WebKit：`click` 已经处理过这一击
+      const a = linkOf(e.target);
+      if (!a) return;
+      if (!owns(e)) return;
+      e.preventDefault();
+      打开链接(a);
     }
 
     function onKeydown(e) {
@@ -1423,14 +2183,26 @@
       if (!a) return;
       if (!owns(e)) return;
       e.preventDefault();
-      followLink(a.getAttribute('href'));
+      打开链接(a);
     }
 
     docEl.addEventListener('click', onClick);
+    docEl.addEventListener('auxclick', onAuxClick);
     docEl.addEventListener('keydown', onKeydown);
-    return function uninstall() {
-      docEl.removeEventListener('click', onClick);
-      docEl.removeEventListener('keydown', onKeydown);
+    // ⚠️ `passive`：只是记事，⛔ 不动默认行为（`⌘`-点击的滚动/拖拽语义一概不碰）。
+    docEl.addEventListener('mousemove', onHover, { passive: true });
+    return {
+      uninstall: function () {
+        docEl.removeEventListener('click', onClick);
+        docEl.removeEventListener('auxclick', onAuxClick);
+        docEl.removeEventListener('keydown', onKeydown);
+        docEl.removeEventListener('mousemove', onHover);
+      },
+      /**
+       * ⭐ 后端 `rmd://link-activation` 的落点（`bugs/0058` 第二版）：
+       * **页面收不到 `click` 的那几种手势**（`⌘`-点击 / 中键）由它接住。
+       */
+      activateAtPointer: activateAtPointer,
     };
   }
 
@@ -1472,6 +2244,137 @@
   function queueDrainPendingOpens() {
     drainChain = drainChain.then(drainPendingOpens, drainPendingOpens);
     return drainChain;
+  }
+
+  // ════════════════════════════════════════════════════════════════════
+  //  ⭐ 拖入窗口（`design/0071` §2.2）
+  // ════════════════════════════════════════════════════════════════════
+  //
+  // ⛔ **这里没有任何路径**。拖放的判定与授权全在 Rust（`gui/mod.rs::classify_drop`
+  //    ＋ `stage_open_file` / `open_root_from_window`），前端只收三样东西：
+  //    ① `rmd://drag`（`"enter"|"leave"` → 遮罩显隐）
+  //    ② `rmd://drop-reject`（i18n key → 失败条）
+  //    ③ `rmd://open-path` / `rmd://root-changed`（**无载荷**的唤醒信号）
+  //    ⭐ 这是一条结构性纪律（`INV-OPEN-01`）：⛔ 永远不 `listen('tauri://drag-*')`——
+  //    那条载荷里带 `paths`，一订阅就把路径放进 JS 了。闸门在
+  //    `tests/js/drop.test.js`（扫 `src/**` 的源码）。
+  //
+  // ⚠️ 上面 ③ 的 `rmd://open-path` 复用 Apple Event 那条队列（同一条管线），
+  //    这里**只**多接 `rmd://root-changed`（后端换根之后前端"补一次收尾"）。
+
+  /** 遮罩实例（`services/drop.js`）。**纯视觉**：建不出来不影响打开。 */
+  let dropOverlay = null;
+  /** 只报一次：缺模块是"看得见的坏"，⛔ 不刷屏、⛔ 也不重复尝试。 */
+  let dropOverlayBroken = false;
+  /** `root-changed` 的串行链（与 `drainChain` 同族：两次换根不许交错收尾）。 */
+  let rootChangedChain = Promise.resolve();
+
+  function ensureDropOverlay() {
+    if (dropOverlay || dropOverlayBroken) return dropOverlay;
+    const D = window.rmd && window.rmd.drop;
+    if (!D || typeof D.createOverlay !== 'function') {
+      dropOverlayBroken = true;
+      console.error('⛔ 拖放遮罩模块没加载（services/drop.js）：拖进来不会有视觉反馈，但打开仍然有效');
+      return null;
+    }
+    dropOverlay = D.createOverlay({ doc: document });
+    return dropOverlay;
+  }
+
+  /**
+   * ⭐ `rmd://drop-reject` 的落点：**载荷只有一个 i18n key**。
+   *
+   * ⚠️ 白名单前缀（`drop.reject.`）：后端只会发这几个 key，⛔ 不让任意字符串
+   *    进字典查找——那会变成一条"后端能指定前端文案"的通道。
+   * ⚠️ 不解出 `e.payload` 之外的东西：它本来就**只有** key（路径一个字节都不过 IPC）。
+   */
+  function onDropReject(payload) {
+    const key = typeof payload === 'string' ? payload : '';
+    if (key.indexOf('drop.reject.') !== 0) {
+      console.error('⛔ 拖放拒绝理由不是预期的 key 前缀（已丢弃）');
+      return;
+    }
+    // ⭐ `design/0070` §2.3：**用户发起**的动作失败 ⇒ 全局失败条（P1），⛔ 不自动消失。
+    raiseFail({ key: key, level: 'P1', scope: { kind: 'none' }, area: 'drop' });
+    diagNote('drop', key, '');
+  }
+
+  /**
+   * ⭐ `rmd://root-changed`：**后端**换了根（拖入目录 / 拖到 Dock 图标的目录）。
+   *
+   * 收尾与 `onChooseDirectory` 同形，但有两处**必须不同**：
+   *  · ⛔ **不 flush `dirWriter`**：代次**已经在后端变了**，在跑的那次写必然 `stale`
+   *    （`design/0020` §2.3 ③(c) 的前提是"赶在代次变之前落地"，这里已经晚了）；
+   *  · 快照靠 `S.refresh()` 自己取：命令不是我们发起的，**没有返回值可采纳**。
+   * ⚠️ 作废 `dirRestorer` 那一步照旧要留：旧恢复的 `alive()` 会兜住，这是第二重。
+   */
+  async function onRootChangedFromBackend() {
+    if (dirRestorer) dirRestorer.cancel('root-changed');
+    try {
+      await S.refresh();
+    } catch (e) {
+      // ⚠️ 目标目录**已经换进来了**（后端成功），坏的只是前端这份镜像
+      //    ⇒ 中性提示，⛔ 不说成"打开目录失败"（那是另一件事，`design/0070` §2.4 的分段纪律）。
+      console.error('⛔ 换根之后取会话快照失败：', e);
+      setStatusT('status.choose-dir-failed', { msg: e.wording || e.message });
+      return;
+    }
+    showDocEmptyT('doc.empty-choose');
+    ImageView.clearAssetCache();
+    setDirectoryStatus();
+    sidebar.setTab('tree');
+    try {
+      await renderSidebar();
+    } catch (e) {
+      console.error('⛔ 换根之后重画侧边栏失败：', e);
+    }
+  }
+
+  /** 装拖放的三条事件通道 ＋ 两条**兜底**清遮罩（`design/0071` §2.4 最后一行）。 */
+  async function installDropChannel() {
+    // ⚠️ 三条都**不进** `listenCheck`（那是菜单通道的判据）。
+    //    ⛔ 但失败仍要响亮：静默的表现就是"拖进去，什么都没发生"。
+    try {
+      await T.listen('rmd://drag', function (e) {
+        const o = ensureDropOverlay();
+        if (!o) return;
+        // ⚠️ 只认 `"enter"`；其余（`"leave"` / 将来可能加的词）一律**清空**——
+        //    遮罩卡在屏幕上的代价，比多闪一下高得多。
+        o.send(e && e.payload === 'enter' ? 'enter' : 'leave');
+      });
+    } catch (e) {
+      console.error('⛔ 订阅拖放遮罩事件失败（多半是 core:event:allow-listen 被拒）：', e);
+    }
+
+    try {
+      await T.listen('rmd://drop-reject', function (e) { onDropReject(e && e.payload); });
+    } catch (e) {
+      console.error('⛔ 订阅拖放拒绝事件失败（被拒的文件不会给出理由）：', e);
+    }
+
+    try {
+      await T.listen('rmd://root-changed', function () {
+        rootChangedChain = rootChangedChain.then(onRootChangedFromBackend, onRootChangedFromBackend);
+      });
+    } catch (e) {
+      console.error('⛔ 订阅换根事件失败（拖入目录后侧边栏不会刷新）：', e);
+    }
+
+    // ⭐ 兜底 ①：窗口失焦（用户已经去看别的窗口了，遮罩没有存在意义）。
+    window.addEventListener('blur', function () {
+      const o = ensureDropOverlay();
+      if (o) o.send('blur');
+    });
+
+    // ⭐ 兜底 ②：落点在页面里。⚠️ **只清遮罩，⛔ 不 `preventDefault`**——
+    //    拖放的真值在 Rust 的 `WindowEvent::DragDrop`（AppKit 那一层）；
+    //    页面的 HTML5 DnD 只是**可能**同时到达的一个信号。挡掉它的默认行为
+    //    有让 WebKit 自己接管这次手势的风险，而这个兜底本来就不承重（后端在 Drop
+    //    之后自己会补一句 `leave`）。
+    window.addEventListener('drop', function () {
+      const o = ensureDropOverlay();
+      if (o) o.send('drop');
+    }, true);
   }
 
   // ════════════════════════════════════════════════════════════════════
@@ -1594,6 +2497,37 @@
   function captureAnchor() {
     const m = scrollMetrics();
     return R.pickAnchor(hostTop(), headingPositions(), m.scrollHeight, m.clientHeight);
+  }
+
+  /**
+   * 重渲**之前**记下正文里每张**已落位**的图的渲染盒（`realPath → {w, h}`，CSS px）。
+   *
+   * ⭐ `bugs/0077` §5-4：`mountDocument` 换整棵树之后，新 `<img>` 的固有尺寸要等解码才知道，
+   * 在那之前 `max-width: 100%` 撑不出高度 ⇒ 上方每张图都"塌成 0 高"，
+   * 视口先跳上去、落定后再跳回来。把上一次的盒子交给 `ImageView.toReal` 当
+   * `aspect-ratio` 用，屏幕上就**一次都不动**（锚点校正是兜底，不是主手段）。
+   *
+   * ⚠️ 只认 `dataset.realPath`（`ImageView.toReal` 贴上去的真路径）：
+   *    占位框、远程图、失败图都没有 ⇒ 本来就没有"上一次的尺寸"可抄。
+   * ⚠️ 尺寸 < 1px 的跳过：那正是"塌了"的那一张，拿它去占位等于钉住 0 高。
+   * ⚠️ 这是"抄上一次的版面"，⛔ 不是新的排版真值——`load` 一到就撤回（见 `toReal`）。
+   *
+   * @param {HTMLElement|null} root 正文容器
+   * @returns {Object<string, {w: number, h: number}>|null}
+   */
+  function captureImageBoxes(root) {
+    if (!root) return null;
+    const out = Object.create(null);
+    const imgs = root.querySelectorAll('img');
+    for (let i = 0; i < imgs.length; i++) {
+      const el = imgs[i];
+      const key = el.dataset && el.dataset.realPath;
+      if (!key) continue;
+      const r = el.getBoundingClientRect();
+      if (!(r.width >= 1 && r.height >= 1)) continue;
+      out[key] = { w: Math.round(r.width), h: Math.round(r.height) };
+    }
+    return out;
   }
 
   /**
@@ -1803,9 +2737,36 @@
     });
   }
 
+  /**
+   * ⭐ `bugs/0077`：`keepScroll` 那条路的落定后校正，**最多写一次**。
+   *
+   * ⚠️ 四道闸与 `correctReadingProgress` 同源：挂载代号（迟到的图片回调不许动新正文）、
+   *    路径（换了文档就作废）、过期（10 s）、**用户接管**（滚一下就不再回抢）。
+   * ⚠️ 走 `hostSetTop`（⛔ 不裸写 `scrollTop`）：这一笔必须被 `sync.js` 的来源闸
+   *    记成**程序来源**，否则编辑态下会被当成"用户接管了预览栏"。
+   */
+  function correctKeepScroll(gen) {
+    const p = keepScrollFix;
+    if (!p || p.mountGen !== gen) return;
+    // ⚠️ 这四条判据都是**终局**的（用户接管 / 过期 / 换了文档 / 代次过期）⇒ 不满足就清掉，
+    //    不会再有"下一次事件把它救回来"的情形。
+    if (!P.shouldFixKeepScroll(p, gen, S.state.currentPath, Date.now())) {
+      keepScrollFix = null;
+      return;
+    }
+    keepScrollFix = null;
+    const m = scrollMetrics();
+    const r = R.resolveAnchor(p.anchor, headingPositions(), m.scrollHeight, m.clientHeight);
+    // ⚠️ 不到 1 px 不写：图片落定常常不改变布局，白写一次只会给来源闸加噪声。
+    if (Math.abs(r.scrollTop - p.appliedTop) < 1) return;
+    hostSetTop(r.scrollTop);
+  }
+
   /** 用户自己动了 ⇒ 作废还没兑现的恢复意图（§2.3 ⑤ 的最后一条）。 */
   function markProgressUserAbort() {
     if (pendingRestore) pendingRestore.userAborted = true;
+    // ⭐ `bugs/0077`：重渲的那一笔同样不许在用户已经滚走之后把位置抢回来。
+    if (keepScrollFix) keepScrollFix.userAborted = true;
   }
 
   /** ⭐ 把上面这一族接到窗口上。⚠️ 全部 `passive`——它们只读，⛔ 不拦任何默认行为。 */
@@ -1824,11 +2785,12 @@
     window.addEventListener('touchstart', markProgressUserAbort, { passive: true });
     window.addEventListener('pointerdown', markProgressUserAbort, { passive: true });
     window.addEventListener('keydown', function (e) {
-      if (!pendingRestore) return;
+      if (!pendingRestore && !keepScrollFix) return;
       const k = e.key;
       if (k === 'PageUp' || k === 'PageDown' || k === 'Home' || k === 'End' || k === ' ' ||
           k === 'ArrowUp' || k === 'ArrowDown' || k === 'ArrowLeft' || k === 'ArrowRight') {
-        pendingRestore.userAborted = true;
+        if (pendingRestore) pendingRestore.userAborted = true;
+        if (keepScrollFix) keepScrollFix.userAborted = true;
       }
     }, true);
   }
@@ -2016,8 +2978,12 @@
     //    表里那格挡住够不着这里的路径（`reload_document`、`begin_edit` 的竞态）。
     //    ⚠️ ⛔ 别把这条写成"因为后端会报错所以先查一下"——真正的理由是**本地就知道**：
     //    发一条注定被拒的 IPC 再拿一句话解释，比直接说"你还没打开文档"绕。
-    if (!S.state.currentDoc) {
-      setStatusT('status.no-doc-external', null, true);
+    // ⭐ `design/0082`：**未命名草稿也没有"磁盘上那一份"**（后端 `current_document` 是 None）
+    //    ⇒ 与"没有文档"同一个出口：⛔ 不把一条注定被拒的 IPC 发出去。
+    if (!S.state.currentDoc || S.state.currentDoc.draft) {
+      // ⭐ `design/0070` §2.2：**先挡住**（本地就知道），一句话中性提示（P2）。
+      setStatusT('status.no-doc-external', null);
+      diagNote('external', 'no-doc', S.state.currentDoc ? 'draft' : '');
       return;
     }
     // ⭐ `design/0012` §6 那一行：编辑态下按 `⌘E`，外部编辑器打开的是**磁盘上那份**
@@ -2048,12 +3014,27 @@
   async function openExternalEditorNow() {
     try {
       await T.call('open_in_external_editor');
-      setStatusT('status.external-opened', null, false);
+      // ⚠️ 成功仍是**中性一句**（不是失败条）：`design/0070` 的条只讲失败。
+      setStatusT('status.external-opened', null);
+      return true;
     } catch (e) {
-      setStatusT('status.external-failed', {
-        msg: e.wording || e.message,
-        path: e.path ? t('common.in-parens', { path: e.path }) : '',
-      }, true);
+      // ⭐ `design/0070`：用户按了 `⌘E` 却没打开 ⇒ 全局失败条（P1）＋ 重试 ＋ 详情。
+      raiseFail({
+        key: 'status.external-failed',
+        vars: {
+          msg: e.wording || e.message,
+          path: e.path ? t('common.in-parens', { path: e.path }) : '',
+        },
+        level: 'P1',
+        scope: failScope(),
+        area: 'external',
+        detail: [e.wording || e.message, e.path || ''].filter(Boolean).join(' · '),
+        actions: [{
+          label: 'fail.retry',
+          run: function () { return openExternalEditorNow(); },
+        }],
+      });
+      return false;
     }
   }
 
@@ -2081,6 +3062,27 @@
     if (!el) return;
     el.textContent = text || '';
     el.classList.toggle('is-error', !!isError);
+    // ⭐ `INV-FAIL-07`：**每展示一条失败**都留一行诊断。编辑面的行内失败也走这条。
+    if (isError) diagNote('edit', 'inline', text || '');
+  }
+
+  /**
+   * ⭐ `design/0070` §2.2：**保存失败**这件事既行内说（`#edit-status`，P0），
+   * 也保证用户真的看得见。
+   *
+   * ⚠️ 分栏编辑态下 `#edit-status` 在屏幕上；**就地编辑（live）**时编辑面并不存在，
+   *    那一行写进去也看不见 ⇒ 这时同时抬一条全局失败条（P0）。设计原文只写了
+   *    `#edit-status`，这条差异登记在 `design/0070` §10。
+   */
+  function reportEditSaveFailure() {
+    const text = t('edit.save-failed-cancelled');
+    setEditStatus(text, true);
+    if (!editing) {
+      raiseFail({
+        key: 'edit.save-failed-cancelled', level: 'P0',
+        scope: failScope(), area: 'edit', detail: '',
+      });
+    }
   }
 
   /**
@@ -2203,9 +3205,13 @@
         label: 'edit.act-save-continue',
         run: function () {
           saveNow().then(function (out) {
+            // ⭐ `design/0082`：未命名文档的保存面板可能被**取消**（`{cancelled:true}`）。
+            //    ⚠️ 那不是失败（状态条已由 `save.js` 写成"已取消保存"），
+            //    但⛔ 更不能当成功继续——用户的字还在缓冲里。
+            if (out && out.cancelled) return;
             if (out) { proceed(); return; }
             // ⚠️ 保存失败 ⇒ ⛔ **不许**继续：那会变成"以为存了、其实丢了"。
-            setEditStatus(t('edit.save-failed-cancelled'), true);
+            reportEditSaveFailure();
           });
         },
       },
@@ -2224,7 +3230,8 @@
     if (!editing) {
       // ⚠️ 阅读态按保存键**不该是无声的**：`file.save` 是全局动作，
       //    而"按下去什么都没发生"与"保存成功了但没提示"在界面上长得一样。
-      setStatusT('status.not-editing', null, true);
+      setStatusT('status.not-editing', null);
+      diagNote('edit', 'not-editing', '');
       return null;
     }
     const btn = $('btn-save');
@@ -2235,6 +3242,290 @@
       return await editorSave.save();
     } finally {
       if (btn) btn.disabled = false;
+    }
+  }
+
+  /** ⭐ 当前这份是不是**未命名草稿**（`design/0082`：身份是 `draft` 号，`real_path` 为空串）。 */
+  function isDraftDoc() {
+    return !!(S.state.currentDoc && S.state.currentDoc.draft);
+  }
+
+  /**
+   * ⭐ **未命名草稿的保存**（`design/0082` §2.1 ④⑤）——分栏与就地编辑**共用**这一份。
+   *
+   * 三件事，顺序不能换：
+   * ① 后端弹系统保存面板并在**后端**校验落点（前端不传路径：根 `CLAUDE.md` 的硬约束）；
+   * ② `null` 回包 = 用户取消 ⇒ 回 `{cancelled:true}`，⛔ 不是失败、⛔ 不是已保存；
+   * ③ 成功 ⇒ **就地采纳**新身份（`S.adoptSavedDraft`）＋ 把界面接到真实文档上（`adoptSavedDraftUi`）。
+   *
+   * ⚠️ 返回值是 `save.js` 的 `send` 契约（`{written, bytes, ms}`）——`cancelled` 是它的扩展。
+   *
+   * @param {string} text 编辑缓冲（信封化在后端：草稿基线恒为空 ⇒ LF、无 BOM）
+   * @returns {Promise<object>}
+   */
+  async function saveDraft(text) {
+    const doc = S.state.currentDoc;
+    // ⚠️ 身份已经不是草稿 ⇒ 这一趟没有对象（调用方的 `isMounted` 也会挡住；
+    //    这里再守一道，⛔ 不拿一个陈旧的号去发命令）。
+    if (!doc || !doc.draft) return null;
+    const id = doc.draft;
+    const out = await S.saveUntitled(id, text, ++editReqSeq);
+    if (!out) return { cancelled: true };
+    if (!S.adoptSavedDraft(out)) {
+      // ⚠️ 文件**已经写出来了**，但放锁那几秒里当前文档换了（系统面板挡着，实际走不到）
+      //    ⇒ ⛔ 不采纳旧身份，改成从后端对账一次，并如实说一句。
+      S.refresh().catch(function (e) { console.warn('⛔ 草稿落盘后对账失败：', e); });
+      setStatusT('fail.draft-saved-switched', null);
+      return { written: true, bytes: out.bytes, ms: out.ms, path: out.path };
+    }
+    adoptSavedDraftUi(out);
+    return { written: true, bytes: out.bytes, ms: out.ms, path: out.path };
+  }
+
+  /**
+   * ⭐ 草稿落盘之后，把**界面**接到"这已经是一份真实文档"上（`design/0082` §2.1 ⑤）。
+   *
+   * ⚠️ **身份**不在这里改：唯一改动点是 `services/session.js::adoptSavedDraft`
+   *    （与 `currentDoc` / `currentPath` 同一批）。这里只补打开真实文档时的那几件收尾。
+   * ⚠️ ⛔ 不读盘、⛔ 不重渲：缓冲就是刚写出去的那份内容，屏幕上已经是对的。
+   */
+  function adoptSavedDraftUi(out) {
+    const path = out.path;
+    // ① 历史栈（`INV-HIST-01`：只在提交成功之后变更）
+    H.noteOpen(path, {});
+    // ② 树高亮 ＋ 定位。⚠️ `revealInTree` 对"树里没有这一份"是静默的
+    //    （单文件模式没有根，`reason === 'outside'` 直接返回）⇒ ⛔ 不会多一条提示。
+    if (tree) {
+      tree.setCurrent(path);
+      revealInTree(path);
+    }
+    // ③ 目录会话的 `last_file`（⛔ 不 await：正文已经在屏上，写盘是后台的事）
+    if (dirWriter) dirWriter.noteDocOpen();
+    // ④ 监视（`INV-EXT-06`：只在一次成功的提交之后建立）
+    ensureWatch(path).catch(function (e) {
+      console.warn('⛔ 草稿落盘后挂监视失败：', e);
+    });
+    // ⑤ 状态条那句"在编辑哪一份"
+    setEditStatus(t('edit.entered', { name: baseName(path) }), false);
+    // ⑥ 侧边栏形态可能变了（空会话 → 单文件未授权态；有目录时树项换高亮）
+    renderSidebar().catch(function (e) {
+      console.warn('⛔ 草稿落盘后刷新侧边栏失败：', e);
+    });
+    // ⑦ ⭐ `design/0083` §2.3：草稿落盘 ⇒ 标题从「未命名」换成**真实文件名**
+    //    （⚠️ 这不是"顺便"：标题与原生标签栏上的那一行会一直是「未命名」，直到下次切换文档）。
+    syncWindowTitle();
+  }
+
+  // ══════════════════════════════════════════════════════════════════
+  // ⭐ 关窗守卫（`design/0082` §4，用户裁定「第一期就加」）
+  //
+  // 设计原文：「形态 = `onCloseRequested` 拦截 ⇒ 有未保存内容时先问
+  // 「保存 / 不保存 / 取消」，**取消 = 真的不关**」，并明写「实现取"先
+  // `preventDefault`，再行内问，用户选完之后主动关窗"这条路」。
+  //
+  // ⚠️⚠️ **机制**（`tauri-2.12.3` 源码实测，⛔ 不是照文档猜的）：
+  //    · Rust 侧：只要有 JS 监听 `tauri://close-requested`，就 `api.prevent_close()`
+  //      **并把事件转给 JS** ⇒ 窗口到底关不关**完全由这里决定**；
+  //    · JS 侧：`onCloseRequested` 的回调跑完之后，**没** `preventDefault` 才
+  //      `destroy()`（那是它自己发的命令，仍要 `core:window:allow-destroy`）。
+  //    ⇒ ① 不脏时必须**什么都不做**（不 preventDefault），让 JS 那层自己关；
+  //       ② 脏时 `preventDefault` 之后**必须我们自己** `destroy()`——否则窗口永远关不掉。
+  //
+  // ⚠️ 与"切换文档"那道闸（`promptLeaveEdit` / `gateSwitchDoc`）的区别是**问句不同**、
+  //    覆盖范围不同：这里还要管"阅读态就地编辑有未写盘的提交"（`INV-LIVE-11`），
+  //    ⛔ 不能只看分栏的 `editing` / `editDirty`。
+  // ══════════════════════════════════════════════════════════════════
+
+  /** 决策条已经挂着没有——连点两下关闭按钮⛔ 不叠第二层问句。 */
+  let closePromptOpen = false;
+
+  /** @returns {boolean} 此刻屏上有没有**没落盘的字**（两种编辑态各判各的）。 */
+  function hasUnsavedChanges() {
+    if (editing) return !!editDirty;
+    return !!(live && live.isDirty());
+  }
+
+  /**
+   * 关窗守卫的接线。⚠️ `bootInner` 里**尽早**调一次：越早，用户中途关窗也不会丢字。
+   *
+   * ⚠️ 拿不到窗口对象（离屏测试环境 / ACL）时⛔ **不许静默**：走 `console.warn`，
+   *    同时**不注册**任何东西——那样关窗退回原生行为（直接关），与守卫引入之前逐字相同。
+   */
+  function installCloseGuard() {
+    const g = window.__TAURI__;
+    const ww = g && g.webviewWindow;
+    let win = null;
+    if (ww && typeof ww.getCurrentWebviewWindow === 'function') {
+      try { win = ww.getCurrentWebviewWindow(); } catch (e) { win = null; }
+    }
+    if (!win || typeof win.onCloseRequested !== 'function') {
+      console.warn('⛔ 拿不到窗口对象，关窗询问未接线（design/0082 §4）');
+      return;
+    }
+    win.onCloseRequested(function (event) {
+      // ⓪ 不脏 ⇒ ⛔ 不拦（拦截之后由我们负责关，漏掉这一步窗口就再也关不掉）。
+      if (!hasUnsavedChanges()) return;
+      // ① 先 preventDefault：问句是**异步**的用户动作，不能让窗口在问的过程中关掉。
+      event.preventDefault();
+      // ② 已经在问 ⇒ 不叠第二层（连点两下关闭按钮时的形状）。
+      if (closePromptOpen) return;
+      closePromptOpen = true;
+      askEdit('edit.ask-close-window', null, [
+        {
+          label: 'edit.act-save-continue',
+          run: function () {
+            closePromptOpen = false;
+            closeAfterSave(win);
+          },
+        },
+        {
+          label: 'edit.act-discard-continue',
+          run: function () {
+            closePromptOpen = false;
+            // ⚠️ `destroy()`（⛔ 不是 `close()`）：`close()` 会再发一次
+            //    `close-requested`，那样这条问句就会对着自己的"丢弃"再问一遍。
+            win.destroy();
+          },
+        },
+        {
+          // ⭐ 取消 = **真的不关**：窗口留在原地，缓冲原封不动（设计 §4 逐字）。
+          label: 'common.cancel',
+          run: function () { closePromptOpen = false; },
+        },
+      ]);
+    });
+  }
+
+  /**
+   * 关窗前那条"保存"分支。⚠️ 保存入口只有 `saveNow()` 一处（`INV-EDIT-10`），
+   * 它自己会按编辑态分派（分栏 → `editorSave`；就地 → `liveSaveNow`）。
+   *
+   * 三个**都不关**的出口，理由各不同：
+   * · `{cancelled:true}` —— 用户在系统保存面板里取消了（`design/0082` §2.1 ④）；
+   * · `null` —— 保存失败 / 单飞闸拒发；失败已经由 `save.js` 写成可见状态（`INV-EDIT-05`）；
+   * · `written === false` 不是出口：no-op 短路说明盘上已经就是这份内容，照样可以关。
+   */
+  function closeAfterSave(win) {
+    let p = null;
+    try {
+      p = saveNow();
+    } catch (e) {
+      console.error('关窗前保存抛错：', e);
+      return;
+    }
+    Promise.resolve(p).then(function (out) {
+      if (!out || out.cancelled) return;
+      win.destroy();
+    }).catch(function (e) {
+      console.error('关窗前保存失败：', e);
+    });
+  }
+
+  /**
+   * ⭐ `design/0076` §2.1.3：把**当刻生效**的外观拼成后端要的入参。
+   *
+   * ⚠️ 取 `Th.applied`（内存态）而**不是** `config.json`：乐观更新可能领先落盘队列
+   *    ≤500 ms，后端自己读盘会读到"上一次"的值，与用户眼前那一份不是一回事。
+   * ⚠️ `mode` 先过 `Th.resolve`：`system` 在静态文件里没有意义（设计 §2.1.3 的回落）。
+   * ⛔ 前端不格式化数字、不拼 `style`——那是 Rust 的事（防注入，设计同一节）。
+   */
+  function appearanceSnapshot() {
+    const applied = (Th && Th.applied) || {};
+    return {
+      theme: Th ? Th.resolve(applied.mode) : undefined,
+      font_size: applied.fontSize,
+      line_height: applied.lineHeight,
+      content_width: applied.contentWidth,
+    };
+  }
+
+  /**
+   * 导出两个入口共用的**本地就知道**的拦截（`design/0076` §2.1.9）。
+   * 命中返回 `true` ⇒ ⛔ 不发 IPC、⛔ 不弹保存面板。
+   */
+  function exportBlocked(area) {
+    if (!S.state.currentDoc || !S.state.currentPath) {
+      // ⭐ `design/0070` §2.2：本地就知道的前置条件 ⇒ 一句话中性提示，⛔ 不弹失败条。
+      setStatusT('status.export-no-document', null);
+      diagNote(area, 'no-document', '');
+      return true;
+    }
+    // ⚠️ 导出读的是**盘上**的字节：脏态 / 编辑态下产物会与屏幕不同（设计 §4 的 TOCTOU）。
+    //    ⭐ 就地编辑（`design/0047`）同样算"屏幕上有没落盘的字"——判据不能只看分栏的 `editing`。
+    if (editing || editDirty || (live && (live.isEditing() || live.isDirty()))) {
+      setStatusT('status.export-needs-save', null);
+      diagNote(area, 'needs-save', '');
+      return true;
+    }
+    return false;
+  }
+
+  /** ⭐ `design/0076` §2.1.9：**保存为单文件 HTML** 的前端入口。 */
+  async function exportHtmlNow() {
+    if (exporting) return null;
+    if (exportBlocked('export')) return null;
+    exporting = true;
+    try {
+      const out = await T.call('export_html', { appearance: appearanceSnapshot() });
+      // 用户取消 ⇒ `null`：一个文件都没建，⛔ 什么也不说（设计 §2.1.1）。
+      if (!out) return null;
+      const n = (out.images_kept || 0) + (out.images_placeholder || 0);
+      if (n > 0) setStatusT('status.export-partial', { path: out.path, n: n });
+      else setStatusT('status.export-done', { path: out.path });
+      return out;
+    } catch (e) {
+      raiseFail({
+        key: 'fail.export-failed',
+        vars: { msg: e.wording || e.message },
+        level: 'P1',
+        scope: { kind: 'none' },
+        area: 'export',
+        detail: [e.wording || e.message, e.path || ''].filter(Boolean).join(' · '),
+        actions: [{
+          label: 'fail.retry',
+          // ⚠️ 重试**重新走整条流程（含保存面板）**：⛔ 不缓存上一次的落点——
+          //    "用户当次的选择"不能被绕过（设计 §2.1.9 末条）。
+          run: function () { return exportHtmlNow(); },
+        }],
+      });
+      return null;
+    } finally {
+      exporting = false;
+    }
+  }
+
+  /**
+   * ⭐ `design/0080`：**导出为 PDF 文件**的前端入口（取代 `0076` §2.1.7 的"弹打印面板"）。
+   * ⚠️ 成功 = `.pdf` 已经写到用户选的路径上 ⇒ 与 HTML 导出同一句状态条；
+   *    取消（面板里按「取消」）⇒ `null`，⛔ 什么也不说。
+   * ⚠️ 后端**同步**跑打印作业（主线程），大文档期间界面会顿一下——那是设计 §4 认下的取舍，
+   *    ⛔ 不是把这条路改回"派发个面板就走"的理由。
+   */
+  async function exportPdfNow() {
+    if (exporting) return null;
+    if (exportBlocked('print')) return null;
+    exporting = true;
+    try {
+      const out = await T.call('export_pdf');
+      if (!out) return null;
+      setStatusT('status.export-done', { path: out.path });
+      return out;
+    } catch (e) {
+      raiseFail({
+        key: 'fail.print-failed',
+        vars: { msg: e.wording || e.message },
+        level: 'P1',
+        scope: { kind: 'none' },
+        area: 'print',
+        detail: [e.wording || e.message, e.path || ''].filter(Boolean).join(' · '),
+        actions: [{
+          label: 'fail.retry',
+          run: function () { return exportPdfNow(); },
+        }],
+      });
+      return false;
+    } finally {
+      exporting = false;
     }
   }
 
@@ -2288,13 +3579,23 @@
   async function enterEdit() {
     if (editing) return true;
     if (!S.state.currentDoc) {
-      setStatusT('status.no-doc-edit', null, true);
+      setStatusT('status.no-doc-edit', null);
+      diagNote('edit', 'no-doc', '');
       return false;
     }
     // ⭐ 自证没过就**不让进**：放进去只会得到一个"看起来在编辑、其实按不动"的界面，
     //    而那个界面**不报错**——正是 `edit_ok` 那条判据要挡的形态。
     if (!editSelfCheck.ok) {
-      setStatusT('status.edit-unavailable', { note: editSelfCheck.note }, true);
+      // ⭐ `design/0070`：编辑入口**不可用**是用户按了 `⌘E` 之后才知道的事 ⇒
+      //    全局失败条（P1）＋ 详情（自检那句说明）。⛔ 不再写进会被截断的状态条。
+      raiseFail({
+        key: 'status.edit-unavailable',
+        vars: { note: editSelfCheck.note },
+        level: 'P1',
+        scope: failScope(),
+        area: 'edit',
+        detail: editSelfCheck.note || '',
+      });
       return false;
     }
 
@@ -2310,10 +3611,22 @@
     try {
       grant = await S.beginEdit();
     } catch (e) {
-      setStatusT('status.edit-enter-failed', {
-        msg: e.wording || e.message,
-        path: e.path ? t('common.in-parens', { path: e.path }) : '',
-      }, true);
+      // ⭐ `design/0070`：进编辑态失败 ⇒ 全局失败条（P1）＋ 重试。
+      raiseFail({
+        key: 'status.edit-enter-failed',
+        vars: {
+          msg: e.wording || e.message,
+          path: e.path ? t('common.in-parens', { path: e.path }) : '',
+        },
+        level: 'P1',
+        scope: failScope(),
+        area: 'edit',
+        detail: [e.wording || e.message, e.path || ''].filter(Boolean).join(' · '),
+        actions: [{
+          label: 'fail.retry',
+          run: function () { return enterEdit(); },
+        }],
+      });
       return false;
     }
     editGrant = grant;
@@ -2325,6 +3638,10 @@
     //    `design/0012` §2.1⑤ 要求编辑态必须有**可见**的退出控件，而那个按钮在顶栏里；
     //    折叠着进编辑态（例如用 `⌘E`）会让"怎么退出"变成一道隐藏题。
     setChromeHidden(false);
+    // ⭐ `design/0079`（`INV-VIEW-05`）：专注态下进编辑 ⇒ **先退专注**。
+    //    理由与上一行同族：编辑态的退出控件、侧边栏、状态条都得看得见；
+    //    而 `setZen(true)` 本身也拒绝在编辑态进入（单向门，两头都挡一次）。
+    setZen(false);
     // ⚠️ 「外部改动已定案」是**上一次编辑会话**的判断（§6 表里那一行）：
     //    带着它进新会话 = 这一整段时间里的外部改动都**不再提示**，
     //    而用户上一次选的是"保留我当时那份修改"，与现在缓冲里的内容无关。
@@ -2375,7 +3692,12 @@
     editorSave = EdSave.createSaver({
       getText: function () { return editor.text(); },
       rev: function () { return editor.revision(); },
-      send: function (text) { return S.saveDocument(text, ++editReqSeq); },
+      // ⭐ `design/0082` §2.1 ④⑤：未命名草稿走 `save_untitled`（落点由**后端**弹面板产生，
+      //    ⛔ 前端不传路径）；否则原路（`INV-EDIT-10` ①）。
+      // ⚠️ 判据每次**现取**：保存过程中身份会从草稿变成真实文档（就地采纳）。
+      send: function (text) {
+        return isDraftDoc() ? saveDraft(text) : S.saveDocument(text, ++editReqSeq);
+      },
       onStatus: setEditStatus,
       onClean: function () { editor.markClean(); editorPreview.markSaved(); },
       onDone: function (out) { editLastSave = out; },
@@ -2393,7 +3715,10 @@
     // ⭐ 信封那条**常驻**提示（`INV-EDIT-12`）：行尾不统一的文件保存后会被统一成 LF，
     //    这件事⛔ 不能等到保存完才让用户知道。
     setEnvelopeNote(grant.envelope);
-    setEditStatus(t('edit.entered', { name: baseName(grant.real_path) }), false);
+    // ⭐ `design/0082`：草稿的 `real_path` 是**空串**（身份就是"没有路径"）⇒ 名字说「未命名」。
+    setEditStatus(t('edit.entered', {
+      name: grant.real_path ? baseName(grant.real_path) : t('doc.untitled'),
+    }), false);
     // ⚠️ 显式复位一次预览提示条：上一次会话留下的"已过期"不该挂到这一次上。
     syncPreviewBar(false, editorPreview.tier());
     // ⭐ 刚进来时缓冲与预览**是同一份内容**（预览就是拿磁盘那份渲的）⇒ 不是陈旧。
@@ -2405,6 +3730,10 @@
     //    ⚠️ 此刻 `syncTextAhead` 是 `false`（刚 `begin_edit`，预览就是磁盘那份渲的）
     //    ⇒ 折线一上来就是**带锚点**的，⛔ 不是先按比例再慢慢爬上去。
     syncStart();
+    // ⭐ `design/0075`：替换行的可用性随"有没有可见全文源码"翻转 ⇒ 进来后刷一次。
+    //    ⚠️ 不刷新的话，面板开着进来会看到一行"先按 ⌘E 进入分栏编辑"的灰按钮，
+    //       而它其实已经能用了——这种"看着不能点"不报错，只会让人以为坏了。
+    if (findBar) findBar.refreshReplace();
     return true;
   }
 
@@ -2427,6 +3756,10 @@
     //    的容器里做最后一次度量（它在 `destroy` 里仍会拆自己挂的那些观察器）。
     document.body.classList.remove('editing');
     editing = false;
+    // ⭐ `design/0075`：源码面没了 ⇒ 替换行必须变灰（与 `enterEdit` 那一处配对）。
+    //    ⚠️ 在这里而不是 `await S.endEdit()` 之后：`editing` 一翻，`available()` 就已经是 false，
+    //       再拖一次 IPC 的往返只会让"按钮还能点"多存在一会儿。
+    if (findBar) findBar.refreshReplace();
     editGrant = null;
     editorSave = null;
     // ⚠️ 与 `enterEdit` 那一处配对：这一位只在**一次编辑会话内**有效。
@@ -2658,7 +3991,15 @@
   let liveChain = Promise.resolve();
   function liveSerial(fn) {
     const run = liveChain.then(function () { return fn(); });
-    liveChain = run.then(function () {}, function () {});
+    // ⚠️ 链尾仍然要吞（否则整条链永久 rejected），但⛔ 不许**静默**吞：
+    //    2026-11-05 探针里任务列表块 `Esc` 之后 `end_edit +0`，页内一个未捕获异常都没有——
+    //    就是因为这里把 `leave()` 的抛出吃干净了。吞掉 ≠ 不报。
+    liveChain = run.then(function () {}, function (e) {
+      try {
+        console.error('[rmd-live] 编辑动作抛出：' + (e && e.message ? e.message : String(e))
+          + (e && e.stack ? '\n' + String(e.stack).split('\n').slice(0, 4).join('\n') : ''));
+      } catch (ignored) { void ignored; }
+    });
     return run;
   }
 
@@ -2708,7 +4049,7 @@
 
   /**
    * 有没有覆盖层开着（`design/0038` 起只有这一份判据，⛔ 别在各处再抄一遍）。
-   * ⚠️ 读的是 `settings` / `quickOpen` / `findBar` / `imageViewer` **此刻的值**——
+   * ⚠️ 读的是 `settings` / `quickOpen` / `openPanel` / `findBar` / `imageViewer` **此刻的值**——
    *    它们在启动页那一步还是 `null`（`setupKeys` 才建）⇒ 启动页那边也必须包着它调，
    *    ⛔ 不许把结果**先算好**再传。
    */
@@ -2716,6 +4057,7 @@
     return !!(
       (settings && settings.isOpen()) ||
       (quickOpen && quickOpen.isOpen()) ||
+      (openPanel && openPanel.isOpen()) ||
       (findBar && findBar.isOpen()) ||
       (imageViewer && imageViewer.isOpen())
     );
@@ -2742,7 +4084,10 @@
       //    ⚠️ 控制器那边只有 `fail()` / `note()` 两个出口（源码闸门钉着 `report(` 恰好两处）。
       report: function (msg, isError) {
         const s = String(msg === undefined || msg === null ? '' : msg);
-        setStatus(s, isError === true);
+        // ⭐ `design/0070` §2.2：就地编辑的拒绝 / 失败是"这次被拒"（P2/P3）⇒
+        //    中性状态条；⛔ 不进全局失败条（否则每敲错一步就把条占住）。
+        setStatus(s);
+        if (isError === true) diagNote('edit', 'live-fail', s);
       },
       announce: function (msg) {
         if (liveAnnouncer) liveAnnouncer.announce(msg);
@@ -2755,6 +4100,15 @@
       //    而前端又读不到 `verify` ⇒ 每次单元格提交都被判 `verify-missing`"）。
       renderPreview: function (a) { return S.renderPreview(a.text, a.req, a.verify); },
       saveDisk: function (a) {
+        // ⭐ `design/0082` §2.1 ④：未命名草稿走 `save_untitled`（落点由**后端**弹面板产生，
+        //    ⛔ 前端不传路径）。回包 `{cancelled:true}` = 用户在面板里取消 —— `live/index.js`
+        //    的 `doSave` 会据此返回 `false` 且**不**推进基线（内容还在缓冲里）。
+        if (isDraftDoc()) {
+          return saveDraft(a.text).then(function (out) {
+            liveLastSaveOut = out;
+            return out;
+          });
+        }
         return S.saveDocument(a.text, ++liveSaveReq).then(function (out) {
           liveLastSaveOut = out;
           return out;
@@ -2787,6 +4141,20 @@
        * ⚠️ 表格在、格子不在 ⇒ 返回 `null`（控制器会据此报"对不上"，⛔ 不猜一个节点）。
        */
       cellNodeOf: function (index, flat) { return cellNodeOf(index, flat); },
+      /**
+       * ⭐ **身份四件套不符 ⇒ 自动重载**（`design/0047` §6 的"恢复"那一列）。
+       *
+       * ⚠️⚠️ 为什么必须**异步**发起（`setTimeout 0`）而⛔ 不是直接 `await`：
+       *    这个回调是在 `begin()` 里叫的，而 `begin()` 正跑在 `liveSerial` 的那条
+       *    串行链上；`reloadCurrentDocument` 自己也要 `liveSerial`（`live.reset()`）
+       *    ⇒ 同步调用就是"等自己那个还没结束的任务"，整条链当场卡死。
+       * ⚠️ 顺序仍然是对的：下一次事件循环发起，而用户看到的是"正在重新载入…"。
+       */
+      onStaleDocument: function () {
+        setTimeout(function () {
+          reloadCurrentDocument('reload.reason.auto');
+        }, 0);
+      },
       // ⚠️ 用 `getBoundingClientRect().height`（**分数像素**），⛔ 不是 `offsetHeight`：
       //    后者两侧各自四舍五入到整数 ⇒ 差值最多被虚增 **1 px**，而"变矮"告警的阈值只有 **0.5**
       //    ⇒ "本来就对得上"的块会被报成变矮（2026-10-26 实测：802 行块真实差 40.28，
@@ -2794,10 +4162,22 @@
       heightOf: function (el) { return el ? el.getBoundingClientRect().height : 0; },
       limits: LIVE_LIMITS,
     });
+    // ⭐ `design/0078`：格式栏的块命令 / 表格操作要拿**控制器实例**（`isEditing` /
+    //    `activeCell` / `blockCommand` …）。`window.rmd.liveController` 是**模块对象**
+    //    （`createController` 那一层），⛔ 不能直接当实例用。
+    (window.rmd || (window.rmd = {})).liveRuntime = live;
+    // ⚠️ 临时调试出口（`bugs/0047` 定位用，定位完删）。
     const doc = $('doc');
     // ⚠️ **不加 capture**：`selection.js` 在覆盖层内部是 capture ＋ `stopPropagation`，
     //    所以"点在正在编辑的那一块上"结构上到不了这里（⛔ 不需要我们再判一次）。
     if (doc) doc.addEventListener('mousedown', onLiveDocDown);
+    // ⭐ 编辑态的任务方框（`bugs/0103`）：**capture** 是硬要求——要抢在 `selection.js`
+    //    （host 上的 capture）与 CM6 之前把这一下接走，否则它会先被当成"放光标"。
+    //    ⚠️ 挂一次就够：widget 每次重建都换 DOM，逐个挂会漏（理由见 `onHostTaskBoxDown`）。
+    if (doc) {
+      doc.addEventListener('mousedown', onHostTaskBoxDown, true);
+      doc.addEventListener('click', onHostTaskBoxClick, true);
+    }
     // ⭐ 焦点丢了也要退得出去（理由与三条闸在 `onLiveGlobalKey` 的头注释里）。
     //    ⚠️ `capture` 是**硬要求**：要赶在 `input` 那一条之前判"这次事件是不是它的"。
     document.addEventListener('keydown', onLiveGlobalKey, true);
@@ -2845,7 +4225,7 @@
     //    ④ 文本入口的约束（`obj.text`，交给 `createInputMachine`）。
     //    ⚠️ `isCell` 仍然留着——它判的是**几何与 DOM 形状**（换 `<td>` 的孩子、
     //    冻结表宽、只换一行），那是"这一个视图怎么装"，⛔ 不是对象契约。
-    const obj = LObj.policyOf({ cell: req && req.cell });
+    const obj = LObj.policyOf({ cell: req && req.cell, el: el });
     const kindCls = LBox && typeof LBox.classNameOf === 'function' ? LBox.classNameOf(el) : '';
     // §4.4：代码块**不装软换行**（长行横滚，⛔ 不让它折断缩进结构）。
     // ⚠️⚠️ 单元格**要装**（2026-10-28 更正，此前写的是"也不装"）：不装的形态是
@@ -2894,16 +4274,23 @@
     // ⚠️ 顺序：软换行（段落/标题/列表/引用）→ 语法 → 装饰 → 通知 → 只读 → 不可聚焦。
     //    代码块那一条由上面 `code` 决定是否装（§4.4），⛔ 不是两份清单。
     //
-    // ⭐⭐ `measuring`：**Prep 量高期间一律不展开活动行**。
-    //    理由（2026-10-26 实测出来的口径缺陷）：Prep 时选区恒在 0 ⇒ 第 0 行是"活动行"
-    //    ⇒ 它按规则 2 显示源码、比渲染态**多折一行**（英文长段实测 **+23.797 px**）
-    //    ⇒ 带行内标记的段落/所有引用块/所有代码块**一律过不了** 0.5 的等高校验
-    //    （用户点了没反应，状态条报「这一块的高度对不上」）。
-    //    ⇒ 量高时按"**全部标记都藏起来**"量（＝ `notes/0037` 原型的计量条件），
-    //      换进文档流的那一刻（`swapLiveView`）再放开活动行。
-    //    ⚠️ 放开之后活动行确实会让这一块**变高一点**——那是 L2「源码可见」的**固有代价**，
-    //      ⛔ 不是量错；F6 要求的是"编辑期间只有输入在动"，而这一刻是**进入**的那一下。
-    let measuring = true;
+    // ⭐⭐ **隐藏集合恒定**（`design/0061` L1）：这里曾有 `measuring` / `mappingCoords`
+    //    两个"临时恒藏"开关，因为活动行会在量高 / 换算坐标的那一瞬展开。L1 之后
+    //    `markers()` 根本不接选区输入 ⇒ 两个开关**没有意义**，随之删除。
+    //    ⚠️ 量高与点击换算现在量与点的是**同一张排版**（阅读态那张脸），不再有"量完再展开"
+    //    那一步——`INV-LIVE-14` 要的就是这个。
+    //
+    // ⭐ 装饰层的 `plan` 发布给落点 / 删除层（`design/0061` L2/L3）：**同一份**隐藏区间，
+    //    ⛔ 不在 `selection.js` 里重算一遍 `markers()`（那会变成第二份正文真相）。
+    let latestPlan = null;
+    const hiddenHook = {
+      plan: function () { return latestPlan; },
+    };
+    // ⚠️ 这两个开关在 `design/0061` L1 之后**恒 false**（活动行展开已删除），
+    //    保留名字与下面那行判断只为让旧探针的变异靶子仍有唯一落点；
+    //    ⛔ 任何路径都不许再把它们置 true（置 true 等于把"量高时展开"偷偷放回来）。
+    let measuring = false;
+    let mappingCoords = false;
     const extensions = [];
     if (!code) extensions.push(CM6.EditorView.lineWrapping);
     // ⚠️⚠️ **必须显式换 `base`**（`design/0052` U3）：`markdown()` 的默认 base 是
@@ -2925,10 +4312,6 @@
     //    ⚠️⚠️ `createField` 返回的是 `[StateField, EditorView.decorations.from(...)]`
     //    ——只 push 前者等于**一个标记都藏不掉**（`decorations.js` 那一段的长注释）。
     extensions.push(LMarks.createField(CM6, {
-      activeLineIndexes: function (state) {
-        if (measuring) return [];
-        return LMarks.activeLineIndexes(state);
-      },
       // ⭐ 块基线是**标题尺度**时（被换掉的是 `h1`–`h6`），非标题的行要回落成正文尺度
       //    —— 否则表头往下一敲回车，新行还是 28px/700（`bugs/0015`）。
       //    ⚠️ 尺度本身仍只有样式表一处来源：回落类 `cm-rmd-body` 用的是同一批 `--reader-*`。
@@ -2939,15 +4322,43 @@
       //    ⚠️ 修法**不是**"看见井号就跳过"（那只是这一个符号的特例），而是让整格按
       //    `markers()` 的 `cellContext` 走：不认标题/引用/围栏/代码块，只留行内强调与链接。
       cellContext: obj.inlineOnly,
+      // ⭐⭐ 宿主要不要自己给列表那条缩进（`bugs/0305`，2026-11-10）。在段落 / 标题的
+      //    编辑框里现敲出列表时，宿主是 `<p>` / `<h*>`，`box.js` 搬来的 `padding-left` 是 0
+      //    ⇒ 列表行贴上正文左缘、圆点再往左突出 16 px。判据就是**被替换元素自己的标签名**，
+      //    与 `headingLevelOf` / `classNameOf` 同一种做法（⛔ 不猜、不问后端）。
+      listHost: !!(el && /^(UL|OL)$/.test(el.tagName)),
+      // ⭐ 把每次重算出的隐藏区间交给下面 `hiddenHook`（落点/删除/中央兜底共用）。
+      onPlan: function (plan) { latestPlan = plan; },
     }));
+    // ⭐⭐ **中央兜底**（`design/0061` L2）：任何事务产生的新选区都不许停在隐藏区间内部。
+    //    ⚠️ 撤销/重做、程序化 dispatch、IME 提交都不经过我们那几条键盘路径，只补入口必漏。
+    extensions.push(LSel.legalFilter(CM6, hiddenHook));
     extensions.push(CM6.EditorView.updateListener.of(function (update) {
       if (update.docChanged || update.selectionSet) afterUpdate();
     }));
     // ⭐⭐ `contentDOM` **不可编辑、不可聚焦**（`INV-LIVE-12`）：
     //    `editable(false)` 把 `contenteditable` 关掉，浏览器⛔ 再也写不进一个字节
-    //    ⇒ 组合串只能停在 preedit 覆盖层上（用户 2026-10-26 的 F6 强需求）。
+    //    ⇒ 组合串只能停在**装饰层**上（用户 2026-10-26 的 F6 强需求；
+    //    2026-11-02 起是行内 widget，见下面 `paintPreedit` 与 `live/preedit.js`）。
     extensions.push(CM6.EditorView.editable.of(false));
     extensions.push(CM6.EditorView.contentAttributes.of({ tabindex: '-1', 'aria-hidden': 'true' }));
+    // ⭐⭐ IME 组合串走**行内占位**（`design/0047` §2.7 修订 / `bugs/0060`；2026-11-02
+    //    用户「按照 mardo 来修改」）：它**进排版**——占宽度、把右边的字推开、行满就折行，
+    //    与 Mardo 的 `EditorLayout.layout(... inputting:)` 同形（`docs/research/notes/0038`）。
+    //    ⚠️⛔ **文档仍然一个字节都不动**：widget 只活在装饰层里 ⇒ 组合期依旧是零条改文档的
+    //    事务，`INV-LIVE-04` / `F6` 的"文档不变"照旧成立。⭐ 组合期的重排由
+    //    `INV-LIVE-04`（**2026-11-09 版**）② 管：位移只能来自**真实文本变化**
+    //    （组合串算真实输入）——⛔ 2026-11-02 那句"活动块之外的位移只允许等于块高增量"
+    //    与"进入瞬间也允许重排"的读法已作废；行内 widget 是新口径的直接实现。
+    //    ⚠️ 进入那一瞬间（还没开始组合）仍要逐像素不动（①），本条不放松它。
+    // ⚠️ 用 `Compartment` 而⛔ 不是 `StateEffect`：`src/vendor/cm6.bundle.js` 的出口
+    //       **没有 `StateEffect`**（只导出 `Decoration` / `StateField` / `WidgetType` 等），
+    //       而 `Compartment.reconfigure(...)` 返回的正是 CM6 自己的 effect
+    //       ⇒ 不必为此重编 bundle、⛔ 也不自己造一个 effect 类型。
+    //    ⚠️ 那个槽和 widget 本体都在 `src/live/preedit.js`（live 层有独立的扩展白名单）；
+    //       这里只把它的 `extension` 装进来。
+    const preedit = LPreedit.create(CM6);
+    extensions.push(preedit.extension);
 
     const view = new CM6.EditorView({
       state: CM6.EditorState.create({
@@ -2975,9 +4386,6 @@
     let goal = null;
     let destroyed = false;
     let frame = 0;
-    let preeditEl = null;
-    /** 组合串上一帧量的是**哪一行**的排版（同一个元素就不重复量，见 `syncPreeditMetrics`）。 */
-    let preeditLine = null;
 
     const machine = LIn.createInputMachine(onTransaction, obj);
     const layer = LSel.createLayer(view, CM6);
@@ -3056,71 +4464,62 @@
       try { input.selectionStart = 0; input.selectionEnd = 0; } catch (e) { void e; }
     }
 
-    /**
-     * ⭐ 光标所在的**那一行**（`.cm-line`）—— 组合串的排版基准。
-     *
-     * ⚠️ `domAtPos` 是**按行**解析的（`Text.lineAt` 对行末位置返回本行）
-     *    ⇒ 停在标题行末尾时拿到的仍是标题行，⛔ 不会跳到下一行。
-     * @returns {object|null}
-     */
-    function caretLineEl() {
-      try {
-        const at = view.domAtPos(sel.head);
-        let n = at && at.node ? at.node : null;
-        while (n && n.nodeType !== 1) n = n.parentNode;
-        if (n && typeof n.closest === 'function') return n.closest('.cm-line');
-      } catch (e) { void e; }
-      return null;
-    }
+    /** 组合串的落点（那一段组合开始时**替换区间的左端**；组合期文档不变，它是稳定的）。 */
+    let preeditPos = 0;
+    /** 上一帧画出去的内容（`''` = 没有）。只用来判"这是不是**新的一段**组合"。 */
+    let preeditShown = '';
 
     /**
-     * ⭐⭐ 组合串的**排版权重必须跟光标所在那一行**走，⛔ 不是跟 host 走。
+     * 组合串画在**行内**（⛔ 不进文档——这一条就是 `F6` 的"文档不变"）。
      *
-     * 为什么不能靠继承（2026-10-29 用户实测）：host 上搬来的是**块级**文字层
-     * （`live/box.js` 量的是被换掉的那一个元素）⇒ 标题块里从第二行起是**正文**尺度
-     * （`.cm-line.cm-rmd-body`），而 host 仍是标题尺度。覆盖层挂在 host 上
-     * ⇒ 拼音按标题字号画、上屏之后却按正文排。用户原话：
-     * 「在标题下面一行输入的时候，拼音落地的字体虽然是正文，正常，但是拼音的字很大。」
-     * ⚠️ 代码块同理：等宽字体住在**行**里（`.cm-rmd-code` 的那一档 mono），host 上是 sans。
-     * ⚠️ 仍然**量**、⛔ 不在样式表里另写一份数值（`INV-LIVE-07`：样式表是唯一来源）。
-     * @param {object} el `.cm-rmd-preedit` 覆盖层
+     * ⭐ 形态与 Mardo 一致（`design/0047` §2.7 修订）：它**占版面**——右边的字被推开，
+     *    行满就折行，下游随之移动；候选窗仍由离屏 `textarea`（`placeInput()`）定锚。
+     * ⚠️ 只动装饰层、⛔ 不碰 `state.doc` ⇒ 撤销栈、提交内容、`updateListener` 的
+     *    `docChanged` 全都不受影响（组合期依然是零条改文档的事务）。
+     * ⚠️ widget 本体与那个 `Compartment` 都在 `src/live/preedit.js` —— 这里只决定
+     *    "什么时候画、画在哪一格"。
      */
-    function syncPreeditMetrics(el) {
-      const src = caretLineEl() || view.contentDOM;
-      if (!src) return;
-      // ⚠️ 同一行就不重量：组合期每次 `compositionupdate` 都会走到这里，
-      //    而 `getComputedStyle` 是一次强制样式解析。
-      if (src === preeditLine) return;
-      preeditLine = src;
-      const cs = window.getComputedStyle(src);
-      el.style.fontSize = cs.fontSize;
-      el.style.lineHeight = cs.lineHeight;
-      el.style.fontFamily = cs.fontFamily;
-      el.style.fontWeight = cs.fontWeight;
-    }
-
-    /** 组合串画在**覆盖层**上（⛔ 不进文档——这一条就是 F6）。 */
     function paintPreedit(text2) {
+      if (destroyed) return;
       const s = String(text2 === undefined || text2 === null ? '' : text2);
-      if (!s) {
-        if (preeditEl && preeditEl.parentNode) preeditEl.parentNode.removeChild(preeditEl);
-        preeditEl = null;
-        preeditLine = null;
-        return;
+      // ⭐ 新的一段组合（上一帧还是空的）：落点取**这一刻**替换区间的左端——
+      //    有选区时组合串要出现在选区左端，⛔ 不是 `sel.head`。
+      if (s && !preeditShown) preeditPos = clampPos(currentRange().from);
+      preeditShown = s;
+      // ⚠️⚠️ **画完必须自己刷一次自绘插入符**（2026-11-14 用户报告「内容在光标的后面，等按了
+      //    Enter 真正输入之后，光标变成在内容的后面，产生跳动」）：`preedit.paint` 只动装饰层，
+      //    `docChanged` / `selectionSet` 都为假 ⇒ 上面 `updateListener` 那个闸门**不会**放行
+      //    `afterUpdate()` ⇒ 插入符停在**组合开始时**那一格（＝组合串左缘），组合串在后面越长越宽，
+      //    上屏时才因为 `docChanged` 跳一次。`refresh()` 只是排一次 rAF 的 measure，⛔ 不阻塞输入。
+      preedit.paint(view, s, preeditPos);
+      layer.refresh();
+    }
+
+    /**
+     * 把 `live/input.js` 的**列表缩进动作**交给输入机器。
+     *
+     * ⚠️ 只有一份映射：`⇧Tab`（`outdentList`）、行首退格（`outdentAtStart`）、空项回车的
+     * 升一级（`lineBreakAction` ③ 带 `sel` 返回）都是同一种"删缩进 / 整行替换"，
+     * ⛔ 别在每个键盘分支里各抄一遍 `machine.handle`（第二份 `inputType` 表）。
+     * ⚠️ 光标/选区由纯函数映射后**单独 dispatch**（⛔ 不能让 `caretAfterInsert` 把它丢到行尾）；
+     * 只改选区的 dispatch 不进历史栈，落在这里没有额外代价。
+     *
+     * @param {{type:string, data?:string, from?:number, to?:number,
+     *   sel?:{anchor:number, head:number}}} act
+     */
+    function applyIndentAction(act) {
+      if (act.type === 'delete') {
+        machine.handle({
+          type: 'beforeinput', inputType: 'deleteContentBackward',
+          from: act.from, to: act.to,
+        });
+      } else {
+        machine.handle({
+          type: 'beforeinput', inputType: 'insertFromPaste',
+          data: act.data, from: act.from, to: act.to,
+        });
       }
-      if (!preeditEl) {
-        preeditEl = document.createElement('span');
-        preeditEl.className = 'cm-rmd-preedit';
-        host.appendChild(preeditEl);
-      }
-      // ⚠️ 先对齐排版再写文字：上屏的字落在**这一行**，拼音就得按这一行的尺度画。
-      syncPreeditMetrics(preeditEl);
-      preeditEl.textContent = s;
-      const c = view.coordsAtPos(sel.head);
-      if (!c) return;
-      const base = host.getBoundingClientRect();
-      preeditEl.style.left = Math.round(c.left - base.left) + 'px';
-      preeditEl.style.top = Math.round(c.top - base.top) + 'px';
+      if (act.sel) view.dispatch({ selection: { anchor: act.sel.anchor, head: act.sel.head } });
     }
 
     /**
@@ -3132,7 +4531,21 @@
      *    现在 node 侧把 8 条分支全钉住了，这里只剩"把当前选区递进去"。
      */
     function deleteRange(doc, forward, byWord, byLine) {
-      return LSel.deleteRange(doc, sel, { forward: forward, byWord: byWord, byLine: byLine });
+      // ⭐ `design/0061` L3：把**当前视图的删除保护区间**递进去——标记只能整段跨过
+      //    或整段删掉，⛔ 不许逐字节吃掉 `**` / 反引号（`INV-LIVE-16`）。
+      // ⭐ `bugs/0087`：保护集合必须**连围栏行一起**（`protectedRanges`）。只给标记时，
+      //    围栏行自己的换行会被删掉，下一行可见代码被并进 0 高的隐形行里。
+      // ⭐ `bugs/0111` A6：块前缀（`- ` / `> ` / `## ` …）单独递给 `wholeLineMark`，
+      //    否则它与成对行内标记（`**`）被并成一条链，一次 ⌫ 删掉 `- **` 两半。
+      // ⭐ `bugs/0111` K3：再给一份**分层**视图 ⇒ `> - ` 一次 ⌫ 只退列表那一层。
+      return LSel.deleteRange(doc, sel, {
+        forward: forward,
+        byWord: byWord,
+        byLine: byLine,
+        hidden: LSel.protectedRanges(view, hiddenHook),
+        prefix: LSel.prefixRanges(view, hiddenHook),
+        levels: LSel.prefixLevels(view, hiddenHook),
+      });
     }
 
     // ── 事务 / 撤销 ─────────────────────────────────────────────────
@@ -3142,12 +4555,29 @@
       if (destroyed) return;
       const from = clampPos(tx.from);
       const to = Math.max(from, clampPos(tx.to));
-      const insert = (tx.next || []).join('\n');
+      let insert = (tx.next || []).join('\n');
+      // ⭐⭐ **空标题标记链后补一个分隔空格**（`bugs/0311`，2026-11-11 用户报告
+      //    「标题没有渲染出来」，截图是 `##地方金额`）：行里只有 `##` 时 comrak 认它是
+      //    **空 ATX 标题**、标记恒藏 ⇒ 屏幕上看不出后面没空格；接着敲正文整行就退化成
+      //    段落（中文输入法的"空格"是上屏候选，⛔ 不产生字面空格）。判据与边界全在
+      //    `live/input.js::headingSpaceInsert`（纯函数、有单测），⛔ 不在这里撒 if。
+      //    ⚠️ 单元格里不补：GFM 格内没有块级语义，`#` 就是字面字符。
+      if (insert.length > 0 && !(obj && obj.inlineOnly)) {
+        const line = view.state.doc.lineAt(from);
+        const fixed = LIn.headingSpaceInsert(line.text, line.number - 1,
+          from - line.from, to - line.from, insert, latestPlan);
+        if (fixed !== null) insert = fixed;
+      }
       // ⚠️ 这里**不再**压撤销快照：`history()` 已经在扩展里（见上面），
       //    它按"时间 + 邻近性"给改动分组 —— 一次连续输入 = 一次撤销，与系统惯例一致。
+      // ⭐⭐ `bugs/0313`（2026-11-11）：行首回车后光标必须停在插入的换行**之前**，
+      //    否则接着敲的字插在 `\n` 与原标记之间 ⇒ `\n新# 标题`，标记被劈开。
+      //    判据全部来自这次事务（在 `selection.js::caretAfterInsert`，有单测）；
+      //    ⚠️ 必须用**变更前**的 doc 求值，⛔ 不能在这之前 dispatch。
+      const caret = LSel.caretAfterInsert(view.state.doc, from, to, insert);
       view.dispatch({
         changes: { from: from, to: to, insert: insert },
-        selection: { anchor: from + insert.length },
+        selection: { anchor: caret },
       });
       goal = null;
     }
@@ -3193,6 +4623,20 @@
         //    ⛔ 也别在这里放应用键——`⌘S` 在组合期会把半截组合串连文档一起写出去。
         return;
       }
+      // ⚠️⚠️ 修饰键**只从 `K.modifiers()` 取**（`INV-SET-01` 的源码级闸门：
+      //    `metaKey` / `ctrlKey` / `altKey` 这四个标识符只许出现在 `services/keymap.js`）。
+      //    ⛔ 别在这里写 `ev.metaKey`——那会被判成"又藏了一份键位表"。
+      const mods = K.modifiers(ev);
+      // ⭐⭐ **`⌘Z` / `⇧⌘Z` 由这一块自己认领**（`bugs/0020` §8，2026-11-02）：
+      //    块内的撤销是 CM6 的 `history()`（层①），⛔ 不是多块的提交栈（层②）。
+      //    ⚠️⚠️ 这一支**必须早于** `K.matchEvent`：`edit.undo` / `edit.redo` 进了唯一键位表
+      //      （阅读态要能撤提交栈），在这一块里若先被匹配到就会被 `forwardShim` 转发出块，
+      //      跑进全局 handler 的"提交栈"分支——块内历史与文档历史当场分叉。
+      if (mods.cmd && (ev.key === 'z' || ev.key === 'Z')) {
+        ev.preventDefault();
+        if (mods.shift) redoOnce(); else undoOnce();
+        return;
+      }
       const id = (keymap && K.matchEvent(keymap.bindings, ev)) || null;
       if (id) {
         ev.preventDefault();
@@ -3202,7 +4646,12 @@
         //    ⚠️ 别改成转发——全局 handler 选的是**正文全文**，那会在编辑中途把选区拉走、
         //      而光标（`sel` / `textarea` 的焦点）仍留在块内，两边当场不一致。
         if (id === 'edit.select-all') {
-          view.dispatch({ selection: { anchor: 0, head: view.state.doc.length } });
+          // ⚠️ `select.all` 标注让中央兜底**放过**这一条（`design/0061` L2）：全选必须覆盖
+          //    整块源码（含末尾那条看不见的围栏行），否则替换会留下半截 ```` ``` ````。
+          view.dispatch({
+            selection: { anchor: 0, head: view.state.doc.length },
+            userEvent: 'select.all',
+          });
           return;
         }
         if (forwardShim) forwardShim.forward(id);
@@ -3213,7 +4662,7 @@
       // ⚠️⚠️ 修饰键**只从 `K.modifiers()` 取**（`INV-SET-01` 的源码级闸门：
       //    `metaKey` / `ctrlKey` / `altKey` 这四个标识符只许出现在 `services/keymap.js`）。
       //    ⛔ 别在这里写 `ev.metaKey`——那会被判成"又藏了一份键位表"。
-      const mods = K.modifiers(ev);
+      //    （`mods` 在上面 `⌘Z` 那一支之前就算好了。）
       // ⭐ **单元格里 `Tab` 走格**（`design/0049` §4）。
       //    ⚠️ 这条**必须早于**下面那条裸 `Tab` 分支：那条是"提交并退出"。
       //    ⚠️ `⌘↵` 不在这里接（`mods.cmd` 挡掉了）——它是**退出**，走下面那条既有分支。
@@ -3264,19 +4713,43 @@
         const cur = view.state.selection.main;
         const next = view.moveVertically(cur, cmd === 'lineDown');
         if (next && Number.isInteger(next.head) && next.head !== cur.head) {
+          // ⭐ 视觉行落点可能落在围栏行（0 高）/ 零宽标记里 ⇒ 按移动方向吸附
+          //    到可见边界（`design/0061` L2）。
+          const head = LSel.snapCaret(view, next.head, cmd === 'lineDown' ? 1 : -1, hiddenHook);
           view.dispatch({
-            selection: { anchor: mods.shift ? cur.anchor : next.head, head: next.head },
+            selection: { anchor: mods.shift ? cur.anchor : head, head: head },
           });
           goal = null;
+        } else if (obj.arrows === 'cross' && !mods.shift) {
+          // ⭐⭐ **首/末视觉行再按一次 ⇒ 进相邻格**（`bugs/0104`）：Mardo 在表格里
+          //    ←→↑↓ 都能跨单元格。⛔ 这里不再写"什么都不做"——那正是用户报的缺陷
+          //    （「左右上下 mardo 可以跨单元格，RMD 不行」）。
+          //    ⚠️ ⇧ 不放行：选区不能跨视图（两格是两个 CM6 视图）⇒ 停在格内原样。
+          crossCellVertical(view, cmd === 'lineDown');
         }
         return;
       }
       if (cmd) {
         ev.preventDefault();
         const next = LSel.move(doc, sel, cmd, { extend: mods.shift, goal: goal, pageLines: 10 });
+        // ⭐⭐ **格内文本首/末再按一次 ⇒ 进相邻格**（`bugs/0104`）：判据是"这一下没走动"
+        //    （`next.head === 当前 head`），⛔ 不是"在 bytes 里看着像边界"。
+        if (obj.arrows === 'cross' && !mods.shift) {
+          const cur = view.state.selection.main;
+          if (cur.from === cur.to
+            && crossCellHorizontal(view, cmd, cur.head, next ? next.head : cur.head)) return;
+        }
         if (next) {
           goal = next.goal === undefined ? null : next.goal;
-          view.dispatch({ selection: { anchor: next.anchor, head: next.head } });
+          // ⭐ 方向键 / Home / End 的结果过合法落点（`design/0061` L2）：
+          //    一次 ←/→ 该跨过整个 `**`（⛔ 不是停在两个 `*` 之间），围栏行整行跨过。
+          //    ⚠️ `Home` 例外：它要落在**正文起点**（不是上一行行末），所以方向取 0
+          //       （`bugs/0092`：列表标记恒藏之后，行首在缩进带里、敲字还会写坏列表）。
+          const back = cmd === 'charLeft' || cmd === 'wordLeft'
+            || cmd === 'docStart' || cmd === 'lineUp' || cmd === 'pageUp';
+          const dir = cmd === 'lineStart' ? 0 : (back ? -1 : 1);
+          const head = LSel.snapCaret(view, next.head, dir, hiddenHook);
+          view.dispatch({ selection: { anchor: mods.shift ? next.anchor : head, head: head } });
         }
         return;
       }
@@ -3284,6 +4757,18 @@
       if (ev.key === 'Backspace' || ev.key === 'Delete') {
         ev.preventDefault();
         const forward = ev.key === 'Delete';
+        // ⭐⭐ **行首退格：嵌套列表项升一级**（`bugs/0116` §10，2026-11-14 用户：「多级有序
+        //    和无序列表使用的体验，感觉比 Mardo 差不少事」）。Notion / Mardo 里光标停在
+        //    **内层项的正文起点**按退格是"回到上一级"（整项连同子项一起走），只有最外层
+        //    才删标记退出列表；旧实现按装饰层的**一条**隐藏区间（缩进 ＋ 标记）整段删，
+        //    内层项一按就变成段落。
+        //    ⚠️ 判据与脱一级的算法全在 `live/input.js::outdentAtStart`（纯函数、有单测），
+        //      ⛔ 不在这里撒键位 if；它返回 `null` ⇒ 完全是原来的退格（删字符 / 删标记）。
+        if (!forward && !mods.alt && !mods.cmd) {
+          const r0 = LSel.range(sel);
+          const 升 = LIn.outdentAtStart(view.state.doc.toString(), latestPlan, r0.from, r0.to);
+          if (升) { applyIndentAction(升); return; }
+        }
         const r = deleteRange(doc, forward, mods.alt, mods.cmd);
         if (r.to > r.from) {
           machine.handle({
@@ -3311,7 +4796,40 @@
       if (ev.key === 'Enter') {
         ev.preventDefault();
         const r = LSel.range(sel);
-        machine.handle({ type: 'beforeinput', inputType: 'insertLineBreak', data: '\n', from: r.from, to: r.to });
+        let from = r.from;
+        let to = r.to;
+        // ⭐⭐ **在"光标最前面"换行不能劈开标记**（`bugs/0105`，2026-11-06 用户报告）：
+        //    可见光标停在 `**读者**` 的"读"前面，实际位置在开场 `**` **之后** ⇒ 原样插
+        //    `\n` 会写成 `**\n读者**`，强调当场断成两半（用户原话「`**` 被留在了上一行，
+        //    不符合预期」）。判据在 `selection.js::lineStartInsertPoint`（有单测）：
+        //    光标前面是**从行首开始的整条隐藏标记链** ⇒ 插入点退到链首，标记跟正文一起下移。
+        //    ⚠️ 句子中间的 `**` 不在此列（链没顶到行首）——那里回车就该在可见处断行。
+        if (from === to) {
+          const hidden = LSel.hiddenRanges(view, hiddenHook);
+          const p = LSel.lineStartInsertPoint(hidden, view.state.doc, from);
+          if (p >= 0) { from = p; to = p; }
+          // ⭐⭐ **行尾回车同样不能劈开标记**（`bugs/0308`，2026-11-11 用户报告）：
+          //    标记恒藏（`design/0061` L1）⇒ 光标停在闭合 `**` **之前**与**之后**屏幕上看不出
+          //    差别。停在之前时原样插 `\n` ⇒ `**正文\n**`，强调断成两半。判据在
+          //    `selection.js::lineEndInsertPoint`（有单测）：光标后面是**顶到行末的整条隐藏
+          //    标记链**、且前面还有可见内容 ⇒ 插入点挪到链尾（`bugs/0105` 的行尾镜像）。
+          const q = LSel.lineEndInsertPoint(hidden, view.state.doc, from);
+          if (q >= 0) { from = q; to = q; }
+        }
+        // ⭐ `bugs/0108`（2026-11-07 用户报告）：行尾回车按**列表行品种**续写——
+        //   bullet 续 `- `、有序续下一个编号、任务续空框；空 item 回车**先升一级**，
+        //   到最外层才删标记退回正文（`bugs/0116` §10，Notion / Mardo 口径）。
+        //   行为与 Mardo 的 `EditorTypingCommands.contextualReturn` 对齐；前缀/编号由
+        //   `live/input.js::lineBreakAction`（纯函数，有单测）算，⛔ 不在这里撒键盘 if。
+        const act = LIn.lineBreakAction(view.state.doc.toString(), latestPlan, from, to);
+        if (act.type === 'delete') {
+          machine.handle({ type: 'beforeinput', inputType: 'deleteContentBackward', from: act.from, to: act.to });
+        } else {
+          machine.handle({ type: 'beforeinput', inputType: 'insertLineBreak', data: act.data, from: act.from, to: act.to });
+        }
+        // ⚠️ 空项回车"先升一级"那一支（`bugs/0116` §10）会带 `sel`：降低一级之后光标要
+        //    落回**新位置**的正文起点，⛔ 不能让 `caretAfterInsert` 按插入的 `\n` 把它丢到行首。
+        if (act.sel) view.dispatch({ selection: { anchor: act.sel.anchor, head: act.sel.head } });
         return;
       }
       if (ev.key === 'Escape') {
@@ -3319,21 +4837,42 @@
         //    那一步是"组合作废"，与系统行为一致（未上屏的字丢掉）。
         ev.preventDefault();
         machine.handle({ type: 'cancel' });
-        clearInput();
         paintPreedit('');
-        liveSerial(function () { return leaveLive({ reason: 'escape' }); });
+        // ⭐⭐ **输入区只在提交成功之后再清**：旧写法先 `clearInput()` 再异步 `leave()`；
+        //    提交被拒时 `leave()` 返回 `ok:false`、视图按设计**保留**（`design/0054`），
+        //    可隐藏输入区已经清空 ⇒ 接着敲的第一个字符落进空缓冲，用户看到"第一个字丢了"。
+        //    ⇒ 成功（视图真的退出）才清；失败保留原状，下一次 `input` 自己会清。
+        //    ⚠️ 拒绝分支必须接住：`liveSerial` 链尾已经报过，这里⛔ 不再抛第二次。
+        liveSerial(function () { return leaveLive({ reason: 'escape' }); }).then(function (r) {
+          if (r && r.ok) clearInput();
+        }, function () { /* 已由 `liveSerial` 链尾报出 */ });
         return;
+      }
+      // ⭐⭐ **列表里 `Tab` / `⇧Tab` 是缩进 / 反缩进**（`bugs/0116`，2026-11-13 用户裁定：
+      //    「加一个 tab 就变成下一级的，这是通用体验……重点参考 Notion Mardo」）。
+      //    ⚠️ 判据来自**对象策略**（`obj.tab === 'indent'`），⛔ 不是这里的 `isCell`，
+      //      也⛔ 不是"源码里有没有 `- `"——契约表在进块那一刻就定了（`INV-EDITOBJ-05`）。
+      //    ⚠️ 这一支**必须早于**下面那条裸 `Tab` 分支：那条是"提交并退出"，
+      //      而列表里 Tab 被吃掉是 Notion / 飞书 / 幕布的共同口径（退出仍走 `Esc`）。
+      //    ⚠️ 缩进算法全在 `live/input.js::indentList` / `outdentList`（纯函数、有单测），
+      //      ⛔ 不在这里撒键盘 if；`act === null` ⇒ 光标不在列表行上（空白行 / 代码行），
+      //      保持原语义：提交并退出。
+      if (obj.tab === 'indent' && ev.key === 'Tab' && !mods.cmd && !mods.ctrl && !mods.alt) {
+        const r0 = LSel.range(sel);
+        const act = ev.shiftKey
+          ? LIn.outdentList(view.state.doc.toString(), latestPlan, r0.from, r0.to)
+          : LIn.indentList(view.state.doc.toString(), latestPlan, r0.from, r0.to);
+        if (act) {
+          ev.preventDefault();
+          applyIndentAction(act);
+          return;
+        }
       }
       if (ev.key === 'Tab') {
         // ⚠️ Tab **不吞含义**：它同样提交并退出，但焦点要**真的**离开这一块
         //    （可访问性的默认行为）⇒ 退出之后把焦点还给正文容器。
         ev.preventDefault();
         liveSerial(function () { return leaveLive({ reason: 'tab' }); });
-        return;
-      }
-      if (mods.cmd && (ev.key === 'z' || ev.key === 'Z')) {
-        ev.preventDefault();
-        if (mods.shift) redoOnce(); else undoOnce();
         return;
       }
     }
@@ -3376,20 +4915,38 @@
     }
 
     function onCompositionStart() {
+      if (destroyed) return;
       const r = currentRange();
-      machine.handle({ type: 'compositionstart', from: r.from, to: r.to });
+      // ⭐ `design/0059` C′：把**这一段文本的身份**（CM6 的 `doc` 实例）随会话记下来。
+      //    它是本视图内"文本版本"的可靠令牌：任何一次改动都会换掉它 ⇒ 落定时能判"目标变过"。
+      machine.handle({
+        type: 'compositionstart', from: r.from, to: r.to, target: view.state.doc,
+      });
     }
 
     function onCompositionUpdate(ev) {
+      if (destroyed) return;
       machine.handle({ type: 'compositionupdate', data: ev.data });
-      // ⭐ preedit 画在覆盖层上——**文档一个字节都不动**，这是 F6 的判据所在。
+      // ⭐ 组合串画在**行内**（占位、把右边的字推开）——**文档文本一个字节都不动**，
+      //    但装饰与**正常重排**是允许且要的（`design/0059` C′，别读成"零事务/版面不动"）。
       paintPreedit(ev.data);
     }
 
     function onCompositionEnd(ev) {
-      const res = machine.handle({ type: 'compositionend', data: ev.data });
+      // ⚠️ 视图已经拆掉（换文档 / 外部重载）⇒ 这一发是**过期回包**，⛔ 不许再动任何状态。
+      if (destroyed) return;
+      const r = currentRange();
+      const res = machine.handle({
+        type: 'compositionend', data: ev.data,
+        from: r.from, to: r.to, target: view.state.doc,
+      });
       clearInput();
       paintPreedit('');
+      if (res && res.stale) {
+        setStatusT('status.live-composition-stale');
+        diagNote('edit', 'live-composition-stale', '');
+        return;
+      }
       if (res && res.applied) {
         // ⚠️ 组合结束后光标要在**上屏文本之后**（`caretAfterComposition` 的口径）
         scheduleAfter();
@@ -3412,22 +4969,43 @@
       machine.handle({ type: 'beforeinput', inputType: 'deleteContentBackward', from: r.from, to: r.to });
     }
 
+    /**
+     * ⭐ 粘贴文本的**唯一落点**（`design/0054` `INV-EDITOBJ-01`）。
+     *
+     * ⚠️ **这里⛔ 什么都不折**：归一化（CRLF/裸 CR → LF）与**对象约束**都在
+     *    `live/input.js` 的 `textIn()` 里、由策略表（`live/objects.js`）声明 ——
+     *    ⚠️ 单元格那边的策略是**恒等**（`bugs/0035` 之后换行要真的保留，
+     *    折行留给 `cell.js::encode` 写成 `<br>`）。
+     *    同一条约束只许有一个声明处。⚠️ 这里原先写着 `isCell ? … : …`：
+     *    那是同一件事的**第二份事实**，而且它只管粘贴一个入口
+     *    （IME 上屏、`beforeinput` 插入都绕过去了）⇒ 正是 `INV-EDITOBJ-01` 要收掉的那一半。
+     * ⭐ `design/0077`：字面粘贴（适配对象的 `paste(text)`）也走**这一条**，
+     *    ⛔ 不另写第二条「直接 dispatch」的路径。
+     * @param {string} text2
+     * @param {boolean} [focusAfter] 菜单触发的粘贴要把焦点收回编辑区（原生粘贴本来就在焦点里）
+     */
+    function pasteText(text2, focusAfter) {
+      const r = currentRange();
+      machine.handle({ type: 'paste', text: text2, from: r.from, to: r.to });
+      // ⚠️ 只对**菜单触发**这一次补焦点：原生粘贴的焦点本来就在 `input` 上，
+      //    额外 `focus()` 是没必要的副作用（`design/0077` 不改变既有粘贴路径）。
+      if (focusAfter) {
+        try { input.focus(); } catch (e) { /* 焦点还失败不影响插入结果 */ }
+      }
+      return true;
+    }
+
     function onPaste(ev) {
       ev.preventDefault();
-      const r = currentRange();
       const text2 = ev.clipboardData ? ev.clipboardData.getData('text/plain') : '';
-      // ⭐⭐ **这里⛔ 什么都不折**（`design/0054` `INV-EDITOBJ-01`）。
-      //    归一化（CRLF/裸 CR → LF）与**对象约束**都在
-      //    `live/input.js` 的 `textIn()` 里、由策略表（`live/objects.js`）声明 ——
-      //    ⚠️ 单元格那边的策略是**恒等**（`bugs/0035` 之后换行要真的保留，
-      //    折行留给 `cell.js::encode` 写成 `<br>`）。
-      //    同一条约束只许有一个声明处。⚠️ 这里原先写着 `isCell ? … : …`：
-      //    那是同一件事的**第二份事实**，而且它只管粘贴一个入口
-      //    （IME 上屏、`beforeinput` 插入都绕过去了）⇒ 正是 `INV-EDITOBJ-01` 要收掉的那一半。
-      machine.handle({ type: 'paste', text: text2, from: r.from, to: r.to });
+      pasteText(text2, false);
     }
 
     input.addEventListener('keydown', onKeyDown);
+    // ⭐ `bugs/0306`：焦点一旦离开这个离屏 textarea，`onKeyDown` 就一个字节也收不到
+    //    （选区还画着、⌫ 却删不掉）。文档级兜底要把那一下**交回这里** ⇒ 记下入口。
+    //    ⚠️ 交回去是硬要求：兜底里另写一份"Backspace ⇒ deleteRange"就是第二份键位表。
+    liveKeySink = onKeyDown;
     input.addEventListener('beforeinput', onBeforeInput);
     input.addEventListener('input', onInput);
     input.addEventListener('compositionstart', onCompositionStart);
@@ -3438,10 +5016,16 @@
     input.addEventListener('paste', onPaste);
 
     // ⭐ 阅读态那一次按下的手势（`bugs/0042`）：只给**这一次建视图**用，取走即清空。
-    //    ⚠️ `released === true`（松手早于视图就绪）⇒ 不传 —— ⛔ 不许启动悬空拖动。
-    const gesture = (pendingDown && pendingDown.released !== true) ? pendingDown : null;
+    //    ⚠️ `released === true`（松手早于视图就绪）那一份**也要传**（`bugs/0333`）：
+    //    它接不了拖拽，但**双击 = 选一个词 / 三击 = 选一行**必须在新建的视图上落地，
+    //    否则阅读态双击一段文字只会得到"进去了、只有一个插入符"。
+    //    分流在 `selection.js::installMouse`（按 `released` / `detail` 自己判），⛔ 这里不判。
+    const gesture = pendingDown;
     pendingDown = null;
     const uninstallMouse = LSel.installMouse(view, {
+      // ⭐ 单元格：按下的监听面是**那一格的 `<td>`**（`bugs/0069`）——格内右侧那片空白
+      //    属于 `<td>`、⛔ 不属于 CM6，不这么做那一下会冒泡成 `onLiveDocDown` 里的"重新进入"。
+      hitArea: (isCell && el) ? el : null,
       onSelect: function (s) {
         sel = { anchor: s.anchor, head: s.head };
         a11y.sync(view.state.doc, sel);
@@ -3453,6 +5037,9 @@
         try { input.focus({ preventScroll: true }); } catch (e) { input.focus(); }
       },
       gesture: gesture,
+      // ⭐ 点击 / 拖选的落点过合法边界（`design/0061` L2）：零宽标记与 0 高的围栏行
+      //    都不能让光标停下来。
+      hidden: hiddenHook,
     });
 
     return {
@@ -3471,6 +5058,38 @@
        * @returns {number}
        */
       caret: function () { return view.state.selection.main.head; },
+      /**
+       * ⭐ **事务载荷要的选区**（`design/0058` §2.5）：`anchor`/`head` **分开给**。
+       *
+       * ⚠️ 走 `view.state.selection.main`，⛔ 不绕 `LSel.range(sel)`：后者归一化出
+       *    `{from,to}`，方向就丢了（反向选区撤一次会跳错端）。同 `caret()` 那条教训。
+       * ⚠️ 这里给的是**这段编辑文本**的偏移；`space` 由控制器按对象种类标
+       *    （块 / 格），⛔ 别在这层拼成文档偏移。
+       * @returns {{anchor:number, head:number}}
+       */
+      selection: function () {
+        const s = view.state.selection.main;
+        return { anchor: s.anchor, head: s.head };
+      },
+      /**
+       * ⭐ `design/0077`：**精确选区**的编辑文本（复制为 Markdown 用）。
+       * ⚠️ 空选区返回空串（⛔ 不返回整块文本）：阅读态才按块退让，编辑态不退让。
+       * @returns {string}
+       */
+      selectedText: function () {
+        const s = view.state.selection.main;
+        if (s.from === s.to) return '';
+        return view.state.doc.sliceString(s.from, s.to);
+      },
+      /**
+       * ⭐ `design/0077`：**字面粘贴**的落点。
+       * ⚠️ 走本文件的 `pasteText()` ⇒ 归一化与对象约束仍只有 `live/input.js` 一份声明。
+       * @param {string} text
+       * @returns {boolean}
+       */
+      paste: function (text) {
+        return pasteText(String(text == null ? '' : text), true);
+      },
       /**
        * ⭐ 量高**前必须先逼 CM6 同步量一次**（`readMeasured()`）。
        * ⚠️⚠️ 理由（2026-10-26 实测，`design/0047` §10）：CM6 的行高表只在它自己的测量循环
@@ -3491,19 +5110,9 @@
       //    "块永远进得去"，没有上界就没有允许量，留着它就是**没有调用方的第二份算式**。
       //    ⚠️ 结构差本身仍有人记账：`live/decorations.js::layoutSlack()`（唯一实现）
       //    由 `make probe-live-block` 的 B-3b 印进判据说明里，⛔ 不再参与任何拦截。
-      /**
-       * ⭐ 量完了：放开"活动行显示源码"（`measuring`）。
-       * ⚠️ **必须由 `swapLiveView` 在挂进文档流之前调**——挂上去的那一帧就该是最终形态，
-       *    ⛔ 不要"先按量高的样子挂上、下一帧再展开"（那是一帧可见的跳动）。
-       * ⚠️ 幂等：重复调用是空操作（`focusAt` 里也会走一次，那条路不必关心先后）。
-       */
-      endMeasure: function () {
-        if (!measuring) return;
-        measuring = false;
-        // ⚠️ 必须发一次**选区事务**：装饰只在 `tr.docChanged || tr.selection` 时重建
-        //    （`decorations.js::createField`），光翻标志位不会让视图重算。
-        view.dispatch({ selection: { anchor: view.state.selection.main.head } });
-      },
+      // ⚠️ 这里曾有 `endMeasure()`（把 `measuring` 翻回 false 并补发一次选区事务）。
+      //    `design/0061` L1 起装饰层不再看选区，**不存在"量完再展开"这一步** ⇒ 删除。
+      //    `swapLiveView` 里对应的调用同批删掉（⛔ 留着只会是一次无作用的空 dispatch）。
       /**
        * ⭐ 进入覆盖层时把插入符放到指定位置。
        * ⚠️ 控制器是在 swap **之后**才调它的 ⇒ 坐标就是真坐标，⛔ 不用自己减离屏偏移。
@@ -3511,20 +5120,54 @@
        * 两种落点（`bugs/0024`）：
        *   `{pos: n}` ⇒ 块内偏移 `n`（`⌘↵` 新起一段用 `0`、撤销之后用记下的那个数）；
        *   `{x, y}`   ⇒ 用户点的那一处（走 `posAtCoords`）。
+       *
+       * ⭐ `design/0061` L2：两条路最后都过 `snapCaret`——落点不许停在隐藏区间内部
+       * （零宽标记 / 0 高的围栏行）。⚠️ `design/0061` L1 起排版**恒为阅读态形态**，
+       * 所以不再需要"先按量高的样子排、再展开"那一套（旧的 `opts.reading` / `mappingCoords`
+       * 已删除）；`snapHiddenTail` 也因此**无条件**生效，⛔ 不再区分是不是阅读态那一下。
+       *
+       * @param {{pos?:number, x?:number, y?:number}} point
+       * @param {{reading?:boolean}} [opts] 历史参数，现已无作用（保留形状，⛔ 不新增调用点）
        */
-      focusAt: function (point) {
-        // ⚠️ 兜底：走的是同一段同步代码，正常情况下 `swapLiveView` 已经放开过了。
-        if (measuring) {
-          measuring = false;
-          view.dispatch({ selection: { anchor: view.state.selection.main.head } });
-        }
+      focusAt: function (point, opts) {
+        void opts;
+        // ⚠️ 恒 false 的死条件（见 `hiddenHook` 上方）：保留这一行只为旧探针靶子有唯一落点。
+        //    ⛔ 别把它接回任何真实状态——L1 之后不存在"量高 / 换算时临时展开"。
+        if (measuring || mappingCoords) return [];
         let pos = 0;
         if (point && Number.isInteger(point.pos)) {
           pos = clampPos(point.pos);
         } else if (point && typeof view.posAtCoords === 'function') {
-          const p = view.posAtCoords({ x: point.x, y: point.y });
+          // ⭐⭐ **换算坐标必须按用户点的那一屏排**（`bugs/0084`）。
+          //    `design/0061` L1 之后这件事**恒成立**：编辑态的排版就是阅读态那张脸，
+          //    ⛔ 不再有"活动行展开"让同一格宽出两个字符。
+          //    ⚠️ `readMeasured()` 是 CM6 自己的"现在就量"入口（同 `height()` 上面那段）：
+          //      `posAtCoords` 的纵向先用 `elementAtHeight` 查块，不量就是建视图那一刻的估值。
+          let p = null;
+          try { view.readMeasured(); } catch (e) { void e; }
+          p = view.posAtCoords({ x: point.x, y: point.y });
+          // ⭐⭐ 行尾**零宽**的那几个字符（`bugs/0084` 的第二个面）：阅读态把标记藏成了
+          //    零宽 ⇒ "最后一个可见字之后"与"闭合反引号之后"是**同一个屏幕点**，而
+          //    `posAtCoords` 走 DOM 边界取的是**左边**那个 ⇒ 点在最后一个字的右半，
+          //    光标却停在它后面那个看不见的标记之前（实测 ``中等长度的 `内容` ``
+          //    得到 `9/10`，行末永远差一步）。⇒ 整段到行末都与这里同点就取行末。
+          if (Number.isInteger(p)) p = LSel.snapHiddenTail(view, p);
+          // ⭐⭐ 换算歪了 ⇒ 按**真实字形坐标**扳回离点最近的那个边界（`bugs/0084` 第三面，
+          //    2026-11-05）。⚠️ 实测症状是"同一行、同一个点，算出来少了两个字符"
+          //    （12 个字的格子点在末字右沿 ⇒ `10/12`）；判据只在 `selection.js` 一处。
+          if (Number.isInteger(p)) p = LSel.snapClickX(view, p, point.x);
           if (Number.isInteger(p)) pos = p;
+          // ⭐⭐ 点在**文字右边**（格内右侧空白 / 一行的行尾）⇒ 落点必须是**行末**（`bugs/0069`）。
+          //    ⚠️ `posAtCoords` 是按 CM6 **自己的**行高/字宽表换算的，刚 swap 那一帧那张表
+          //    还是估值（同 `anchorAt` 上面那段）⇒ 换算结果可能少一个字符，用户看到的就是
+          //    "点了行尾，光标却停在最后一个字之前"，接着按 → 也只能原地打转
+          //    （2026-11-04 原话：「行尾无法插入光标」「使用 → 无法走到行尾」）。
+          //    ⚠️ 判据只有一份：`selection.js::snapLineEnd`（⛔ 这里不重写一遍）。
+          pos = LSel.snapLineEnd(view, pos, point.x);
         }
+        // ⭐ 合法落点（`design/0061` L2）：上面那几条各自修一种"换算歪"，
+        //    这一条修"落在看不见的标记里"。
+        pos = LSel.snapCaret(view, pos, 0, hiddenHook);
         view.dispatch({ selection: { anchor: pos } });
         sel = { anchor: pos, head: pos };
         try { input.focus({ preventScroll: true }); } catch (e) { input.focus(); }
@@ -3535,7 +5178,13 @@
        *
        * ⚠️ 为什么必须有它：几何闸门不再拒收（`INV-KERNEL-05`：块永远进得去）⇒
        *    块在编辑态变高/变矮都**直接上屏**，下面的内容跟着动。用户看到的不是"进不去"，
-       *    而是"我点的那一行跑了"。补一次 `scrollTop` 就把它钉回去，代价远小于拒收。
+       *    而是"我点的那一行跑了"。补一次 `scrollTop` 就把它钉回去。
+       *
+       * ⛔⛔ **2026-11-09 起它不是"正确行为"**（用户重订 `INV-LIVE-04`，`design/0047` §5）：
+       *    进入瞬间**块本身就不该变高/变矮**，也就不该有滚动要补。这一支留在代码里只是
+       *    **兜底**（几何缺陷还没修完时别让被点的字跑出屏幕），⛔ 不许把它当成"进入时有位移
+       *    也可以"的依据，也⛔ 不许拿"补滚后锚点不动"当绿。每一条真的走到 `scrollTop += delta`
+       *    的记录都是待修缺陷（`bugs/0078`、`bugs/0021`、`bugs/0298`）。
        *
        * ⚠️⚠️ **宁可不补，也不乱补**（`design/0052` §4 的失败形态）：
        *    坐标读不到、或者差得离谱（> 一屏），就**原样返回**——乱补一次会让页面跳到别处，
@@ -3591,6 +5240,9 @@
       destroy: function () {
         if (destroyed) return;
         destroyed = true;
+        // ⚠️ 只清**自己那一份**：换块 / 走格时会先建新视图再销毁旧的，
+        //    无条件清空会把新视图的键盘入口也摘掉（表现见 `bugs/0306`）。
+        if (liveKeySink === onKeyDown) liveKeySink = null;
         // ⭐ 表格布局逐像素还原（`INV-CELL-04`）。⚠️ 块形态是 `null`，这一句是空操作。
         if (thaw) {
           try { thaw(); } catch (e) { void e; }
@@ -3777,11 +5429,9 @@
     const kindCls = LBox && typeof LBox.classNameOf === 'function' ? LBox.classNameOf(el) : '';
     host.className = 'cm-rmd-liveHost' + kindCls;
     host.style.width = '';
-    // ⭐ 量完了 ⇒ **挂上去之前**放开"活动行显示源码"（`makeLiveView` 的 `measuring`）。
-    //    ⚠️ 顺序是硬的：`height()` 刚在**离屏期**取过（那一次必须"全藏"才与渲染态可比），
-    //    而这里放开之后视图会按光标所在行重算一次 ⇒ 挂进文档流的就是**最终形态**，
-    //    ⛔ 不会出现"先挂上、下一帧才展开"的一帧跳动。
-    if (req.view && typeof req.view.endMeasure === 'function') req.view.endMeasure();
+    // ⚠️ 这里曾有 `endMeasure()`（量高期间"全藏"，挂上去之前再放开活动行）。
+    //    `design/0061` L1 起隐藏集合恒定 ⇒ 量高的那一帧与挂上去的最终形态**本来就是
+    //    同一张脸**，⛔ 没有要放的开关；`makeLiveView` 里也已删除该方法。
     const parent = el.parentNode;
     const next = el.nextSibling;
     // ⭐⭐ `design/0052` U6 的锚点：**被点那一行的行顶**（视口坐标）。
@@ -3790,7 +5440,11 @@
     //    点在块中部时那一行仍会跑掉一整行。
     //    ⚠️ 渲染态**没有逐行 DOM**（一整个 `<p>` / `<pre>`），所以行顶只能按"行高取模"估：
     //    内容顶往下第 `floor(off / 行高)` 个行盒 —— 渲染态行高是均匀的，这正是它能成立的前提。
-    //    ⚠️ 折行的长段落会让这个估计偏（一个源码行占好几个行盒），偏差上界仍是一行。
+    //    ⚠️ 折行的长段落会让这个估计偏（一个源码行占好几个行盒）——⭐ 单源码行块已经
+    //    整段绕开（见下面的「单源码行块」）；多行块里残留的偏差仍未处理（`bugs/0078` §5）。
+    //    ⛔ **2026-11-09 起"偏差上界一行"不再是可接受误差**（用户重订 `INV-LIVE-04`，
+    //    `design/0047` §5）：这一句估计只要偏，`anchorAt` 就会照着它把页面滚一行，
+    //    用户看到的就是"点一下、字跑掉"。⇒ 多行块的锚点也必须量到真值（`bugs/0078`）。
     let anchorY = null;
     if (req.point && typeof req.point.y === 'number') {
       // ⚠️ 基线取**第一行文字的字形顶**（`首行盒`），⛔ 不是"元素顶边 ＋ 它自己的 padding"：
@@ -3801,7 +5455,17 @@
       const cs = window.getComputedStyle(el);
       const lh = (box && box.lh) || parseFloat(cs.lineHeight) || 0;
       const top = box ? box.top : rect.top + (parseFloat(cs.paddingTop) || 0);
-      const off = req.point.y - top;
+      // ⭐⭐ **单源码行块：锚点就是内容顶**（`bugs/0078`）。
+      //    `off / lh` 数的是**视觉行**，而编辑态锚的是**源码行**的顶 ⇒ 折行段落里
+      //    点第 2 个视觉行会让 `anchorAt` 补一次"整整一行"的滚动（实测 −24/−48 px），
+      //    把用户刚点的字推出屏幕外。块只跨一个源码行时，"被点的那一行"只可能是它，
+      //    行顶恒为内容顶 ⇒ `off = 0`，锚点与渲染态位置天然重合，⛔ 不需要也不该补滚。
+      //    ⚠️ 多行块（代码块 / 列表 / 多段引用）里视觉行与源码行仍可能不同，⚖️ 那条
+      //    留在 `bugs/0078` §5 第 2 条，此处不猜。
+      const blk = req.block;
+      const 单行块 = !!(blk && typeof blk.from === 'number' && typeof blk.to === 'number'
+        && blk.to - blk.from <= 1);
+      const off = 单行块 ? 0 : req.point.y - top;
       anchorY = top + (lh > 0 && off > 0 ? off - (off % lh) : 0);
     }
     if (parent) parent.insertBefore(host, el);
@@ -3870,38 +5534,154 @@
   }
 
   /**
-   * ⭐ 单元格之间的移动（`Tab` / `⇧Tab` / `Enter`，`design/0049` §4）。
+   * ⭐ 单元格之间的移动（`Tab` / `⇧Tab` / `Enter` / 方向键，`design/0049` §4）。
    *
-   * ⚠️ **走到头就退出**（提交并离开）——与裸 `Tab` 的语义一致（焦点是真的要离开），
+   * ⚠️ `Tab` / `Enter` **走到头就退出**（提交并离开）——与裸 `Tab` 的语义一致（焦点是真的要离开），
    * 而"绕回第一格"会让用户按一次 Tab 就永远出不来。
+   * ⭐ **方向键走格不退出**（`bugs/0104`，`place.noExit`）：到表格边缘就**原地不动**——
+   * Mardo 在表格里按 ←→↑↓ 会跨单元格，但到了第一格/最后一格再按只是停住，
+   * ⛔ 不是"按一下 ← 就退出编辑态"。
    * ⚠️ 真正的"提交当前格 ＋ 进入下一格"由 `live.begin` 自己做（它进入前会先 `leave()`），
    * 这里只负责**算下一个扁平下标**；⛔ 不要在这里再提交一次（那会提交两遍）。
+   *
+   * @param {number|'down'|'up'} delta `1`/`-1` ＝ 左右相邻；`'down'`/`'up'` ＝ 同列下一/上一行
+   * @param {{caretEdge?:'start'|'end', noExit?:boolean,
+   *          after?:function(number, number):void}} [place]
+   *   `caretEdge` 交给 `live.begin` 决定落点在目标格文本的首/末；
+   *   `noExit` 见上；`after(blockIndex, flat)` 在新视图建好、提交链走完后调用
+   *   （方向键上下跨格用它按几何把光标放到同一视觉列）。
+   * @returns {boolean} 这一下归本函数处理了吗（`false` ＝ 不在格子里 / 算不出目标，
+   *   调用方应按普通按键处理；⛔ 此时**不许**把按键吞掉）
    */
-  function navigateCell(delta) {
-    if (!live || !LCell) return;
-    const a = live.activeCell();
-    if (!a) return;
+  function navigateCell(delta, place) {
+    if (!live || !LCell) return false;
+    // ⭐ 基准格只在**真正编辑态**取（连按修法）：`activeCell()` 在 `committing` 时仍返回
+    //    旧格（`leave()` 落定前 `active` 不清），连按会以旧格再排一次 `begin` ⇒ 跳格 /
+    //    回同一格。`activeCellForNav()` 只在 `editing` 时给格；取不到就交回调用方。
+    const a = typeof live.activeCellForNav === 'function' ? live.activeCellForNav() : live.activeCell();
+    if (!a) return false;
+    const p = place || {};
     const table = slotNode(a.blockIndex);
-    let next = -1;
-    if (table) {
-      next = delta === 'down' ? LCell.flatBelow(table, a.flat) : LCell.flatAfter(table, a.flat, delta);
+    if (!table) {
+      // ⭐ 「算不出目标」不是「到了表格边缘」：旧写法与边缘共用 `return true` ⇒ 方向键
+      //    被吃掉、光标不动、也没有痕迹。⇒ 不吞键（返回 false 让调用方按普通按键处理），
+      //    并走既有 console 诊断通道留痕。
+      console.warn('[rmd-live] 跨格：块 ' + a.blockIndex + ' 找不到表格节点（对齐表陈旧？），按键按普通处理');
+      return false;
     }
+    let next = -1;
+    if (delta === 'down') next = LCell.flatBelow(table, a.flat);
+    else if (delta === 'up') next = LCell.flatAbove(table, a.flat);
+    else next = LCell.flatAfter(table, a.flat, delta);
     if (next < 0) {
+      // ⭐ 同上：`-1` 可能是"到边缘"，也可能是"当前格下标在这张表里根本不存在"
+      //    （DOM 格子数与载荷不一致）。后者不是边缘 ⇒ 同样不吞键、留痕。
+      if (!LCell.cellAtIndex(table, a.flat)) {
+        console.warn('[rmd-live] 跨格：块 ' + a.blockIndex + ' 里没有第 ' + a.flat
+          + ' 格（DOM 与载荷不一致），按键按普通处理');
+        return false;
+      }
+      // 确实到边缘：方向键原地停住（`place.noExit`，`bugs/0104`）。
+      if (p.noExit) return true;
       liveSerial(function () { return leaveLive({ reason: 'cell-nav' }); });
-      return;
+      return true;
     }
     const blockIndex = a.blockIndex;
-    liveSerial(function () {
-      // ⚠️ `el` 传 `null`：`leave()` 之后那棵树整棵换新，控制器会按 `d.cellNodeOf` 重取。
-      return live.begin({ index: blockIndex, cell: { flat: next }, el: null });
+    const req = { index: blockIndex, cell: { flat: next }, el: null };
+    if (p.caretEdge === 'start' || p.caretEdge === 'end') req.caretEdge = p.caretEdge;
+    liveSerial(function () { return live.begin(req); }).then(function (r) {
+      if (!r || !r.ok || typeof p.after !== 'function') return;
+      p.after(blockIndex, next);
+    }, function () { /* ⚠️ 失败已经由 `liveSerial` 的链尾报出去，这里⛔ 不再吞一次 */ });
+    return true;
+  }
+
+  /**
+   * ⭐ **方向键跨格**（`bugs/0104`）：`←/→` 到格内文本首/末 ⇒ 进左右相邻格，
+   * `↑/↓` 到首/末视觉行 ⇒ 进上下同列格（复刻 Mardo）。
+   *
+   * ⚠️⚠️ **`view` 必须由调用方传进来**（2026-11-06 用户复报「↓ 还是不能跨」的根因）：
+   * 这两个函数住在**模块作用域**，`view` 是 `makeLiveView` 的闭包局部量——在这里直接写
+   * `view.…` 是**未声明标识符**，按一下方向键就是 `ReferenceError`（WKWebView 的栈里
+   * 连消息都没有，只剩函数名）⇒ `window.onerror` ⇒ `reportFatal` ⇒ 状态条
+   * 「⛔ 启动失败：Script error.」，光标原地不动。⛔ 别再让模块级函数直接摸视图。
+   *
+   * ⚠️ 上下的落点**按几何算**（`coordsAtPos` 的 x ＋ 目标格的矩形）：目标格还没建视图，
+   * 拿不到它的文本长度；按同一视觉列放光标才是用户按 ↑/↓ 的预期。
+   * ⚠️ 水平方向用 `caretEdge`（文本首/末）：格内文本是 `decode` 之后的**视图文本**
+   * （`<br>` 已是换行），按"末"落点不受源码列宽影响。
+   */
+  function crossCellHorizontal(view, cmd, from, to) {
+    if (from !== to) return false; // 格内还动得了 ⇒ 这一下没到边界
+    if (cmd === 'charLeft' || cmd === 'wordLeft') {
+      if (from !== 0) return false;
+      return navigateCell(-1, { caretEdge: 'end', noExit: true });
+    }
+    if (cmd === 'charRight' || cmd === 'wordRight') {
+      if (from !== view.state.doc.length) return false;
+      return navigateCell(1, { caretEdge: 'start', noExit: true });
+    }
+    return false;
+  }
+
+  function crossCellVertical(view, down) {
+    const cur = view.state.selection.main;
+    const c = view.coordsAtPos(cur.head);
+    const x = c && typeof c.left === 'number' ? c.left : null;
+    return navigateCell(down ? 'down' : 'up', {
+      noExit: true,
+      after: function (blockIndex, flat) {
+        // ⚠️ 这个回调在 `begin` 之后才跑；等它期间文档可能被换掉 ⇒ `live` 可能已经是
+        //    另一份，先判再摸（异常会被当成全局失败，⛔ 不要制造这种路径）。
+        if (!live) return;
+        // ⭐ 三处静默失败都改成"降级 ＋ 留痕"（缺陷：光标悄悄落在目标格开头、无任何提示）：
+        //    能算就按几何落到同一视觉列；算不出来就**保持 `begin` 给的默认落点（格首）**，
+        //    并在既有 console 诊断通道上写明原因。⛔ 不抛异常（会触发全局 `reportFatal`，
+        //    用户看到的是「启动失败」）。
+        if (x === null) {
+          console.warn('[rmd-live] 跨格：量不到原格光标的屏幕列，光标停在目标格开头');
+          return;
+        }
+        const node = cellNodeOf(blockIndex, flat);
+        const rect = node ? LCell.rectOf(node) : null;
+        if (!rect) {
+          console.warn('[rmd-live] 跨格：量不到目标格 ' + blockIndex + '/' + flat
+            + ' 的矩形，光标停在格首');
+          return;
+        }
+        // ⚠️ 目标格的**首行 / 末行**：↓ 进上边那一行、↑ 进下边那一行（多行格子里
+        //    落在正中间会跳过好几行，那不是"跨一格"）。
+        const y = down ? rect.top + 1 : rect.bottom - 1;
+        const px = Math.max(rect.left + 1, Math.min(x, rect.right - 1));
+        // ⭐ **检查返回值**：视图已不在编辑态 / 没有 `focusAt` 时 `focusPoint` 给 `false`
+        //    （它自己已经留了痕），这里再补一条"最终落点是什么"，避免无声无息。
+        const placed = typeof live.focusPoint === 'function' && live.focusPoint({ x: px, y: y });
+        if (!placed) {
+          console.warn('[rmd-live] 跨格：定位到目标视觉列未生效，光标停在目标格开头');
+        }
+      },
     });
   }
 
-  /** 从事件目标往上找 `root` 的**直接孩子**（⛔ 不返回 root 自己）。 */
+  /**
+   * 从事件目标往上找 `root` 的**直接孩子**（⛔ 不返回 root 自己）。
+   *
+   * ⚠️ **临时布局外壳要拆掉一层**（`bugs/0297`）：冻结表格布局时 `live/cell.js` 会把
+   *    `<table>` 挪进 `div.rmd-table-freeze`（`display:table` 才吃 `table-layout: fixed`），
+   *    壳因此成了 `#doc` 的直接孩子。若把它原样返回，`slotIndexFromNode` 一定找不到
+   *    （`liveSlots` 里记的是**表格本身**）⇒ 编辑期间点表格会被当成"点了空白"而退出编辑
+   *    （2026-11-09 整轮 block-probe 在 `Q9` 崩在这上面）。⇒ 遇到外壳取它唯一的元素孩子。
+   */
   function topChildOf(el, root) {
     let cur = el;
     while (cur && cur !== root) {
-      if (cur.parentNode === root) return cur;
+      if (cur.parentNode === root) {
+        if (cur.nodeType === 1 && cur.classList && cur.classList.contains('rmd-table-freeze')
+            && cur.children && cur.children.length) {
+          return cur.children[0];
+        }
+        return cur;
+      }
       cur = cur.parentNode;
     }
     return null;
@@ -3955,13 +5735,80 @@
         liveSerial(function () { return leaveLive({ reason: 'task-pairing' }); });
         return;
       }
-      setStatusT('status.task-pairing', {}, true);
+      setStatusT('status.task-pairing', {});
+      diagNote('edit', 'task-pairing', '');
       return;
     }
     const req = {
       index: index,
       flat: flat,
       domCount: LTask.countOf(node),
+      domChecked: was,
+    };
+    liveSerial(function () { return live.toggleTask(req); });
+  }
+
+  // ── ⭐ 编辑态的任务方框（`bugs/0103`）────────────────────────────────────
+
+  /**
+   * ⭐ **编辑态**里那个方框是 CM6 widget（`.cm-rmd-taskbox`），⛔ 不是 comrak 的
+   * `<input class="task-list-item-checkbox">` ⇒ `armTaskBoxes` 那条武装路碰不到它。
+   *
+   * 2026-11-05 用户实测：「这里一开始是好的，点几下就勾不动了，点击没有反应。」
+   * 探针（`/tmp/task-repro/harness-task2.js`）定位到的正是这一段：
+   *   · 先点任务项正文 ⇒ 进编辑态，阅读态那一块被 host 换掉（`swapLiveView`），
+   *     `#doc` 里**不再有**可点方框；
+   *   · 屏幕上的方框是 widget，`live.css` 给它 `pointer-events: none`
+   *     ⇒ 落点是 `.cm-line`（只放光标），**一条 IPC 都没有**。
+   * Mardo 在编辑态点方框就是打勾（`docs/research/products/0005` §2.5 的"两态同形"），
+   * ⇒ 这里把点击接到与阅读态**同一条**提交链（`live.toggleTask`），⛔ 不新开写路径。
+   *
+   * ⚠️⚠️ 监听挂在 **`#doc` 的 capture** 上，而不是逐个 widget：
+   *   · widget 每次装饰重建都会换 DOM（`eq()` 只认 `checked`）⇒ 逐个挂会漏；
+   *   · capture 必须抢在 `selection.js`（host 上的 capture）与 CM6 之前
+   *     `stopPropagation`，否则这一下会先被当成"放光标"处理。
+   */
+  function hostTaskBoxOf(target) {
+    return LTask && typeof LTask.widgetBoxOf === 'function' ? LTask.widgetBoxOf(target) : null;
+  }
+
+  /** 记下点击**之前**的勾选状态（`click` 时已经是翻转后的值了，与阅读态同一条）。 */
+  function onHostTaskBoxDown(ev) {
+    if (ev.button !== 0) return;
+    const box = hostTaskBoxOf(ev.target);
+    if (!box) return;
+    box.__rmdTaskWasChecked = box.checked === true;
+    // ⚠️ 拦住 CM6 / `selection.js`：点方框⛔ 不移动光标、⛔ 不建拖拽态。
+    ev.preventDefault();
+    ev.stopPropagation();
+  }
+
+  /**
+   * 编辑态点方框 ⇒ 与阅读态**同一个** `toggleTask`（一次事务、失败可见、不静默）。
+   *
+   * ⚠️ `flat` / `domCount` 从 **host 里的 widget 顺序**取：widget 由 `plan.tasks`
+   * 按文档顺序生成，与后端 `descendants()` 的先序一致（`design/0051` §2.1）。
+   * ⚠️ `index` 取 `live.activeIndex()`：此刻正在编辑的**就是**这一块。
+   * ⚠️ `domChecked` 用 mousedown 记的前值；配对闸门在 `doToggleTask` 里照旧生效
+   * （编辑期间改过任务项个数 ⇒ 如实报"对不上"，⛔ 不部分配对）。
+   */
+  function onHostTaskBoxClick(ev) {
+    const box = hostTaskBoxOf(ev.target);
+    if (!box || !live) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    const host = box.closest('.cm-rmd-liveHost');
+    const index = live.activeIndex();
+    if (!host || index === null) return;
+    const widgets = LTask.widgetsOf(host);
+    const flat = LTask.widgetIndexOf(host, box);
+    const was = typeof box.__rmdTaskWasChecked === 'boolean' ? box.__rmdTaskWasChecked : !box.checked;
+    box.__rmdTaskWasChecked = undefined;
+    if (flat < 0) return;
+    const req = {
+      index: index,
+      flat: flat,
+      domCount: widgets.length,
       domChecked: was,
     };
     liveSerial(function () { return live.toggleTask(req); });
@@ -3979,14 +5826,21 @@
     if (!live) return;
     live.notePayload(payload);
     const doc = $('doc');
-    const nodes = doc ? Array.prototype.slice.call(doc.children) : [];
+    // ⭐ 取"元素 ＋ 注释"两类顶层节点（`bugs/0080`）：`INV-SEC-01` 下 comrak 把**块级原始 HTML**
+    //    输出成 `<!-- raw HTML omitted -->` 注释，而 `live/blocks.js` 本来就把它认成
+    //    `raw-html`(`HtmlBlock`) ⇒ 只取 `doc.children` 时块表比节点数多，
+    //    `align()` 的数量闸门会**整篇**失败（本仓 `README.md`：53 块 : 49 节点）。
+    //    ⚠️ 也不能直接换成 `childNodes`：节点之间的空白文本会把 8 块数成 16 个节点。
+    //    ⭐ 取法只有一份，在 `LB.topNodes`（单测见 `live-blocks.test.js`「P ＋ 注释 ＋ P」）。
+    const nodes = LB.topNodes(doc);
     const out = LB.align(nodes, live.blocks());
     liveSlots = (out && out.slots) || [];
     liveAlignIssues = (out && out.issues) || [];
     if (liveAlignIssues.length > 0) {
       // ⚠️ 对齐失败 ⇒ ⛔ 不许进就地编辑（`INV-LIVE-06`）。但这**不是**要打断用户的事：
       //    正文照常可读，所以只报一行，进入时控制器还会自己拒一次。
-      setStatusT('status.live-align', { msg: liveAlignIssues[0] }, true);
+      setStatusT('status.live-align', { msg: liveAlignIssues[0] });
+      diagNote('edit', 'live-align', liveAlignIssues[0] || '');
       return;
     }
     // ⭐ 对齐成立才武装任务项方框（`INV-TASK-07`）：对齐失败时块序号不可信，
@@ -4018,7 +5872,8 @@
     if (cell) {
       const td = cellNodeOf(cell.blockIndex, cell.flat);
       if (!td) {
-        setStatusT('status.cell-pairing', {}, true);
+        setStatusT('status.cell-pairing', {});
+        diagNote('edit', 'cell-pairing', '');
         liveSerial(function () { return leaveLive({ discard: true }); });
         return false;
       }
@@ -4028,7 +5883,8 @@
     if (!el) {
       // ⚠️ 提交之后那一块在**新树**里找不到 ⇒ 视图已经没有落点。⛔ 不猜一个节点挂上去
       //    （挂错就是把光标放进另一段文字里）⇒ 退出覆盖层并说出来。
-      setStatusT('status.live-align', { msg: t('status.live-why-structural') }, true);
+      setStatusT('status.live-align', { msg: t('status.live-why-structural') });
+      diagNote('edit', 'live-align', 'structural');
       liveSerial(function () { return leaveLive({ discard: true }); });
       return false;
     }
@@ -4051,6 +5907,12 @@
     if (!live) return null;
     liveLastSaveOut = null;
     const ok = await live.save();
+    // ⭐ `design/0082`：未命名草稿的保存面板被取消 ⇒ 控制器回 `false`，但那条回包
+    //    **不是失败**（磁盘上一个字节没动，内容还在缓冲里）⇒ 说"已取消"，⛔ 不报错。
+    if (liveLastSaveOut && liveLastSaveOut.cancelled) {
+      setStatusT('save.cancelled');
+      return { cancelled: true };
+    }
     // ⚠️ 失败时控制器已经报过原因（`status.live-save-failed` / `status.live-identity`）⇒ 不再报一次。
     if (!ok) return null;
     const out = liveLastSaveOut || {};
@@ -4078,9 +5940,12 @@
         label: 'edit.act-save-continue',
         run: function () {
           liveSaveNow().then(function (out) {
+            // ⭐ `design/0082`：面板被取消 ⇒ 状态条已说"已取消"，内容还在会话里
+            //    ⇒ ⛔ 不继续、⛔ 不报失败（那会把"用户自己点了取消"说成出错）。
+            if (out && out.cancelled) return;
             if (out) { proceed(); return; }
             // ⚠️ 保存失败 ⇒ ⛔ **不许**继续（那会变成"以为存了、其实丢了"）。
-            setStatusT('edit.save-failed-cancelled', null, true);
+            reportEditSaveFailure();
           });
         },
       },
@@ -4188,6 +6053,381 @@
     sel.addRange(range);
   }
 
+  // ── ⭐ 多格式复制与字面粘贴（`design/0077`）────────────────────────────
+  //
+  // 五条纪律（全文同款，改这里之前先读）：
+  // ① MIME 计划只在 `services/copyformats.js`（`INV-CLIPFMT-01`），本文件只负责取内容；
+  // ② 编辑态 HTML 只由 `render_preview`（同一份 comrak）产出，⛔ 前端不写 Markdown→HTML；
+  // ③ 阅读态不为了复制进入编辑态（`INV-CLIPFMT-05`）；没有会话源码就明确说拿不到；
+  // ④ 失败必须可见（失败条 / 状态条），⛔ 不先报成功、⛔ 不静默降级成别的格式；
+  // ⑤ 日志只记类别，⛔ 不记选中文本或剪贴板正文（`INV-CLIPFMT-07`）。
+
+  /** 当前复制语境：分栏编辑 / 就地编辑 / 阅读 / 无文档。 */
+  function clipboardMode() {
+    if (editor && editor.isMounted() && editor.raw()) return 'split';
+    if (live && live.isEditing() && live.activeView()) return 'live';
+    if (S.state.currentDoc) return 'reading';
+    return 'none';
+  }
+
+  /** 分栏编辑的精确选区；空选区 ⇒ `null`。 */
+  function splitClipSelection() {
+    const view = editor && editor.raw ? editor.raw() : null;
+    if (!view) return null;
+    const s = view.state.selection.main;
+    if (!s || s.from === s.to) return null;
+    const text = view.state.doc.sliceString(s.from, s.to);
+    if (!text) return null;
+    return { mode: 'split', from: s.from, to: s.to, text: text };
+  }
+
+  /** 就地编辑的精确选区；空选区 ⇒ `null`。 */
+  function liveClipSelection() {
+    const view = live && live.activeView ? live.activeView() : null;
+    if (!view || typeof view.selection !== 'function' ||
+        typeof view.selectedText !== 'function') return null;
+    const s = view.selection();
+    if (!s || s.anchor === s.head) return null;
+    const text = view.selectedText();
+    if (!text) return null;
+    return { mode: 'live', from: s.anchor, to: s.head, text: text, view: view };
+  }
+
+  /** 阅读态选区：必须非空且整段落在 `#doc` 内（⛔ 不含侧边栏 / 顶栏）。 */
+  function readingClipRange() {
+    const main = $('doc');
+    const sel = window.getSelection ? window.getSelection() : null;
+    if (!main || !sel || !sel.rangeCount) return null;
+    const range = sel.getRangeAt(0);
+    if (!range || range.collapsed) return null;
+    try {
+      if (!main.contains(range.commonAncestorContainer)) return null;
+    } catch (e) {
+      return null;
+    }
+    return range;
+  }
+
+  /** 某个 DOM 节点所在的块序号（向上找 `#doc` 的直接孩子）。 */
+  function slotIndexForNode(node) {
+    let cur = node;
+    const main = $('doc');
+    while (cur && cur !== main) {
+      const idx = slotIndexFromNode(cur);
+      if (idx !== null) return idx;
+      cur = cur.parentNode;
+    }
+    return null;
+  }
+
+  /** 选区覆盖的块序号区间（`liveSlots` 是唯一对齐表）。 */
+  function readingBlockRange(range) {
+    if (!range || !Array.isArray(liveSlots) || !liveSlots.length) return null;
+    let first = null;
+    let last = null;
+    for (let i = 0; i < liveSlots.length; i++) {
+      const slot = liveSlots[i];
+      if (!slot || !slot.block) continue;
+      let hit = false;
+      try {
+        hit = typeof range.intersectsNode === 'function'
+          ? range.intersectsNode(slot.node)
+          : (slot.node && (range.startContainer === slot.node ||
+              range.endContainer === slot.node));
+      } catch (e) {
+        hit = false;
+      }
+      if (!hit) continue;
+      const idx = slot.block.index;
+      if (first === null || idx < first) first = idx;
+      if (last === null || idx > last) last = idx;
+    }
+    if (first === null || last === null) {
+      // ⚠️ 选区端点落在块的**文字节点里**时 `intersectsNode` 一般会命中；
+      //    某些 WebKit 版本对部分边界返回假 ⇒ 用端点向上找一次兜底。
+      const a = slotIndexForNode(range.startContainer);
+      const b = slotIndexForNode(range.endContainer);
+      if (a === null && b === null) return null;
+      first = a === null ? b : a;
+      last = b === null ? a : b;
+    }
+    const lo = Math.min(first, last);
+    const hi = Math.max(first, last);
+    return { first: lo, last: hi };
+  }
+
+  /**
+   * 阅读态的 Markdown 源码（**按整块**）。
+   *
+   * ⚠️ 只有本次打开后进入过就地编辑、且会话缓存还在时才有源码：
+   *    阅读态载荷里没有源码（`DocumentPayload` 只有 HTML），前端也**不许反推**。
+   */
+  function readingSource(range) {
+    const full = live && typeof live.fullText === 'function' ? live.fullText() : null;
+    if (typeof full !== 'string' || !full) return null;
+    const blocks = live && typeof live.blocks === 'function' ? live.blocks() : null;
+    const span = readingBlockRange(range);
+    if (!span) return null;
+    return CF.sourceSnippet(full, blocks || [], span.first, span.last);
+  }
+
+  /** 阅读态选区 → 渲染后的 HTML（用户选中的那一块，不是整篇）。 */
+  function rangeHtml(range) {
+    const box = document.createElement('div');
+    box.appendChild(range.cloneContents());
+    return box.innerHTML;
+  }
+
+  /** 用**同一份 comrak** 渲染选中的 Markdown，只取 HTML。 */
+  async function renderSelectedHtml(markdown) {
+    copyRenderSeq += 1;
+    try {
+      const payload = await S.renderPreview(markdown, copyRenderSeq, null);
+      return (payload && typeof payload.html === 'string') ? payload.html : null;
+    } catch (e) {
+      // ⚠️ 只记类别与错误名，⛔ 不记正文（`INV-CLIPFMT-07`）。
+      console.error('复制：渲染选中内容失败（', (e && (e.name || e.message)) || 'unknown', '）');
+      return null;
+    }
+  }
+
+  /** 复制/粘贴失败的可见出口：失败条；⛔ 不静默。 */
+  function reportClipFailure(key, detail) {
+    raiseFail({
+      key: key,
+      level: 'P1',
+      scope: failScope(),
+      detail: detail || '',
+      area: 'clipboard',
+    });
+  }
+
+  function copyFailureKey(reason) {
+    if (reason === 'render-failed') return 'clip.copy.render-failed';
+    if (reason === 'denied') return 'clip.copy.denied';
+    if (reason === 'unsupported') return 'clip.copy.unsupported';
+    return 'clip.copy.failed';
+  }
+
+  /**
+   * 四个复制动作的唯一入口。
+   * @param {('markdown'|'html'|'plain'|'rich')} kind
+   */
+  async function copyAs(kind) {
+    if (!CF) {
+      // ⚠️ `services/copyformats.js` 没加载 = 看得见的坏（与 `I18N` 缺位同一条纪律）。
+      reportClipFailure(copyFailureKey('unsupported'), 'copyformats-module');
+      return;
+    }
+    const mode = clipboardMode();
+    if (mode === 'none') {
+      setStatusT('clip.copy.no-document', null);
+      return;
+    }
+    let sel = null;
+    if (mode === 'split') sel = splitClipSelection();
+    else if (mode === 'live') sel = liveClipSelection();
+    else {
+      const range = readingClipRange();
+      if (range) sel = { mode: 'reading', range: range };
+    }
+    if (!sel) {
+      setStatusT('clip.copy.no-selection', null);
+      return;
+    }
+
+    // 阅读态 Markdown 先看源码缓存——它决定 `checkCopy` 的 `hasSource`。
+    let source = null;
+    if (kind === 'markdown' && mode === 'reading') {
+      source = readingSource(sel.range);
+    }
+    const check = CF.checkCopy(kind, mode, true, !!source);
+    if (check !== 'ok') {
+      setStatusT('clip.copy.' + check, null);
+      return;
+    }
+
+    let payload = null;
+    let wholeBlock = false;
+    try {
+      if (kind === 'markdown') {
+        if (mode === 'reading') {
+          payload = { text: source.text };
+          wholeBlock = true;
+        } else {
+          payload = { text: sel.text };
+        }
+      } else if (mode === 'reading') {
+        const html = rangeHtml(sel.range);
+        payload = { text: CF.htmlToText(html, document), html: html };
+      } else {
+        const html = await renderSelectedHtml(sel.text);
+        if (!html) {
+          reportClipFailure(copyFailureKey('render-failed'), 'render-preview');
+          return;
+        }
+        payload = { text: CF.htmlToText(html, document), html: html };
+      }
+    } catch (e) {
+      reportClipFailure(copyFailureKey('failed'), 'build-payload');
+      return;
+    }
+
+    const entries = CF.writeEntries(kind, payload);
+    if (!entries) {
+      // 富文本/HTML 没有 HTML 内容 ⇒ 明确失败；⛔ 不退回纯文本。
+      if (kind === 'html' || kind === 'rich') {
+        reportClipFailure('clip.copy.no-html', 'empty-html');
+      } else {
+        reportClipFailure(copyFailureKey('failed'), 'empty-payload');
+      }
+      return;
+    }
+
+    const copier = CLIP && typeof CLIP.defaultFormatCopier === 'function'
+      ? CLIP.defaultFormatCopier() : null;
+    if (!copier) {
+      reportClipFailure(copyFailureKey('unsupported'), 'clipboard-module');
+      return;
+    }
+    let r = null;
+    try {
+      r = await copier.write(entries);
+    } catch (e) {
+      r = { ok: false, reason: 'failed' };
+    }
+    if (!r || !r.ok) {
+      reportClipFailure(copyFailureKey(r && r.reason), r && r.reason);
+      return;
+    }
+    if (wholeBlock) setStatusT('clip.copy.ok-markdown-block', null);
+    else setStatusT('clip.copy.ok-' + kind, null);
+  }
+
+  /** 字面粘贴的落点：就地编辑优先，其次分栏；阅读态没有落点。 */
+  function pasteTarget() {
+    if (live && live.isEditing() && live.activeView()) {
+      const view = live.activeView();
+      if (view && typeof view.paste === 'function') {
+        return { kind: 'live', view: view };
+      }
+    }
+    if (editor && editor.isMounted()) {
+      const view = editor.raw();
+      if (view) return { kind: 'split', view: view };
+    }
+    return null;
+  }
+
+  /** 分栏编辑：把文本原样插到当前选区（行尾已统一 LF）。 */
+  function insertLiteralSplit(view, text) {
+    if (!view || !view.state || !view.state.selection) return false;
+    const s = view.state.selection.main;
+    if (!s) return false;
+    const at = s.from;
+    view.dispatch({
+      changes: { from: s.from, to: s.to, insert: text },
+      selection: { anchor: at + text.length },
+    });
+    view.focus();
+    return true;
+  }
+
+  /**
+   * 粘贴为字面 Markdown 源码。
+   *
+   * ⚠️ 只读 `text/plain`，忽略剪贴板里的 HTML/RTF ⇒ 不存在「被富文本转换」的路径。
+   * ⚠️ 就地编辑走**既有** `machine.handle({type:'paste'})`（对象约束只有一份实现）。
+   */
+  async function pasteLiteral() {
+    if (!CF) {
+      // ⚠️ 与 `copyAs` 同一条纪律：纯逻辑模块没加载 = 看得见的坏。
+      reportClipFailure('clip.paste.unsupported', 'copyformats-module');
+      return;
+    }
+    const target = pasteTarget();
+    if (!target) {
+      setStatusT('clip.paste.no-editor', null);
+      return;
+    }
+    const copier = CLIP && typeof CLIP.defaultFormatCopier === 'function'
+      ? CLIP.defaultFormatCopier() : null;
+    if (!copier) {
+      reportClipFailure('clip.paste.unsupported', 'clipboard-module');
+      return;
+    }
+    let r = null;
+    try {
+      r = await copier.read();
+    } catch (e) {
+      r = { ok: false, reason: 'failed' };
+    }
+    if (!r || !r.ok) {
+      const key = (r && r.reason === 'denied') ? 'clip.paste.denied'
+        : (r && r.reason === 'unsupported') ? 'clip.paste.unsupported'
+          : 'clip.paste.failed';
+      reportClipFailure(key, r && r.reason);
+      return;
+    }
+    // ⚠️ 行尾统一 LF 是编辑缓冲的既有不变量；除此之外逐字插入（`INV-CLIPFMT-08`）。
+    const text = CF.normalizeNewlines(r.text);
+    if (!text) {
+      setStatusT('clip.paste.empty', null);
+      return;
+    }
+    let ok = false;
+    try {
+      if (target.kind === 'live') ok = target.view.paste(text) !== false;
+      else ok = insertLiteralSplit(target.view, text);
+    } catch (e) {
+      ok = false;
+    }
+    if (!ok) {
+      reportClipFailure('clip.paste.failed', 'insert');
+      return;
+    }
+    setStatusT('clip.paste.ok', null);
+  }
+
+  /**
+   * ⭐ `⌘Z` / `⇧⌘Z` 的落点（`bugs/0020` §8，2026-11-02）——**按语境分叉，⛔ 不跨层**：
+   *
+   * | 语境 | 落到哪 |
+   * |---|---|
+   * | 分栏编辑态 | CM6 自己的 `history()`（与 `historyKeymap` 同一份历史） |
+   * | 就地编辑态（`Viewing`） | 提交栈 `live.undo()` / `live.redo()`（层②，多块） |
+   * | 其余（阅读态 / 导航页） | 说一声，⛔ 不是无声 no-op |
+   *
+   * ⚠️ **就地编辑态走不到这里**：那一块在 `makeLiveView::onKeyDown` 里自己认领
+   *    （层① 块内 CM6 历史），⛔ 不能跨层。
+   * ⚠️ **搜索框 / 设置里的 `⌘Z` 也走不到这里**：`keymap.dispatch` 的 `ctx.editable()`
+   *    先挡掉，原生输入框的撤销照常（`bugs/0020` §6 的第 4 条验收）。
+   * ⚠️ 分栏编辑态通常**也走不到这里**（`historyKeymap` 在 CM6 默认优先级，转发的 `Prec.low`
+   *    排在它后面），但那一支必须留着：它是"转发真的进来时"的唯一正确落点。
+   */
+  function undoOrRedo(isRedo) {
+    // ⭐⭐ **覆盖层开着 ⇒ 不碰正文**（`bugs/0020` 评审 P1-3，2026-11-02）。
+    //    ⚠️⚠️ `keymap.dispatch` 只在 `ctx.editable()` 为真时整体让路，而它认的是
+    //    input / textarea / contenteditable；设置面板里被聚焦的是 **button / select**
+    //    ⇒ 那时 `⌘Z` 会一路走到这里，把**背后的正文**撤掉。用户以为自己只是在操作设置。
+    //    ⇒ 覆盖层自己的键（`Esc` / `Tab`）归它自己；`⌘Z` 在覆盖层里**不属于正文**。
+    if (overlayOpen()) return;
+    if (editor && editor.isMounted()) {
+      const view = editor.raw();
+      const CM6 = window.rmdCM6;
+      if (view && CM6) {
+        const ok = isRedo ? CM6.redo(view) : CM6.undo(view);
+        if (ok) view.focus();
+        return;
+      }
+    }
+    if (live && live.state() === 'viewing') {
+      liveSerial(function () { return isRedo ? live.redo() : live.undo(); });
+      return;
+    }
+    setStatusT(isRedo ? 'status.live-nothing-to-redo' : 'status.live-nothing-to-undo');
+  }
+
   /**
    * 磁盘上的文件变了，而就地编辑有**未写盘**的提交（§2.5 的最后两行）。
    * ⚠️ 与 `promptExternalChange` 分开：那一条救的是**分栏缓冲**，这一条救的是**提交栈**。
@@ -4238,7 +6478,11 @@
     const mods = K.modifiers(ev);
     const isEsc = ev.key === 'Escape';
     const isModEnter = mods.cmd && (ev.key === 'Enter' || ev.key === 'NumpadEnter');
-    if (!isEsc && !isModEnter) return;
+    if (!isEsc && !isModEnter) {
+      // ⭐⭐ 2026-11-10（`bugs/0306`）：焦点丢了，`Esc` / `⌘↵` 之外的键也要接得住。
+      refocusAndReplay(ev);
+      return;
+    }
     ev.preventDefault();
     ev.stopPropagation();
     if (isEsc) {
@@ -4251,6 +6495,49 @@
   }
 
   /**
+   * ⭐ `bugs/0306`：**当前活动块视图的键盘入口**（`makeLiveView` 里的 `onKeyDown`）。
+   *
+   * ⚠️ 为什么需要它：覆盖层的键**全挂在**那个离屏 textarea 上，焦点一旦落到
+   *    `body` / `#doc`（点过侧边栏、顶栏、另一个窗口，或 `input.focus()` 那一次没生效），
+   *    `⌫` / `⌦` / 打字**一个字节都收不到**——而自绘选区还亮着，用户看到的是
+   *    「整段选中了，删不掉」（2026-11-10 用户截图）。
+   * ⚠️ 兜底只许把这一下**交回** `onKeyDown`，⛔ 不许在这里另写映射（`INV-SET-01`）。
+   */
+  let liveKeySink = null;
+
+  /**
+   * ⭐⭐ **焦点丢了不丢键**（`bugs/0306`，2026-11-10）：把焦点抢回离屏 textarea，
+   * 并把这一下**原样交给** `onKeyDown`。
+   *
+   * ⚠️ 为什么是"交回"而不是"自己处理"：键位表只有 `onKeyDown` 那一条（`INV-SET-01`），
+   *    在这里写 `Backspace ⇒ deleteRange` 就是第二份键位表。
+   * ⚠️ 传进去的是**同一个事件对象**，所以修饰键 / `repeat` / `keyCode` 全都原样保留。
+   * ⚠️ 已知残留：普通字符这一下重放不出插入（字符走浏览器的 `beforeinput` / `input`，
+   *    不是 `keydown`）⇒ 丢**一个字符**，从下一个字符起正常；命令键（`⌫` / `⌦` /
+   *    方向 / 回车）当场生效。要把这个残留也补上就等于在兜底里再写一遍插入逻辑 ⇒ ⛔ 不做。
+   *
+   * @param {KeyboardEvent} ev
+   */
+  function refocusAndReplay(ev) {
+    // ⚠️ 修饰键只从 `K.modifiers()` 取（`INV-SET-01` 的源码级闸门）。
+    const mods = K.modifiers(ev);
+    // ⛔ 带 `⌘` / `⌃` 的是应用快捷键（它们有自己的分发器）⇒ 重放 = 同一次按键动两次。
+    if (mods.cmd || mods.ctrl) return;
+    // ⛔ 纯修饰键没有语义，⛔ 不抢焦点。
+    const k = ev.key;
+    if (k === 'Shift' || k === 'Control' || k === 'Alt' || k === 'Meta' || k === 'CapsLock') return;
+    const sink = liveKeySink;
+    if (typeof sink !== 'function') return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    const input = document.querySelector('textarea.cm-rmd-input');
+    if (input) {
+      try { input.focus({ preventScroll: true }); } catch (e) { input.focus(); }
+    }
+    sink(ev);
+  }
+
+  /**
    * ⭐ **阅读态那一次按下的手势**（`bugs/0042`）：`live.begin` 是异步的（`begin_edit` IPC
    * → 建视图），而 `mousedown` 的事件路径**当场就走完了** ⇒ 新视图的 `down()` 永远收不到它。
    * ⇒ 这里把 `{clientX, clientY, detail, shiftKey, at, released}` 记下来，由
@@ -4258,6 +6545,40 @@
    * ⚠️ `released` 是**必须**的：松手早于视图就绪时，⛔ 不许再启动一次悬空拖动。
    */
   let pendingDown = null;
+
+  /**
+   * ⭐ **正在排队 / 进行中的那一次进入**（`bugs/0333`）：`liveSerial` 是**串行**的，而一次
+   * 真正的双击会派**两对**鼠标事件、每一对都走一遍 `onLiveDocDown ⇒ live.begin`。
+   * 第二个 begin 轮到执行时，第一个已经把视图建好了 ⇒ 它必然走 `leave('switch')`：
+   * 提交 ＋ **整篇重渲** ＋ 换宿主，把第一个视图刚落下的词选冲掉 —— 用户看到的仍然是
+   * 「双击没选中」（离屏探针实测：`R3` 单次点击选 2…8，`R3b` 完整双击退化成 3…3）。
+   * ⇒ 同一个目标（块 / 格）的 begin **还在路上**时⛔ 不再排第二次：那一击的手势已经记在
+   * `pendingDown` 里，由在途的那一次建出来的视图接手（`selection.js` 按 `released`/`detail` 分流）。
+   * ⚠️ 目标不同（点了另一块）⇒ 照旧排队，`begin` 自己会先 `leave('switch')`。
+   */
+  let liveBeginKey = null;
+
+  /** 那一次 begin 的**排队时刻**：去重只在双击的量级内有效（见 `beginBusy`）。 */
+  let liveBeginAt = 0;
+
+  /** 一次进入的**目标标识**：块形态 `3:b`，单元格形态 `3:c1`。 */
+  function beginKeyOf(index, flat) {
+    return index + ':' + (Number.isInteger(flat) ? 'c' + flat : 'b');
+  }
+
+  /**
+   * ⭐ 同一目标的 begin 是不是**还在路上**（双击的第二下据此让路）。
+   * ⚠️ 时限 2 s：一次进入卡住（IPC 不回来）时⛔ 不许把这一块**永久**锁死——
+   * 超时之后下一次点击照旧能排新的 begin（哪怕它会走 `leave('switch')`）。
+   */
+  function beginBusy(key) {
+    return liveBeginKey === key && Date.now() - liveBeginAt < 2000;
+  }
+
+  /** 那一次 begin 落定（成功或失败）之后才允许排下一个。 */
+  function clearBeginKey(key) {
+    if (liveBeginKey === key) liveBeginKey = null;
+  }
 
   /** 记下一次按下，并挂一条一次性的 `mouseup` 把"已松开"标上。 */
   function noteDownGesture(ev) {
@@ -4310,6 +6631,18 @@
       liveSerial(function () { return leaveLive({ reason: reason }); });
       return true;
     }
+    // ⭐ `design/0047` §4.2：阅读态**链接可点、图片可缩放** ⇒ 点 `<a href>` / `<img>`
+    //    **不进入编辑**。
+    //    ⚠️ 必须排在**所有** `live.begin` 之前，也排在**表格**那一支之前——
+    //    §4.2 末句：「表格内单击不进编辑，但表格内链接仍可点」。
+    //    ⚠️ 这里**不 `preventDefault`**：链接跳转与看图都在各自的 `click` 委托里，
+    //    mousedown 上拦一下只会把它们依赖的原生那半掐掉（`bugs/0059`）。
+    //    ⚠️ 图的判据是**任意** `img`：`ImageViewer.zoomTarget` 只认本地可缩放的那一类，
+    //    而"点图片不进编辑"是阅读态的普遍承诺（`0047` §4.2）。
+    if (linkOf(ev.target) || (ev.target && typeof ev.target.closest === 'function' && ev.target.closest('img'))) {
+      leaveAway('link');
+      return;
+    }
     const node = topChildOf(ev.target, doc);
     if (!node) { leaveAway('blank'); return; }
     // ⚠️ 正在编辑的那一块内部由 `selection.js` 在 capture 期接走（它会 `stopPropagation`）
@@ -4327,11 +6660,19 @@
     //    ⚠️ `Table` 块本身仍然是 `editable = 0`，这里⛔ 不是把 Table 挪进白名单——
     //    单元格编辑是**另一条**入口（见 `block.editable !== true` 分支上方的注释）。
     if (block.kind === 'Table' && LCell) {
-      const td = cellFromTarget(ev.target, node);
+      // ⭐ **几何兜底**（`bugs/0066`）：`.doc table` 是 `display:block`，块盒子铺满正文宽度，
+      //    而里面那张匿名表按内容收缩 ⇒ 窄表右侧一大片**命中的是 `<table>` 元素本身**，
+      //    `cellFromTarget` 的 DOM 上溯一步都走不动。用户瞄准"行尾"点下去就落在这里。
+      //    ⚠️ 只在**目标不是格子**时才按坐标夹最近的一格（⛔ 不覆盖正常的格子命中）。
+      const td = cellFromTarget(ev.target, node)
+        || (typeof LCell.cellAtPoint === 'function'
+          ? LCell.cellAtPoint(node, ev.clientX, ev.clientY)
+          : null);
       if (!td) {
         // 点的是表格的边框 / 表头分隔线那一类"不是格子"的地方 ⇒ 给一条可执行的路。
         if (leaveAway('cell-structural')) return;
-        setStatusT('status.cell-hint', { accel: accelText('edit.toggle') }, true);
+        setStatusT('status.cell-hint', { accel: accelText('edit.toggle') });
+        diagNote('edit', 'cell-hint', '');
         return;
       }
       const spans = live.cellsOf(index);
@@ -4340,23 +6681,44 @@
       // ⚠️ 三条拒绝，三条都要**说出来**（§6）：⛔ 静默退回"结构块不能改"会让人以为是别的问题。
       if (!spans) {
         if (leaveAway('cell-pairing')) return;
-        setStatusT('status.cell-pairing', {}, true);
+        setStatusT('status.cell-pairing', {});
+        diagNote('edit', 'cell-pairing', '');
         return;
       }
       // ⚠️ 数量对不上 ⇒ ⛔ 不部分配对（`INV-CELL-06`）：错位一格 = 改的是**别的格子**，
       //    而且屏幕上完全看不出来。
       if (domCount !== spans.length || flat < 0) {
         if (leaveAway('cell-pairing')) return;
-        setStatusT('status.cell-pairing', {}, true);
+        setStatusT('status.cell-pairing', {});
+        diagNote('edit', 'cell-pairing', '');
         return;
       }
       ev.preventDefault();
+      // ⭐⭐ **点的就是正在编辑的这一格 ⇒ 只挪光标，⛔ 不重进**（`bugs/0069`）。
+      //    ⚠️ 重进的代价不是"慢一点"：`begin()` 先 `leave('switch')`——提交 ＋ **整篇重渲**＋
+      //    重新申请写授权 ＋ 换宿主，光标还要在重渲之后**重新**把屏幕坐标映射回新布局。
+      //    用户 2026-11-04 报的两条症状（「行尾无法插入光标」「使用 → 无法走到行尾」）
+      //    就是这么来的：点一下变成"重进"，落点被重渲打偏到最后一个字**之前**。
+      //    ⚠️ 格内右侧空白那一片正常由 `selection.js` 在 `mousedown` 的 capture 期接走
+      //    （`installMouse` 的 `hitArea`，见 `makeLiveView`）⇒ 走到这里的是**格外的死区**
+      //    （`bugs/0066` 的 16 px 容差里那一小条），这里补同一条口径。
+      const act = typeof live.activeCell === 'function' ? live.activeCell() : null;
+      if (act && act.blockIndex === index && act.flat === flat && live.isEditing()
+        && typeof live.focusPoint === 'function') {
+        live.focusPoint({ x: ev.clientX, y: ev.clientY });
+        return;
+      }
       // ⭐ 这次按下可能一路拖下去（`bugs/0042`）：把手势带过 `live.begin` 的异步边界。
       noteDownGesture(ev);
+      // ⭐ 同一格的 begin 还在路上（双击的第二下，`bugs/0333`）⇒ ⛔ 不排第二次，见 `beginBusy`。
+      const key = beginKeyOf(index, flat);
+      if (beginBusy(key)) return;
+      liveBeginKey = key;
+      liveBeginAt = Date.now();
       const point = { x: ev.clientX, y: ev.clientY };
       liveSerial(function () {
         return live.begin({ index: index, block: block, el: td, cell: { flat: flat }, point: point });
-      });
+      }).then(clearBeginKey.bind(null, key), clearBeginKey.bind(null, key));
       return;
     }
     if (block.editable !== true) {
@@ -4364,7 +6726,8 @@
       //    ⚠️ 键位从后端那张表现取，⛔ 不写字面量（`INV-SET-01`）。
       //    ⚠️ 正在编辑另一块时**先退出**——提交会写一条状态，那条提示留到阅读态才有意义。
       if (leaveAway('structural')) return;
-      setStatusT('status.live-structural', { accel: accelText('edit.toggle') }, true);
+      setStatusT('status.live-structural', { accel: accelText('edit.toggle') });
+      diagNote('edit', 'live-structural', '');
       return;
     }
     // ⚠️ 只拦**我们自己要处理的那一次点击**：`preventDefault` 让 `#doc` 不把焦点交给
@@ -4372,10 +6735,15 @@
     ev.preventDefault();
     // ⭐ 同格子那一条：这次按下可能一路拖下去（`bugs/0042`）。
     noteDownGesture(ev);
+    // ⭐ 同一块的 begin 还在路上（双击的第二下，`bugs/0333`）⇒ ⛔ 不排第二次，见 `beginBusy`。
+    const key = beginKeyOf(index, null);
+    if (beginBusy(key)) return;
+    liveBeginKey = key;
+    liveBeginAt = Date.now();
     const point = { x: ev.clientX, y: ev.clientY };
     liveSerial(function () {
       return live.begin({ index: index, block: block, el: node, point: point });
-    });
+    }).then(clearBeginKey.bind(null, key), clearBeginKey.bind(null, key));
   }
 
   /** 编辑面的接线（按钮 / 分隔条 / 自证）。⚠️ 在 `setupKeys()` **之后**调一次。 */
@@ -4499,6 +6867,13 @@
     //    ⚠️ 用的就是 `design/0006` §6.1 那一份实现（`captureAnchor` / `resolveAnchor`），
     //    ⛔ 这里不另写一份——两条路的锚点语义必须同一个。
     const prevAnchor = o.keepScroll ? (o.anchor || captureAnchor()) : null;
+    // ⭐ `bugs/0077` §5-4（2026-11-05）：与锚点**同一时刻、同一棵树**量一次图片渲染盒。
+    //    ⚠️ 换树之后新 `<img>` 的固有尺寸要等解码才知道，在那之前高度≈0 ⇒
+    //    上方几张图的高度整块缺席，视口先跳一次、落定后 `correctKeepScroll` 再跳回来
+    //    ——用户看到的就是"点一下打勾，页面跳了"。把上一次的盒子交给 `renderImages`
+    //    当**占位比例**用，"先塌再撑"就不存在了（锚点校正仍然留着兜底）。
+    //    ⚠️ 只在这条重渲路上量：首次打开文档没有"上一次"可抄，也不该有。
+    const prevImgBoxes = o.keepScroll ? captureImageBoxes(doc) : null;
     const imgStatBefore = null; void imgStatBefore;
 
     // ⭐ **T5**：DOM 解析 + 建节点。
@@ -4520,6 +6895,17 @@
     };
     let t5 = span(function () { doc.innerHTML = payload.html; });
     doc.setAttribute('aria-busy', 'false');
+    // ⭐ `design/0079`：**新正文挂上来之后**重算行号表（必须在 `innerHTML` 之后，
+    //    否则量的是上一棵 DOM）。⚠️ 对齐失败 ⇒ 表为空、整篇不显示（`INV-VIEW-02`），
+    //    ⛔ 不抛错、⛔ 不挡住下面的图片与滚动恢复。
+    refreshLinePlan(payload);
+    applyLineNumbersNow();
+    // ⭐ `bugs/0077` §5-4：**先占住图片盒，再算滚动位置**。
+    //    ⚠️ 顺序是这条修复的全部要点：下面那次 `resolveAnchor` 量的是**版面**，
+    //    新树里的 `<img>` 此刻还没有字节（高度≈0）⇒ 位置会算小，图片一长出来又得补
+    //    第二次（用户看到的就是"打勾之后页面跳了"）。占住之后，这一次就是最终位置。
+    //    ⚠️ 占位几何只算一份（`ImageView.holdBoxes`），⛔ 这里不重算。
+    if (prevImgBoxes) ImageView.holdBoxes(doc, prevImgBoxes);
     if (o.keepScroll && !o.anchor) {
       // ⭐ 渲染完再把它还原成位置（`resolveAnchor` 自己夹到新的可滚范围里）。
       //    ⚠️ 走 `hostSetTop`（⛔ 不 `doc.scrollTop = …`）：编辑态这一次写必须**被同步
@@ -4527,6 +6913,21 @@
       const m = scrollMetrics();
       const r = R.resolveAnchor(prevAnchor, headingPositions(), m.scrollHeight, m.clientHeight);
       hostSetTop(r.scrollTop);
+      // ⭐ `bugs/0077`：新树里的 `<img>` 此刻高度≈0 ⇒ 上面这个位置**偏小**。
+      //    记下来，等 `onSettled`（图片真的进了布局）后按**同一个锚点**再算一次；
+      //    代次/路径/用户接管三闸都在 `correctKeepScroll` 里。
+      keepScrollFix = {
+        mountGen: mountGen,
+        path: payload.real_path || '',
+        anchor: prevAnchor,
+        appliedTop: r.scrollTop,
+        expires: Date.now() + RESTORE_EXPIRES_MS,
+        userAborted: false,
+      };
+    } else {
+      // ⚠️ 打开新文档 / 调用方自己还原（`o.anchor`）的路不走这条校正：
+      //    前者本来就回顶部，后者的锚点是"读盘之前"记的，归 `restoreAnchor` 管。
+      keepScrollFix = null;
     }
 
     // 图片：路线 A（`read_asset`）或占位（未授权 / 远程 / 缺失）——见 ImageView 的头注释
@@ -4541,7 +6942,12 @@
       //    所以重渲不会把缓存判成"换了文档"。
       docKey: payload.real_path || '',
       onChooseDirectory: onChooseDirectory,
-      onSettled: function () { correctReadingProgress(mountGenNow); },
+      // ⭐ `bugs/0077` §5-4：重渲前的图片盒（只在 `keepScroll` 路上非空）。
+      prevBoxes: prevImgBoxes,
+      onSettled: function () {
+        correctReadingProgress(mountGenNow);
+        correctKeepScroll(mountGenNow);
+      },
     });
 
     // ⭐ **T5b**：强制布局。⚠️ 读 `offsetHeight` 会同步触发 layout——
@@ -4577,8 +6983,10 @@
     if (!o.keepScroll) window.scrollTo(0, 0);
 
     // 当前项高亮（至多一个）
+    // ⭐ `design/0082`：草稿**没有路径**（`real_path` 是空串）⇒ ⛔ 不进树：
+    //    `setCurrent("")` 会把树上那个真的当前项的高亮抹掉，`revealInTree("")` 更是空转。
     S.state.currentPath = payload.real_path;
-    if (tree) {
+    if (tree && !payload.draft) {
       tree.setCurrent(payload.real_path);
       // ⚠️ 同样**不 await**：正文已经挂好了，定位慢不该拖着这一帧。
       // ⚠️ 文档**没换**时不定位（`noReveal`）——重渲时它只是白干活，见 `opts` 的说明。
@@ -4587,7 +6995,8 @@
 
     const summary =
       t('status.summary', {
-        path: payload.real_path,
+        // ⭐ 草稿没有路径可显示：说「未命名」（`design/0082`）。
+        path: payload.draft ? t('doc.untitled') : payload.real_path,
         src: humanBytes(payload.source_bytes),
         html: humanBytes(payload.html_bytes),
         ast: payload.ast_nodes,
@@ -4608,6 +7017,9 @@
       //   而它的失效形态是"那一句永远不出现、屏幕上一切正常"。
       //   ⭐ `design/0025`：译文由**这里**注入（`RS` 在 Node 里也要能 `require`，⛔ 不抓 `window`）。
       RS.codeNotice(payload, t) +
+      // ⭐ `design/0060`：Mermaid 没画出来的张数（逐块原因在文内那句 `rmd-diagram-note`）。
+      //   ⚠️ 与上一条同一条纪律：判定与文案在 `services/renderstat.js`，这里只接线。
+      RS.mermaidNotice(payload, t) +
       // ⭐ 2026-10-29 代码评审第 5 条：**提交 = 整篇重渲**的文档级成本。
       //   单块上限（`LIVE_MAX_LINES`）管的是"这一块多大"，管不到"这份文档多大"——
       //   实测 XL 三份语料一次重渲 **1245 / 2660 / 3745 ms**（L-plain 也有 401）。
@@ -4623,7 +7035,7 @@
         },
         t
       );
-    setStatusFn(function () { return summary; }, false);
+    setStatusFn(function () { return summary; });
 
     // ⚠️ 暴露给将来用：批 2 在这里量 T5/T5b 并做 `supportedEntryTypes` 的运行时探测。
     window.__rmd = { payload, images: imgStat };
@@ -4645,6 +7057,19 @@
     //   ⚠️ 它必须在 `innerHTML` **之后**（此前 `getDoc()` 指向的还是旧的那棵树）。
     noteLive(payload);
 
+    // ⭐ `design/0070` §2.3.1 ②：**文档身份换了** ⇒ 上一份的 `doc:` 失败收起；
+    //    而"打开失败"这条一旦这份文档真的挂上来了就该作废——留着会变成一句
+    //    **已经过期的报错**（用户右侧已经在读它，顶部还写着"打不开"）。
+    syncFailScope();
+    if (failBar) {
+      const cur = failBar.current();
+      if (cur && cur.key === 'status.open-failed') failBar.close();
+    }
+
+    // ⭐ `design/0083` §2.3：打开 / 自动重载 / 草稿首次挂载**都经过这里** ⇒ 标题在这里贴一次。
+    //    ⚠️ 预览重渲（`keepScroll`）也会走到：那时名字没变，`syncWindowTitle` 按值跳过。
+    syncWindowTitle();
+
     return { t5_ms: t5.ms, t5b_ms: t5b.ms };
   }
 
@@ -4663,24 +7088,172 @@
    *    · 再 flush 在跑的写（`design/0020` §2.3 ③(c)）——必须**赶在代次变之前**落地，
    *      否则这次写必然 `stale`，上一棵树的展开态就白记了。
    *
-   * @returns {Promise<object>} 新快照；⚠️ 失败会**throw**（`StartScreen` 据此标 `data-missing`）
+   * @returns {Promise<{ok:boolean, failedAt?:string, note?:object|null, err?:Error,
+   *                    section?:string, snap?:object}>} ⚠️ **从不拒绝**（`design/0070` §2.4）——
+   *   失败用 `{ok:false, failedAt}` 回答，由 `StartScreen` 按段落容器。
    */
   async function onOpenRecentDirectory(root) {
     if (dirRestorer) dirRestorer.cancel('root-changed');
     if (dirWriter) await dirWriter.flush();
-    // ⚠️ 失败**不在这里吞**：状态条那句话由 `startScreen` 的 `onError` 写（它也是唯一
-    //    知道"是哪一行"的地方），异常必须继续抛出去——吞掉的话行就不会变灰（`INV-START-07`）。
-    const snap = await S.openRecentDirectory(root);
+    let snap;
+    try {
+      snap = await S.openRecentDirectory(root);
+    } catch (e) {
+      // ⭐ §2.4 段 1：**这个目录**打不开 ⇒ 段内联。⚠️ 最近行不标灰——
+      //    "够不着"这个状态只属于收藏（收藏行留着，用户可能会去改它）。
+      return {
+        ok: false, failedAt: 'document', section: 'recent', err: e,
+        note: {
+          key: 'status.recent-not-found',
+          vars: { dir: root },
+          detail: [e.wording || e.message || '', root].filter(Boolean).join(' · '),
+          retry: function () {
+            // ⚠️ 重试**重新走整条链**（含授权）；只回答"成没成"。
+            return onOpenRecentDirectory(root).then(function (r) { return !!(r && r.ok !== false); },
+              function () { return false; });
+          },
+        },
+      };
+    }
     // 目录模式下没有"当前文档"：显式空态，⛔ 不自动打开第一个文件（§2.1）。
     // ⚠️ 这一步会**重画启动页**（`showDocEmpty` 的唯一挂载点）⇒ 表里的顺序/`last`
     //    标记用的是**刚回来的快照**，不是点之前那一份。
     showDocEmptyT('doc.empty-choose');
     setDirectoryStatus();
     sidebar.setTab('tree');
-    await renderSidebar();
+    // ⭐ §2.4 段 3：刷新失败**不归**"这个目录打不开"——目标已经授权并进来了，
+    //    坏的是侧边栏那份清单 ⇒ 中性提示 ＋ `docListDirty` 自动重试，行与段都不变。
+    try {
+      await renderSidebar();
+    } catch (e) {
+      return { ok: false, failedAt: 'refresh', section: 'recent', err: e };
+    }
     // ⚠️ 用 `snap`（⛔ 不是再读一次 `S.state`）：返回值与镜像在同一个提交点，
     //    而恢复流程可能在这之后立刻把 `lastDirectory` 改掉。
-    return snap;
+    return { ok: true, snap: snap };
+  }
+
+  /**
+   * ⭐ `design/0071` §3：打开面板（`⌘O`）选中一行之后干什么。
+   *
+   * 三种行、三条来路：
+   *   · `browse` —— 就是老的两个入口（系统目录面板 / 系统文件面板），原样转过去；
+   *   · `dir` —— 与启动页点一行**同一条**（`onOpenRecentDirectory`，`INV-OPEN-02`）；
+   *   · `file` —— ⚠️ **必须先授权它所在的那个根**：`open_document` 无条件过
+   *     `check_readable`，而一条最近记录**不是授权**（`INV-FS-03`）。
+   *     ⇒ 先 `onOpenRecentDirectory(root)`（后端 `open_recent_directory` 才写授权），
+   *     再在**同一个根**里打开那份文件。⛔ 不存在"直接打开最近文件"的第二条路。
+   *     ⭐ 进目录的收尾会顺手恢复上次那份文档（`dirRestorer`）——它恢复的正是这一份
+   *     时（`currentPath === row.path`）就**不要再开一次**（重复打开会把阅读进度、
+   *     历史栈都搅一遍）。
+   *
+   * ⚠️ 失败落在 **`#fail-bar`**（`design/0070` / 本稿 §7）：用户发起于面板，而面板
+   *    选中即关，屏幕上没有"那一行"可内联。
+   */
+  async function onOpenPanelPick(row) {
+    if (!row || typeof row !== 'object') return;
+    if (row.kind === 'browse') {
+      if (row.target === 'dir') await onChooseDirectory();
+      else await onChooseFile();
+      return;
+    }
+    if (row.kind === 'dir') {
+      const res = await onOpenRecentDirectory(row.root);
+      if (res && res.ok === false) reportOpenPanelFailure(res);
+      return;
+    }
+    if (row.kind !== 'file') return;
+    const res = await onOpenRecentDirectory(row.root);
+    if (res && res.ok === false) { reportOpenPanelFailure(res); return; }
+    if (S.state.currentPath === row.path) return;   // 恢复流程已经打开了这一份
+    await openDocument(row.path);
+  }
+
+  /**
+   * 面板里那一行的失败出口（`design/0070` 的全局条 ＋ 本稿 §7 的"数据过期"那一行）。
+   * @param {{ok:boolean, failedAt?:string, note?:object|null, err?:Error}} res
+   */
+  function reportOpenPanelFailure(res) {
+    if (!res || res.ok !== false) return;
+    // `note === null` = 已由别处报告（`openDocument` 的全局条）。
+    if (res.note === null) return;
+    if (res.note && res.note.key) {
+      raiseFail({
+        key: res.note.key,
+        vars: res.note.vars || {},
+        level: 'P1', scope: { kind: 'none' }, area: 'open',
+        detail: res.note.detail || '',
+        actions: res.note.retry ? [{ label: 'fail.retry', run: res.note.retry }] : [],
+      });
+      return;
+    }
+    // 刷新侧边栏失败（`design/0070` §2.2 末行）：目标已经授权并进来了，
+    // 坏的是侧边栏那份清单 ⇒ 中性提示，⛔ 不进全局条（与启动页同一口径）。
+    const msg = (res.err && (res.err.wording || res.err.message)) || '';
+    setStatusT('doclist.failed', { msg: msg });
+    diagNote('open-panel', 'doclist.failed', msg);
+  }
+
+  /**
+   * ⭐ `design/0082` §2.1 ②：`⌘N` = **新建一份未命名文档**（VSCode / Sublime 的"先建后存"）。
+   *
+   * # 这条**取代**了 `design/0071` §4 的「必须先有已授权目录」
+   *
+   * · 打开着目录时也**一律**是草稿（用户 2026-11-15 裁定）：在目录里直接建文件仍走
+   *   侧边栏右键 / 就地输入行（`create_entry` 那条路一个字节没动）。
+   * · `new_untitled` 是**读取命令**：⛔ 零写盘（`INV-OPEN-06`）；落盘只有 `save_untitled` 一条
+   *    （`INV-EDIT-10` 的 ②）。
+   * · 草稿**只活在编辑态**（不提供阅读态）：挂上正文直接进编辑，用户敲完按 `⌘S` 才问落点。
+   *
+   * # 顺序（同样是"不能换"的那一堆）
+   *
+   * ① 覆盖层开着 ⇒ 不做事（在别人的焦点里换文档是抢焦点，与 `historyGo` 同一条口径）；
+   * ② **脏闸**：`gateSwitchDoc`（与 `openDocument` **同一份判据**，⛔ 各写一份）；
+   * ③ 冲刷阅读进度 / 作废在跑的恢复 / 冲刷目录会话——与打开一份真实文档同一条纪律，
+   *    理由在 `openDocument` 那几段里（⛔ 不在这里重抄）；
+   * ④ 后端建草稿 → 提交点 → `mountDocument`（按 `draft` 分流：不碰树、不碰监视、不写进度）；
+   * ⑤ `enterEdit()`。
+   *
+   * ⛔ **不建监视、不写阅读进度、不进目录会话的 `last_file`**：草稿没有路径，
+   * 而那些记录全以路径为键（`design/0082` §1.1）。
+   *
+   * @returns {Promise<void>}
+   */
+  async function onNewFile() {
+    if (overlayOpen()) return;
+    // 问句里"那份有未保存修改的字"叫什么：草稿说「未命名」，真实文档说文件名。
+    const name = isDraftDoc() ? t('doc.untitled') : baseName(S.state.currentPath || '');
+    // ⚠️ `proceed` 是**重入本函数**：用户选了"保存并继续"之后，脏标记要先被清掉，
+    //    第二趟才落到下面正常建草稿（与 `openDocument` 那条重入同形）。
+    if (!(await gateSwitchDoc(name, onNewFile))) return;
+    await flushReadingProgress();
+    if (dirRestorer) dirRestorer.cancel('user-open');
+    if (dirWriter) await dirWriter.flush();
+
+    let out;
+    try {
+      out = await S.newUntitled();
+    } catch (e) {
+      // ⭐ `design/0070`：用户按了 `⌘N` 却什么也没发生 ⇒ 失败条（P1）＋ 重试 ＋ 详情。
+      const msg = (e && (e.wording || e.message)) || '';
+      raiseFail({
+        key: 'fail.new.unavailable',
+        level: 'P1',
+        scope: { kind: 'none' },
+        area: 'new',
+        detail: msg,
+        actions: [{ label: 'fail.retry', run: function () { return onNewFile(); } }],
+      });
+      return;
+    }
+    // ⛔ 被更新的请求顶掉（这期间用户又开了别的）：什么都不做，那份会自己挂。
+    if (!out.payload) return;
+    // ⭐ 与打开真实文档**同一个**正文提交点（`design/0002` §7.3.2 的 T5/T5b 口径不变）。
+    mountDocument(out.payload);
+    // 草稿的排障线：号是对的、盘上什么都没有（`INV-OPEN-06` 的反面证据）。
+    diagNote('new', 'draft', '#' + out.payload.draft);
+    // ⭐ 草稿只活在编辑态：挂上就进（失败由 `enterEdit` 自己报：自检 / 失败条 / 重试都在那儿）。
+    await enterEdit();
   }
 
   /**
@@ -4689,27 +7262,135 @@
    *
    * ⚠️ 顺序照抄 `onOpenRecentDirectory`（一条都不能省）：
    *    · 先作废在跑的恢复；再 flush 在跑的写（必须赶在代次变之前落地）。
-   * ⚠️ 收藏可能是**目录**也可能是**文件**（Add 时只允许这两种）⇒ 按后端快照的 `mode` 分派，
-   *    目录走"空态 + 树"，文件走 `openDocument`（⛔ 前端不自己猜类型）。
-   * ⚠️ 失败**不在这里吞**：`StartScreen` 的行变灰与状态条那句都由它那条路负责（`INV-START-07`）。
+   * ⚠️ 收藏可能是**目录**也可能是**文件**（Add 时只允许这两种）⇒ 按后端快照里的
+   *    `opened_favorite` 分派（`bugs/0301`）：目录走"空态 + 树"，文件走 `openDocument`。
+   *    ⛔ **别改回判 `snap.mode === 'directory'`**——`mode()` 判 `roots` 优先，正开着目录时
+   *    点一条文件收藏 `mode` 仍是 `"directory"`，会走空态分支把 `startup_document` 丢掉。
+   *    ⛔ 前端不自己猜类型（后缀、收藏表里像不像文件）。
+   * ⚠️ 失败**不在这里吞、也不在这里用拒绝表达**（`design/0070` §2.4）：本函数把
+   *    "哪一段坏了"原样交回去，行标灰与段内联由 `StartScreen` 按 `failedAt` 决定。
    *
-   * @returns {Promise<object>} 新快照
+   * @returns {Promise<{ok:boolean, failedAt?:string, note?:object|null, err?:Error,
+   *                    section?:string, snap?:object}>} ⚠️ **从不拒绝**（`design/0070` §2.4）
    */
   async function onOpenFavorite(path) {
     if (dirRestorer) dirRestorer.cancel('root-changed');
     if (dirWriter) await dirWriter.flush();
-    const snap = await S.openFavorite(path);
-    if (snap && snap.mode === 'directory') {
+    let snap;
+    try {
+      snap = await S.openFavorite(path);
+    } catch (e) {
+      // ⭐ §2.4 段 1：**这条收藏**打不开（授权/目标不可达）⇒ 行标灰 ＋ 段内联。
+      return {
+        ok: false, failedAt: 'favorite', section: 'favorite', err: e,
+        note: {
+          key: 'status.favorite-open-failed',
+          vars: { dir: path },
+          detail: [e.wording || e.message || '', path].filter(Boolean).join(' · '),
+          retry: function () {
+            return onOpenFavorite(path).then(function (r) { return !!(r && r.ok !== false); },
+              function () { return false; });
+          },
+        },
+      };
+    }
+    const act = ST.favoriteOpenAction(snap);
+    if (act.kind === 'directory') {
       showDocEmptyT('doc.empty-choose');
       setDirectoryStatus();
       sidebar.setTab('tree');
-      await renderSidebar();
-      return snap;
+      try {
+        await renderSidebar();
+      } catch (e) {
+        return { ok: false, failedAt: 'refresh', section: 'favorite', err: e };
+      }
+      return { ok: true, snap: snap };
     }
     // 单文件：与 `onChooseFile` 同一条提交路径（版本/身份复核、监视切换都在里面）。
-    if (snap && snap.startup_document) await openDocument(snap.startup_document);
-    await renderSidebar();
-    return snap;
+    if (act.kind === 'file' && act.path) {
+      const p = await openDocument(act.path);
+      if (!p) {
+        // ⭐ §2.4 段 2：打开文档失败**已经由 `openDocument` 报过**（P1 全局条 ＋ 重试）⇒
+        //    `note: null`，⛔ 不在这里补第二句。
+        // ⚠️ `null` 也可能只是"用户在脏内容对话框里放弃了切换"——那时没有任何失败，
+        //    同样不标灰、不补话（行照旧可点）。
+        try {
+          await renderSidebar();
+        } catch (e) {
+          return { ok: false, failedAt: 'refresh', section: 'favorite', err: e };
+        }
+        return { ok: false, failedAt: 'document', section: 'favorite', note: null };
+      }
+    }
+    try {
+      await renderSidebar();
+    } catch (e) {
+      return { ok: false, failedAt: 'refresh', section: 'favorite', err: e };
+    }
+    return { ok: true, snap: snap };
+  }
+
+  /**
+   * ⭐ `design/0071` §5 / `design/0068` §2.4：启动页右键「在新窗口中打开」的**落点**。
+   *
+   * `StartScreen` 保持"本文件不碰 IPC"（与 `onUnfavorite` / `onForgetRecent` 同一条纪律），
+   * 只把**原串**（收藏的 `path` / 最近目录的 `root`）＋ `kind` 交到这里。建窗、插入空会话
+   * 与「待处理导航」全在后端（`open_in_new_window` 先做**字面成员检查**——那不是授权）。
+   * ⚠️ 新窗口真正去开那个目标的是**它自己的 `main.js`**（`takePendingNavigation`）；
+   *    本窗口除了多出一个窗口之外，文档 / 授权 / 状态都不动。
+   * ⚠️ 失败必须可见（状态条）：点了菜单却什么都没发生，是最难自查的一类。
+   */
+  async function openInNewWindow(kind, value) {
+    try {
+      await T.call('open_in_new_window', { kind: kind, value: value });
+    } catch (e) {
+      const msg = (e && (e.wording || e.message)) || '';
+      setStatusT('status.new-window-failed', { msg: msg });
+      diagNote('start', 'status.new-window-failed', msg || String(value || ''));
+    }
+  }
+
+  /**
+   * ⭐ `design/0071` §5：新窗口在启动流程**末尾**取一次「待处理导航」。
+   *
+   * 旧窗口右键「在新窗口中打开」⇒ 后端建窗时把 `{kind, value}` 塞进**这个新窗口**的会话；
+   * 新窗口起来后自己取走（`take_pending_navigation` 读取即清除），再走**既有**的打开入口：
+   *   · 最近目录 ⇒ `onOpenRecentDirectory`（后端 `open_recent_directory` 才写授权）；
+   *   · 收藏 ⇒ `onOpenFavorite`（后端 `open_favorite` 才写授权）。
+   * ⚠️ 新窗口**不继承任何权限**（`INV-OPEN-02` / Q40）——授权只发生在下面这一次调用里。
+   * ⚠️ 任何失败**只记 `console.error`**：这是启动路径上的旁支，⛔ 不弹窗、⛔ 不改状态、
+   *    ⛔ 不让"新窗口没能打开那个目标"变成一条盖在空白页上的全局失败条。
+   * ⚠️ 只跑一次：`take_pending_navigation` 本身读后即清，但启动重入时再取一次是白取一条 IPC。
+   */
+  let pendingNavTaken = false;
+  async function takePendingNavigation() {
+    if (pendingNavTaken) return;
+    pendingNavTaken = true;
+    let nav;
+    try {
+      nav = await T.call('take_pending_navigation');
+    } catch (e) {
+      console.error('take_pending_navigation failed:', e);
+      return;
+    }
+    const p = WN && typeof WN.plan === 'function' ? WN.plan(nav) : null;
+    if (!p) return;   // 没有待处理导航 / 形状不认识 ⇒ 启动路径一切照旧
+    try {
+      // ⚠️ 走**既有**入口（`INV-OPEN-04`）：它们内部用 `{root}` / `{path}` 调授权命令，
+      //    并把快照提交进镜像。直接 `T.call(p.cmd, …)` 会让界面停在导航页（镜像没更新）。
+      const res = p.cmd === 'open_recent_directory'
+        ? await onOpenRecentDirectory(p.value)
+        : await onOpenFavorite(p.value);
+      if (res && res.ok === false) {
+        console.error(
+          'pending navigation failed:',
+          p.cmd,
+          (res.err && (res.err.wording || res.err.message)) || ''
+        );
+      }
+    } catch (e) {
+      console.error('pending navigation failed:', p.cmd, e);
+    }
   }
 
   /**
@@ -4717,19 +7398,34 @@
    *
    * ⚠️ 目标路径**原样回传**（后端 `favorites_apply` 要逐字比对）；⚠️ 失败**必须可见**
    * （状态条一句）——否则用户会以为点中了，"收藏着却看不见"最难自查。
+   * ⭐ `design/0070`：失败改走**全局失败条**（P1）＋ 重试——用户点了没反应，
+   * 而"点中了但没收藏上"是最难自查的一类。
    */
   async function toggleFavoriteFromUi(path) {
     let res;
     try {
       res = await S.toggleFavorite(path);
     } catch (e) {
-      setStatusT('status.favorite-failed', { msg: e.wording || e.message }, true);
-      return;
+      raiseFail({
+        key: 'status.favorite-failed',
+        vars: { msg: e.wording || e.message },
+        level: 'P1',
+        scope: failScope(),
+        area: 'favorite',
+        detail: [e.wording || e.message, path || ''].filter(Boolean).join(' · '),
+        actions: [{
+          label: 'fail.retry',
+          run: function () { return toggleFavoriteFromUi(path); },
+        }],
+      });
+      return false;
     }
     if (res && res.applied) {
       setStatusT(S.isFavorite(path) ? 'status.favorited' : 'status.unfavorited', {});
       repaintStart();
+      return true;
     }
+    return false;
   }
 
   /**
@@ -4745,13 +7441,16 @@
     try {
       res = await S.removeRecent(root);
     } catch (e) {
-      setStatusT('status.recent-clear-failed', { msg: e.wording || e.message }, true);
+      // ⭐ `design/0070` §2.2：这是**启动页最近段**上的动作 ⇒ 段级内联（锚点就在那张表）。
+      noteStartFailure('recent', 'status.recent-clear-failed', { msg: e.wording || e.message },
+        function () { return forgetRecentFromUi(root); });
       console.error('从「最近的目录」移除失败：', root, e);
-      return;
+      return false;
     }
-    if (res && res.applied === false) return;
+    if (res && res.applied === false) return false;
     repaintStart();
     setStatusT('status.recent-removed', {});
+    return true;
   }
 
   /**
@@ -4766,13 +7465,15 @@
     try {
       res = await S.clearRecent();
     } catch (e) {
-      setStatusT('status.recent-clear-failed', { msg: e.wording || e.message }, true);
+      noteStartFailure('recent', 'status.recent-clear-failed', { msg: e.wording || e.message },
+        function () { return clearRecentFromUi(); });
       console.error('清空「最近的目录」失败：', e);
-      return;
+      return false;
     }
-    if (res && res.applied === false) return;
+    if (res && res.applied === false) return false;
     repaintStart();
     setStatusT('status.recent-cleared', {});
+    return true;
   }
 
   /** 用户点了「打开目录」（按钮 / `Cmd+O` / 未授权态里那个按钮）。 */
@@ -4785,7 +7486,17 @@
     try {
       await S.chooseDirectory();
     } catch (e) {
-      setStatusT('status.choose-dir-failed', { msg: e.wording || e.message }, true);
+      // ⭐ `design/0070`：打开目录是**用户发起**的动作 ⇒ 全局失败条（P1）＋ 重试。
+      raiseFail({
+        key: 'status.choose-dir-failed',
+        vars: { msg: e.wording || e.message },
+        level: 'P1', scope: { kind: 'none' }, area: 'choose',
+        detail: [e.wording || e.message, e.path || ''].filter(Boolean).join(' · '),
+        actions: [{ label: 'fail.retry', run: function () {
+          return onChooseDirectory().then(function () { return !!(S.state.roots && S.state.roots.length); },
+            function () { return false; });
+        } }],
+      });
       return;
     }
     // 目录模式下没有"当前文档"：显式空态，⛔ **不自动打开第一个文件**（§2.1）
@@ -4809,7 +7520,16 @@
     try {
       snap = await S.chooseFile();
     } catch (e) {
-      setStatusT('status.choose-file-failed', { msg: e.wording || e.message }, true);
+      // ⭐ `design/0070`：同「打开目录」——用户发起的动作，失败条 ＋ 重试。
+      raiseFail({
+        key: 'status.choose-file-failed',
+        vars: { msg: e.wording || e.message },
+        level: 'P1', scope: { kind: 'none' }, area: 'choose',
+        detail: [e.wording || e.message, e.path || ''].filter(Boolean).join(' · '),
+        actions: [{ label: 'fail.retry', run: function () {
+          return onChooseFile().then(function () { return true; }, function () { return false; });
+        } }],
+      });
       return;
     }
     const target = snap.startup_document;
@@ -4899,7 +7619,7 @@
             I18N.setLang(res.effective);
           }
           if (res.menu_updated === false) {
-            setStatusT('status.menu-lang-pending', null, false);
+            setStatusT('status.menu-lang-pending', null);
             console.warn('⚠️ 菜单未能立即切换语言（menu_updated=false），将在重启后生效');
           }
           return res;
@@ -4958,7 +7678,17 @@
     //    （`keymap.js` 里 `const ctx = opts.ctx || {…}`），所以这个对象之后每次
     //    `bind()` 换掉里面的函数，`keymap` 看到的是**同一份**。
     //    ⚠️ 反过来（先建 keymap、再给它换 ctx）改不动——那个默认对象已经拷进去了。
-    forwardShim = EdKeys.createForwardShim({ win: window });
+    forwardShim = EdKeys.createForwardShim({
+      win: window,
+      // ⭐ `design/0077`：菜单点击时焦点常在可编辑元素上（分栏 CM6 / 就地 textarea）。
+      //    ⚠️ 只放行 `MENU_EDITABLE_IDS`（五个复制/粘贴 ＋ 保存/两种导出）、且只对
+      //    `source === 'menu'`——键盘路径仍由 `keymap.handleKeydown` 的可编辑焦点闸门挡
+      //    （`INV-CLIPFMT-09`）。⭐ `bugs/0322`：保存与导出的 handler 自带编辑态判据，
+      //    放行它们只是把"球"交回 handler，⛔ 不是绕过提示。
+      allowEditable: function (id, source) {
+        return source === 'menu' && MENU_EDITABLE_IDS.indexOf(id) >= 0;
+      },
+    });
 
     keymap = K.createKeymap({ table: shortcutTable, ctx: forwardShim.ctx });
     forwardShim.bind(keymap);
@@ -4991,6 +7721,15 @@
       },
     });
 
+    // ⭐ `design/0071` §3：`⌘O` 打开面板（最近优先）。⚠️ **数据就是启动页那一份**
+    //    （`S.state.recent`，`INV-OPEN-05`）——⛔ 这里不建第二份缓存；
+    //    「在启动页删一条最近目录，面板同步消失」靠的就是它。
+    //    ⚠️ `recent` 是**函数**：面板每次打开现取一次，⛔ 不在建实例时抄下来。
+    openPanel = OpenPanelUI.createOpenPanel({
+      recent: function () { return S.state.recent; },
+      onPick: function (row) { onOpenPanelPick(row); },
+    });
+
     // ⭐ `design/0011`：正文内查找浮层。⚠️ 与 `quickOpen` 同族——**应用内的一层**，
     //    注册进 `Settings` 的**同一个**登记处 ⇒ `⌘F` / `⌘P` / 设置三者互斥（`INV-FIND-06`）。
     // ⭐ `design/0042`：侧边栏底部常驻的文件名搜索。⚠️ 它与 `quickOpen` **共用**
@@ -5012,6 +7751,43 @@
       refreshId: 'file.refresh-index',
     });
 
+    /**
+     * ⭐ `design/0075`：替换的**唯一写入口**（分栏编辑的左栏 CM6）。
+     *
+     * 只做三件事：确认有可见源码面 → 调 `Find.replace*Plan` 算计划 → **一次** `view.dispatch`。
+     * ⛔ 不解析 Markdown、⛔ 不循环 dispatch（`INV-REPL-01` / `INV-REPL-05`）。
+     * ⭐ 「撤销一步」的来源就是"一次用户动作 = 一条事务"：CM6 的 `history()` 以事务为单元，
+     *    本轮不改它的分组策略。
+     *
+     * @param {{query:string, replacement:string, mode:'one'|'all'}} req
+     * @returns {{ok:boolean, reason:string, count:number, wrapped:boolean}}
+     */
+    function applySourceReplace(req) {
+      if (!editing || !editor || !editor.isMounted()) return { ok: false, reason: 'unavailable' };
+      const view = editor.raw();
+      const CM6 = window.rmdCM6;
+      if (!view || !CM6 || !CM6.EditorView) return { ok: false, reason: 'unavailable' };
+      const text = view.state.doc.toString();
+      const isAll = req.mode === 'all';
+      const plan = isAll
+        ? Find.replaceAllPlan(text, req.query, req.replacement)
+        : Find.replaceNextPlan(text, req.query, req.replacement, view.state.selection.main.head);
+      if (!plan.ok) return plan;
+      if (isAll) {
+        // ⭐ 一条事务带走全部命中（CM6 自己映射原选区）⇒ 一次撤销。
+        view.dispatch({ changes: plan.changes });
+      } else {
+        // ⭐ 光标停到替换串末尾并滚进视口——否则下一次"替换"可能落在屏幕外。
+        const at = plan.nextFrom;
+        view.dispatch({
+          changes: plan.changes,
+          selection: { anchor: at },
+          effects: CM6.EditorView.scrollIntoView(at, { y: 'center' }),
+        });
+      }
+      return { ok: true, reason: '', count: plan.count, wrapped: !!plan.wrapped };
+    }
+
     findBar = FindBar.createFindBar({
       // ⚠️ **取**而不是缓存元素：`design/0006` 的自动重载会换掉 `#doc` 的内容，
       //    而 `invalidate()` 之后重扫要拿到**当时**那一棵。
@@ -5024,6 +7800,14 @@
       prevId: 'edit.find-prev',
       // ⭐ 单文件模式**也能搜**（与 `⌘P` 相反）：那时正文就在屏幕上，搜的是它。
       isAvailable: function () { return !!S.state.currentDoc; },
+      // ⭐ `design/0075`：替换只在**有可见全文源码**的语境可用（分栏编辑的左栏）。
+      //    ⚠️ `available()` 每次现问，⛔ 不缓存布尔——进/出编辑态、切文档都会变。
+      replace: {
+        available: function () { return !!(editing && editor && editor.isMounted()); },
+        apply: applySourceReplace,
+      },
+      // ⚠️ 只是**动作 id**（键位显示由 `accelText` 查表），⛔ 本文件不写键位字面量。
+      replaceToggleId: 'edit.toggle',
     });
 
     // ⭐ `design/0018`：图片缩放预览层。⚠️ 与上面两层同族——**应用内的一层**，
@@ -5037,7 +7821,9 @@
     //    `<a><img></a>` 上图片那一层先 `preventDefault`，链接这一层读它退出
     //    ⇒ 一次点击只发生一个动作（§6「最怕的四件事」最后一条）。
     //    ⚠️ 委托挂在 `#doc` 上：它的 `innerHTML` 会被整棵替换，而它自己是活的。
-    installLinkDelegation($('doc'));
+    //    ⭐ 返回的 `activateAtPointer` 给下面那条 `rmd://link-activation` 用
+    //    （`bugs/0058` 第二版：WKWebView 不把 `⌘`-点击派给页面）。
+    const 链接委托 = installLinkDelegation($('doc'));
 
     // ⭐ **十二个 id 一个都不少**（`INV-SET-02`②）。⚠️ 少一个不会报错，
     //    只会让那个键/那个菜单项**按下去没反应**——所以 `checkActions` 会点出来。
@@ -5049,8 +7835,42 @@
     // ⭐ `design/0037`：折叠 / 收回顶栏（`⇧⌘B`，与上面那条相邻：都是"把界面让给正文"）。
     //    ⚠️ handler 挂 id、⛔ 不认键（`INV-SET-01`：换键只动 Rust 那张表）。
     keymap.register('view.toggle-chrome', function () { setChromeHidden(!chromeHidden); });
-    keymap.register('file.open-directory', function () { onChooseDirectory(); });
+    // ⭐ `design/0079`：菜单 `View` 的五项与快捷键共用同一组 handler。
+    //    ⚠️ 全是 `Owner::Web`、且五条都没有原生加速键（菜单走 `rmd://menu` → `dispatch`）；
+    //    ⛔ 这里不出现键位字面量（`INV-SET-01`），换键只动 Rust 那张表。
+    keymap.register('view.toggle-line-numbers', function () { setLineNumbers(!lineNumbersOn); });
+    keymap.register('view.toggle-zen', function () { toggleZen(); });
+    keymap.register('view.zoom-actual', function () { setZoom(VS.ZOOM_ACTUAL); });
+    keymap.register('view.zoom-in', function () { setZoom(VS.zoomNext(zoomLevel, 1)); });
+    keymap.register('view.zoom-out', function () { setZoom(VS.zoomNext(zoomLevel, -1)); });
+    // ⭐ `design/0071` §3.2：`⌘O` = **打开面板**（最近优先），⛔ 不再是"直接弹目录面板"。
+    //    ⚠️ handler 挂 id、⛔ 不认键（`INV-SET-01`）。
+    keymap.register('file.open', function () { openPanel.open(); });
     keymap.register('file.open-file', function () { onChooseFile(); });
+    // ⭐ `design/0071` §4.1：`⌘N` = 在当前目录新建一份空 `.md`
+    //    （菜单 `File ▸ 新建文件…` 与快捷键**共用这一条**，文件里没有第二份实现）。
+    //    ⚠️ `owner = Web`（Rust 侧不参与），但**仍然要在这里注册**：控键归 `keymap.js` 分发。
+    keymap.register('file.new', function () { onNewFile(); });
+    // ⭐ `design/0071` §5.2：`⇧⌘N` 的**整个动作在 Rust 里**——加速键由 AppKit 菜单收，
+    //    `handle_menu_event` 第一段就认掉它，⛔ 不转发前端（转发就是按一次开两个窗口）。
+    //    ⚠️ 但 `INV-SET-02`② 要的是「**表里的每个 id 都有 handler**」，而 `window.new`
+    //    是这张表里唯一一条"动作不在前端"的项 ⇒ 这里必须有一个**明确的空处理**，
+    //    与 `file.refresh-index` 同形（判据是**存在**，⛔ 不是"必须做事"）。
+    //    ⚠️⚠️ 它真被执行到就是**链路错了**（菜单路径被误转发）⇒ 响亮报，⛔ 不静默。
+    //    （2026-11-15：这条漏了 ⇒ `checkActions` 每次启动都报「表里有、没有 handler」，
+    //      `动作=全` 随之变红；`docs/bugs/0325`。）
+    keymap.register('window.new', function () {
+      console.error('快捷键分发：`window.new` 不该到前端（建窗在 Rust 里）；检查 `on_menu_event` 的转发分支');
+    });
+    // ⭐ `design/0083` §2.2：`⌘T` 同理——建窗 ＋ 并进标签组**整个在 Rust 里**
+    //    （`open_new_tab`：`create_window` ＋ FFI `addTabbedWindow:ordered:`），
+    //    加速键由 AppKit 菜单收、`handle_menu_event` 第一段认掉它。⛔ 不转发前端。
+    //    ⚠️ 与上一条同形：`INV-SET-02`② 要的是「表里的每个 id 都有 handler」，
+    //    这里给的是**明确的空处理**，判据是**存在**、⛔ 不是"必须做事"。
+    //    ⚠️⚠️ 它真被执行到就是**链路错了**（按一次会开两个标签）⇒ 响亮报，⛔ 不静默。
+    keymap.register('window.new-tab', function () {
+      console.error('快捷键分发：`window.new-tab` 不该到前端（建标签在 Rust 里）；检查 `on_menu_event` 的转发分支');
+    });
     keymap.register('reader.font-inc', function () {
       theme.setFontSize(theme.applied.fontSize + 1);
     });
@@ -5132,6 +7952,31 @@
     keymap.register('edit.find-next', function () { findBar.next(); });
     keymap.register('edit.find-prev', function () { findBar.prev(); });
 
+    // ⭐ `design/0075`：查找替换（`⌥⌘F`，`Owner::Web`）。
+    //
+    //   ⚠️ 三种语境都**只打开面板**，⛔ 任何分支都不自动替换：
+    //     · 分栏编辑：直接开；
+    //     · 阅读态：先 `enterEdit()`（既有授权入口），成功后再开；
+    //     · 就地编辑：先 `liveToSplitEdit()`（提交并转分栏），成功后再开。
+    //   ⚠️ 转场失败时**不开口**：`enterEdit` 已经raise了失败条，`liveToSplitEdit`
+    //      失败时旧块视图还活着；此时开一个"替换不可用"的面板只会多一层噪声。
+    keymap.register('edit.replace', function () {
+      function openPanel() {
+        // ⚠️ 用 `open()` 而⛔ 不是 `toggle()`：这个动作的语义是"把替换行交给我"，
+        //    已经开着时按它不该把面板关掉。
+        findBar.open();
+        findBar.focusReplace();
+      }
+      if (editing) { openPanel(); return; }
+      if (live && live.isEditing()) {
+        liveSerial(function () { return liveToSplitEdit(); }).then(function (ok) {
+          if (ok) openPanel();
+        });
+        return;
+      }
+      enterEdit().then(function (ok) { if (ok) openPanel(); });
+    });
+
     // ⭐ `bugs/0036`（2026-10-29）：`⌘A` = **全选正文**（⛔ 不含侧边栏与顶栏）。
     //    ⚠️ 三个语境的分工见 `selectAllText()` 的头注释：
     //       就地编辑态**走不到这里**（那一块自己认领，选的是当前块），
@@ -5140,12 +7985,71 @@
     //       所以它的判据在 `tests/js/live-wiring.test.js`（源码级）＋ `bugs/0036` §6 的手工表。
     keymap.register('edit.select-all', function () { selectAllText(); });
 
+    // ⭐ `design/0077`：四种复制格式 ＋ 字面粘贴。
+    //    ⚠️ 五个 handler 都在 `copyAs` / `pasteLiteral` 里按语境分叉（分栏 / 就地 / 阅读）；
+    //    菜单与键盘走同一个 `dispatch` ⇒ 两条路行为一致（`INV-SET-02`）。
+    keymap.register('edit.copy-markdown', function () { copyAs('markdown'); });
+    keymap.register('edit.copy-html', function () { copyAs('html'); });
+    keymap.register('edit.copy-plain', function () { copyAs('plain'); });
+    keymap.register('edit.copy-rich', function () { copyAs('rich'); });
+    keymap.register('edit.paste-literal', function () { pasteLiteral(); });
+
+    // ⭐ `bugs/0020` §8（2026-11-02）：多块提交栈的撤销 / 重做。
+    //    ⚠️ 落点全在 `undoOrRedo()` 里（按语境分叉，⛔ 不跨层）；这里只挂 id，
+    //      ⛔ 不认键——就地编辑态由那一块自己接，分栏编辑由 CM6 `historyKeymap` 先吃。
+    keymap.register('edit.undo', function () { undoOrRedo(false); });
+    keymap.register('edit.redo', function () { undoOrRedo(true); });
+
     // ⭐ `design/0012` §2.3-4 / `INV-EDIT-10`：**唯一的保存入口**。
     //    ⚠️ 三条路（`⌘S` / 工具栏按钮 / 编辑区里的转发）全都落到 `saveNow()`——
     //       ⛔ `save.js` 不从这里调第二次，⛔ 也不在别处再调一次 `S.saveDocument`
     //       （两份"保存"的差别迟早会漂，而漂的那一天丢的是用户的字）。
     //    ⚠️ 阅读态按它**说一声**（`saveNow` 里那一支），⛔ 不是无声 no-op。
     keymap.register('file.save', function () { saveNow(); });
+
+    // ⭐ `design/0076`：`⇧⌘S` / `⇧⌘P` = 保存为 HTML / 打印为 PDF（菜单同两项，无原生加速键）。
+    //    ⚠️ 菜单点击走 `rmd://menu` → 同一个 `keymap.dispatch`（`INV-SET-02`）⇒
+    //       这里挂上 id 就**同时**覆盖键盘与菜单，⛔ 不另写一条菜单分支
+    //       （两份入口迟早漂：一边能开、另一边没反应）。
+    //    ⚠️ 两条都 `Owner::Web`（`MENU_ITEM_IDS` 未动）：键归前端，菜单项由
+    //       `PLAIN_MENU_ITEMS` 装、文案由 `menu_label` 从 `SHORTCUTS` 派生。
+    keymap.register('file.export-html', function () { return exportHtmlNow(); });
+    keymap.register('file.export-pdf', function () { return exportPdfNow(); });
+
+    // ⭐ `design/0056`：`⌘L` = **关掉当前文档、回到导航页**（导航页 = 收藏 + 最近的目录）。
+    //    ⚠️ 真正的活全在 `returnToStartPage()` 里（顺序就是那里的注释）。这里只挂 id，
+    //       ⛔ 不认键（`INV-SET-01`：换键只动 Rust 那张表）。
+    //    ⚠️ 它**不进菜单**（`INV-CLOSE-02`）：导航页不是菜单里的一种"文档"，而是一个返回动作；
+    //       展示位与 `⌘E`/`⌘S`/`⇧⌘B` 同款——设置覆盖层里的那一行。
+    //    ⚠️ 编辑区里按它**不会关文档**：`keymap.js::dispatch` 的 `ctx.editable()` 先挡掉
+    //       （`INV-SET-05`），转发到 CM6 也没有对应绑定（`INV-CLOSE-02` 的那半，
+    //       `design/0056` §9 用户裁定的第 2 条）。⚠️ 2026-11-11 由裸 `F2` 改成本键的原因见
+    //       `bugs/0097`：裸 F-键在默认媒体键设置下**到不了 WebView**。
+    keymap.register('view.start', function () { returnToStartPage(); });
+
+    // ⭐ `design/0069`：`⌘[` / `⌘]` = 在**打开过的文档**之间后退 / 前进。
+    //    ⚠️ 与侧键走**同一个** `historyGo`（⛔ 不写第二条导航路径：两份判据迟早漂）。
+    //    ⚠️ 两条都 `Owner::Web` 且**不进菜单**（与 `view.start` / `view.toggle-chrome` 同形），
+    //       展示位是设置覆盖层里由后端表现算的那两行。
+    //    ⚠️ 表项与 handler **必须同批**：只加一边时 `checkActions` 在启动时就报。
+    keymap.register('view.history-back', function () { historyGo(-1); });
+    keymap.register('view.history-forward', function () { historyGo(1); });
+
+    // ⭐ `design/0057`：菜单 `文件 ▸ 收藏 / 取消收藏`（`⌘D`）——把**当前打开的文档**加进收藏。
+    //    ⚠️ 与树上右键那个入口**共用 `toggleFavoriteFromUi`**（⛔ 不另写一条收藏路径：
+    //       两种写入口迟早漂，而收藏是**顺序敏感**的表，漂了就重排）。
+    //    ⚠️ 没有文档时**说一声**（与 `file.save` 同一条纪律：⛔ 不是无声 no-op）——
+    //       菜单项在空态下照样可点（原生菜单没有"按文档状态禁用"这一档），
+    //       所以这一支必须存在，而且**不发 IPC**（后端 `Add` 时会以 `NotFound` 拒）。
+    keymap.register('file.toggle-favorite', function () {
+      const cur = S.state.currentDoc;
+      if (!cur || !cur.real_path) {
+        setStatusT('status.favorite-no-doc', null);
+        diagNote('favorite', 'no-doc', '');
+        return;
+      }
+      toggleFavoriteFromUi(cur.real_path);
+    });
 
     // ⭐ `design/0012` §2.3-4：**转发白名单的派生**——"哪些应用键在编辑区里
     //    还能用"这件事，⛔ 不是一张手写的清单，而是从后端那张表**现算**出来的。
@@ -5177,6 +8081,15 @@
 
     keymap.attach();
 
+    // ⭐ `design/0069` 二期：**鼠标侧键**（wry 把 `button` 3/4 合成成 `mousedown`/`mouseup`）。
+    //    ⚠️ 识别器只认 3/4 且在捕获阶段先挡后判——`mouseup` 必挡，否则 wry 会兜底执行
+    //       `window.history.back()/forward()`，把整个 WebView 导航走（`INV-HIST-03`）。
+    //    ⚠️ 中键开链接 / `⌘`-点击 / 拖拽 / 选区一律不受影响（`INV-HIST-04`）。
+    //    ⚠️ 它**不依赖侧键能否到达页面**：能否到达是人工按键验收项（`design/0069` §7）。
+    HMod.installGestures(window, {
+      onNavigate: function (delta) { historyGo(delta); },
+    });
+
     // ⭐ **菜单点击 → 前端**（§2.1 ⑧）：菜单是 Rust 建的，事件也只到 Rust，
     //    所以这条通道是我们自己接的。⚠️ 它走 `core:` 插件命令、**受 ACL 管**——
     //    失败必须**响亮**（`.agent/spec.md` 纪律 6），⛔ 不能是
@@ -5204,7 +8117,7 @@
       await T.listen('rmd://cli-tool', function (e) {
         const payload = (e && e.payload) || {};
         const lines = CT.summarize(payload);
-        setStatusFn(function () { return CT.render(lines, t); }, CT.isError(payload));
+        setStatusFn(function () { return CT.render(lines, t); });
       });
     } catch (e) {
       console.error('⛔ 订阅命令行工具结果失败（多半是 ACL 少了 core:event:allow-listen）：', e);
@@ -5286,6 +8199,25 @@
     } catch (e) {
       console.error('⛔ 订阅 Apple Event 打开请求失败（多半是 core:event:allow-listen 被拒）：', e);
     }
+
+    // ⭐⭐ `bugs/0058`（第二版）：**WKWebView 把 `⌘`-点击 / 中键当成"用新窗口打开链接"**，
+    //    由 UI 进程直接处理 ⇒ 页面里的 `click` 委托**收不到**（用户实测：`owns()` 改成
+    //    "⌘ 也算打开"之后仍然毫无反应）。Rust 侧在 `on_new_window` / `on_navigation`
+    //    把这件事交回来，落点仍然是「就在这儿打开」。
+    //    ⚠️ 不用事件里的 URL：相对链接在那里已是 `tauri://localhost/…`，倒推不回文档目录
+    //    （倒推错的路径比不开更糟）。判据是 DOM 里指针下的那条链接。
+    //    ⚠️ 与上面几条一样，失败要**响亮**：这条静默的表现就是"⌘-点击毫无反应"本身。
+    try {
+      await T.listen('rmd://link-activation', function () { 链接委托.activateAtPointer(); });
+    } catch (e) {
+      console.error('⛔ 订阅链接激活事件失败（多半是 core:event:allow-listen 被拒）：', e);
+    }
+
+    // ⭐ `design/0071` §2.2：拖入窗口（遮罩 / 拒绝理由 / 后端换根）。
+    //    ⚠️ 它**不阻塞启动**：任何一条订阅失败都只打日志——拖放是入口之一，
+    //    不是阅读的前提（与上面几条同一条纪律，但代价不同）。
+    await installDropChannel();
+
     syncReloadBar();
   }
 
@@ -5301,7 +8233,12 @@
   async function reportFatal(err) {
     const msg = (err && (err.stack || err.message)) || String(err);
     console.error('启动失败：', err);
-    setStatusT('status.startup-failed', { msg: msg }, true);
+    // ⭐ `design/0070`：**启动阻断**是 P0（`role=alert`）——那一刻界面上什么都不能用，
+    //    而一条会被截断的状态条读不到关键信息。作用域 `global`：它不随文档收起。
+    raiseFail({
+      key: 'status.startup-failed', vars: { msg: msg }, level: 'P0',
+      scope: { kind: 'global' }, area: 'startup', detail: msg,
+    });
     try {
       await T.call('report_status', {
         report: {
@@ -5369,10 +8306,18 @@
     //    就在听，否则 T6/T6b 会漏掉这一轮的首屏绘制（`design/0002` §7.3.2）。
     //    ⚠️ 它只读时钟与性能条目、⛔ 不碰 DOM、不改状态——放在这儿不污染任何被测时刻。
     if (M) measure = M.createMeasure();
+    // ⭐ `design/0087` S0：**68 个 `<script>` 全部执行完**的时刻（`main.js` 是最后一个）。
+    //    ⚠️ 必须紧跟 `createMeasure()`：再晚一步就把"建测量器"算进脚本时间里了。
+    markBoot('scripts');
 
     // ⚠️ 先确认 `window.__TAURI__` 在——不在的话后面每一条命令都会抛同一句话，
     //    不如在这里就说一次。`withGlobalTauri` 关掉时就是这个形态。
     T.resolveInvoke();
+
+    // —— 0.02 关窗守卫（`design/0082` §4）——
+    // ⚠️ 越早越好：从这一刻起用户中途关窗就有"保存 / 不保存 / 取消"可问。
+    //    它只**注册一个监听**（不碰 DOM、不改变焦点），所以放在启动路径最前面无副作用。
+    installCloseGuard();
 
     const doc = $('doc');
 
@@ -5384,10 +8329,27 @@
     // ⛔ `onOpen` 就这一处：行点击与数字键走的是**同一条**授权命令（§2.1 ③）。
     startScreen = SS.createStartScreen({
       onOpen: onOpenRecentDirectory,
+      // ⭐ `design/0081` §2.1 ③：导航页的「开始」段。
+      //    ⚠️ 动作名与键位**都从后端那张表现取**（`INV-SET-01` / `INV-START-08`）：
+      //    标签 = `labelText`（按当前语言），键位 = `accelText`（不分语言）。
+      //    ⚠️ 执行走 `keymap.dispatch(id, 'menu')`——与菜单/快捷键**同一份实现**
+      //    （`INV-SET-02`）；这里⛔ 不再写 `onChooseDirectory` 之类的旁路。
+      labelText: labelText,
+      keyText: accelText,
+      runAction: function (id, source) {
+        return keymap.dispatch(id, source || 'menu');
+      },
+      // ⚠️ 「快速打开…」的可用性**只有 QuickOpen 一份判据**（目录模式且有根）——
+      //    这里再写一份，放宽了一边就会出现"点了没反应"的入口。
+      canQuickOpen: function () { return quickOpen ? quickOpen.isAvailable() : false; },
       // ⭐ `design/0043` §2.6 / §2.7：收藏行的三条动作。
       // ⚠️ 三条**都不在这个文件里判可达性**——移除/上移/下移只改配置，
       //    打开那一条的授权全在 `open_favorite`（`INV-FAV-03`）。
       onOpenFavorite: onOpenFavorite,
+      // ⭐ `design/0071` §5：两张行菜单的「在新窗口中打开」。前端只递原串 ＋ kind，
+      //    建窗与待处理导航在后端；新窗口启动末尾自己取走（`takePendingNavigation`）。
+      //    ⛔ 这里不拼路径、不判可达性（授权在新窗口自己的命令里做）。
+      onOpenInNewWindow: openInNewWindow,
       onUnfavorite: function (path) {
         return S.removeFavorite(path).then(function () { repaintStart(); });
       },
@@ -5399,15 +8361,25 @@
       //    磁盘上的目录与授权都不动（`INV-REC-01`）。
       onForgetRecent: forgetRecentFromUi,
       onClearRecent: clearRecentFromUi,
-      onError: function (e, target) {
-        // ⭐ `INV-START-07`：打不开必须**可见**——行被 `StartScreen` 标成 `data-missing`，
-        //    状态条这一句是另一半（用户不一定看得见行变灰，尤其只有一行时）。
-        // ⚠️ 收藏行与最近目录行**分开说话**：`open_favorite` 的失败是"这条收藏现在够不着"，
+      onError: function (e, target, info) {
+        // ⭐ `design/0070` §2.4 / 评审意见 6：**段的兜底出口**——正常情况下失败在
+        //    `runOpen` 里由段内联说；这里只接两种"行内落不下去"的情形：
+        //    ① 刷新列表失败（P2 中性，⛔ 不进全局条）；② 段被重画掉了。
+        // ⚠️ 收藏与最近目录**分开说话**：`open_favorite` 的失败是"这条收藏现在够不着"，
         //    不是"这个最近目录没了"——同一句话会把两种成因混成一种。
-        const isFav = typeof target === 'string' && S.isFavorite(target);
-        setStatusT(isFav ? 'status.favorite-open-failed' : 'status.recent-not-found', { dir: target }, true);
-        // ⚠️ 诊断出口走 stderr（`design/0025` §2.2）：那句话随语言漂移，日志不漂。
-        console.error(isFav ? '打开收藏失败：' : '打开最近目录失败：', target, e);
+        const msg = (e && (e.wording || e.message)) || '';
+        if (info && info.kind === 'refresh') {
+          setStatusT('doclist.failed', { msg: msg });
+          diagNote('start', 'doclist.failed', msg);
+          return;
+        }
+        if (info && info.section === 'favorite') {
+          setStatusT('status.favorite-open-failed', { dir: target || '' });
+          diagNote('start', 'status.favorite-open-failed', msg || String(target || ''));
+          return;
+        }
+        setStatusT('status.recent-not-found', { dir: target || '' });
+        diagNote('start', 'status.recent-not-found', msg || String(target || ''));
       },
       // ⚠️ 传**函数**而不是布尔值（注释在上面 `overlayOpen` 那一步）；实现只有一份。
       overlayOpen: overlayOpen,
@@ -5578,7 +8550,14 @@
       },
       // ⭐ `design/0038` §2.1 ⑤：「上次的目录」那个按钮走**授权命令**，⛔ 不再弹面板。
       //    接线只有这一处；不接的话 `Sidebar` 会退回老行为（弹面板），⛔ 不会静默失效。
-      onOpenLastDirectory: onOpenRecentDirectory,
+      // ⚠️ `design/0070` §2.4：`onOpenRecentDirectory` 现在**从不拒绝**（失败用 `{ok:false}`
+      //    回答）⇒ 这个第二入口必须自己把结果报告出去，否则失败会变成"点了没反应"。
+      onOpenLastDirectory: function (root) {
+        return onOpenRecentDirectory(root).then(function (res) {
+          reportStartOpen(res);
+          return res;
+        });
+      },
       /**
        * ⭐ `design/0044` §2.2：根头的菜单（`⋯` / 右键 / `Shift+F10`）。
        * ⚠️ 动作清单只在 `FileTree::openRootMenu` 写一份——这里只转发坐标与
@@ -5598,6 +8577,8 @@
     //    前端⛔ 不写任何按键字面量，只拿这张表去建匹配器。
     //    ⚠️ 这一段必须排在 `sidebar` 之后——`view.toggle-sidebar` 的 handler 要它。
     await setupKeys();
+    // ⭐ `design/0087` S0：快捷键表到手（含 `get_shortcuts` 那一趟 IPC）。
+    markBoot('keys');
     // ⭐ 表到手了 ⇒ 补一次「收起 / 展开」两个图标的 tooltip（标签 + 键位）。
     //    ⚠️ 必须排在 `setupKeys()` **之后**：`Sidebar` 建得比它早，那一刻 `accelText` 还是空串。
     //    ⚠️ 之后每次换语言由 `relabelDynamic()` 负责重拼（`setLang` 的订阅者那一档）。
@@ -5613,6 +8594,9 @@
     //    ⚠️ 它只**接线**（按钮 / 分隔条 / 自证），⛔ **不进编辑态**、⛔ 不碰任何文件：
     //       进编辑态是用户按「编辑」或某个键之后的事。
     setupEdit();
+    // ⭐ `design/0087` S0：编辑面接线完毕——**含 `runEditSelfTest()` 里那次真实建 CM6 视图**。
+    //    ⚠️ 这一段与 `keys` 的差就是自证的钱，S1 要拿它决定"自证该不该留在启动路径上"。
+    markBoot('edit');
 
     // —— 1.6b 阅读—编辑连续性（`design/0047`）——
     // ⚠️⚠️ **不在这里**：它的开关来自快照（`config.live_edit`），而快照在第 2 步才回来。
@@ -5635,13 +8619,21 @@
         snap = await S.refresh();
       } catch (e) {
         if (i === 4) {
-          setStatusT('status.session-failed', { msg: e.wording || e.message }, true);
+          // ⭐ `design/0070`：拿不到会话快照 = **启动阻断** ⇒ P0，作用域 `global`。
+          //    ⚠️ 重试按钮不给：这个循环已经重试过 5 次，再点只是重复同样的失败。
+          raiseFail({
+            key: 'status.session-failed', vars: { msg: e.wording || e.message },
+            level: 'P0', scope: { kind: 'global' }, area: 'session',
+            detail: e.wording || e.message || '',
+          });
           return;
         }
         await new Promise(function (r) { setTimeout(r, 50); });
       }
     }
     sidebar.applyWidth(snap.sidebar_width);
+    // ⭐ `design/0087` S0：`S.refresh()`（`get_session`）回来——第一条业务 IPC 的往返结束。
+    markBoot('session');
     // ⭐ **权威外观值**（`INV-THEME-03`：配置文件是唯一真源）。
     // 注入脚本与这里用的是同一份数据，但**写入点只有一个**：
     // 那次注入是"让首帧好看"，这里是"承认后端说了算"——
@@ -5663,6 +8655,8 @@
     //      （⇒ 用户点第一下时 `slotIndexFromNode` 恒 `null`，"点了没反应"）。
     // ⚠️ 它只**接线**（一个文档级 `mousedown` ＋ 一个控制器），⛔ 不进编辑态、⛔ 不碰文件。
     setupLive();
+    // ⭐ `design/0087` S0：就地编辑控制器建完。
+    markBoot('live');
 
     // —— 3. 按打开的是什么决定侧边栏长什么样（§2.1 的那张表）——
     // ⚠️ 空会话与目录模式都先看**树**那个 tab：它们的界面就是"怎么开始"
@@ -5682,8 +8676,11 @@
     } else {
       // ⭐ 空会话（`rmd` 裸跑）
       showDocEmptyFn(openHint);
-      setStatusFn(readyHint, false);
+      setStatusFn(readyHint);
     }
+    // ⭐ `design/0087` S0：**正文/启动页已经挂上 DOM** 的时刻——"用户看到内容"的最近似点
+    //    （真正的可见帧由 T6/T6b 那条 paint 通道量，这条是同步链路的终点）。
+    markBoot('content');
 
     // —— 4.5 ⭐ 取走启动期间到达的 Apple Event 打开请求（`design/0015` §2.1 ④）——
     // ⚠️ **必须主动取一次**：冷启动时 macOS 可能先把 `odoc` 投给进程，
@@ -5691,6 +8688,14 @@
     // ⚠️ 放在启动文档之后：`open -a rmd.app 某.md` 走的是 Apple Event **不是** argv，
     //    所以正常冷启动时 `startup_document` 是空的，这一步就是"打开那一份"。
     await queueDrainPendingOpens();
+
+    // —— 4.6 ⭐ 新窗口的待处理导航（`design/0071` §5 / `design/0068` §2.4）——
+    // 旧窗口右键「在新窗口中打开」⇒ 后端建窗时把目标记进**本窗口**的会话。
+    // ⚠️ 放在启动文档之后、`onChange` 订阅之前：打开入口自己会刷 UI（不重复渲染），
+    //    而 `onChange` 的"改名迁移"快照要在最终文档确定之后再取。
+    // ⛔ 没有待处理导航时它只是一条**读后即清**的 IPC，启动路径一切照旧；
+    //    失败只记 `console.error`，⛔ 不弹窗、⛔ 不改状态。
+    await takePendingNavigation();
 
     // —— 5. 快捷键 ——
     // ⛔ **原来这里有一段手写的 `Cmd+O` / `Cmd+Shift+O` 的 `keydown`，`design/0010` 起已删除。**
@@ -5703,7 +8708,23 @@
     // ⚠️ 顺带刷提示条：`applySnapshot` 会在代次变化时把 `watchNote` 写成
     //    「文件监视已停止（授权已改变）」（`INV-EXT-09` 的**可见**那一半），
     //    而那条消息只有在这里才上得了屏。
-    S.onChange(function () { renderSidebar(); syncReloadBar(); });
+    //
+    // ⭐ `design/0069` §2.1.7：**当前文档改名** ⇒ 历史条目跟着迁移。
+    //    ⚠️ 判据必须是**对象身份没换**（`currentDoc === 上次那个对象`）且路径变了：
+    //       普通切文档会换 `currentDoc`，若只比路径，就会把栈里所有旧路径改写成新文档
+    //       ——那是灾难性的（§2.1.7 原文点名的错法）。
+    let lastNavDoc = S.state.currentDoc;
+    let lastNavPath = S.state.currentPath;
+    S.onChange(function (st) {
+      renderSidebar();
+      syncReloadBar();
+      if (lastNavDoc && st.currentDoc === lastNavDoc &&
+          lastNavPath && st.currentPath && st.currentPath !== lastNavPath) {
+        H.replacePath(lastNavPath, st.currentPath);
+      }
+      lastNavDoc = st.currentDoc;
+      lastNavPath = st.currentPath;
+    });
 
     // —— 7. 回报 ——
     // ⭐ 批 2：`RMD_MEASURE=1` 时走**测量回报**（`report_measure`），后端收到就退出。
@@ -5757,6 +8778,25 @@
         requestAnimationFrame(tick);
       })();
     });
+  }
+
+  /**
+   * ⭐ `design/0087` S0：等 `n` 帧，但**帧可能永远不来**——到点就照常往下走。
+   *
+   * ⚠️ 为什么必须有这一条：`open -j`（**隐藏启动**，`INV-BOOT-04` 要求测量也不许抢焦点）
+   *    里 WebKit **不产生帧** ⇒ `requestAnimationFrame` 永不回调，整条测量路径挂在那里等
+   *    （实测：进程不退出、`report_measure` 零样本、`RMD_MEASURE_OUT` 一个字不写）。
+   *    ⛔ 这不是"偶尔慢"：隐藏窗口在**结构上**就没有绘制。
+   * ⚠️ 兜底后下游那几个**读帧**的量会是 `null`（"没采到"）——⛔ 不许在兜底里
+   *    填成 0（本文件一贯的口径：`null` ≠ 零成本）。
+   * ⛔ **只给测量路径用**：别处的 `nextFrames` 是判据本身（"必须画过"），
+   *    加了超时就把那条判据变成了"大概画过"。
+   */
+  function framesOrTimeout(n, ms) {
+    return Promise.race([
+      nextFrames(n),
+      new Promise(function (resolve) { setTimeout(resolve, ms); }),
+    ]);
   }
 
   /**
@@ -5822,13 +8862,18 @@
     });
 
     // ⚠️ rAF 回调在**绘制之前**跑；再等一帧才是"这一帧画完了"的近似。
-    const t5e = await new Promise(function (resolve) {
-      const a = measure.now();
-      jump(bottom);
-      requestAnimationFrame(function () {
-        requestAnimationFrame(function () { resolve(measure.now() - a); });
-      });
-    });
+    //    ⚠️ `design/0087` S0：隐藏启动里这两帧**永远不来** ⇒ 兜底成 `null`
+    //    （⛔ 不填 0：那是"零成本"的意思，而这里根本没量到）。
+    const t5e = await Promise.race([
+      new Promise(function (resolve) {
+        const a = measure.now();
+        jump(bottom);
+        requestAnimationFrame(function () {
+          requestAnimationFrame(function () { resolve(measure.now() - a); });
+        });
+      }),
+      new Promise(function (resolve) { setTimeout(function () { resolve(null); }, 400); }),
+    ]);
 
     return {
       t5c_ms: t5c.ms,
@@ -5894,7 +8939,9 @@
   async function reportMeasure(doc) {
     // 等两帧：`T5/T5b` 之后**至少要有一次绘制**发生，T6/T6b 才有条目可读。
     // ⚠️ 这两帧**不属于任何一段被测耗时**（§7.3.2 里没有它们的位置）。
-    await nextFrames(2);
+    // ⚠️ `design/0087` S0：隐藏启动（`open -j`）**没有帧** ⇒ 用带兜底的那一份，
+    //    否则这条回报路径在离屏跑不完，S0 一个数都拿不到。
+    await framesOrTimeout(2, 400);
     // ⚠️ LCP 在"用户交互 / 页面隐藏"之前会持续更新。再给一段静默期，
     //    让大文档那块有机会算进最终值。⛔ 同样不计入 T4–T6b。
     await new Promise(function (r) { setTimeout(r, 250); });
@@ -5948,6 +8995,20 @@
       //    而 t1/t2/t3（Rust 侧）带小数 —— 那个差别就是这个粗化。
       //    ⚠️ 这次忙等**发生在所有被测分段之后**，⛔ 不污染任何一段。
       clock_ms: M ? M.clockResolutionMs() : null,
+
+      // ⭐ `design/0087` S0：**启动分段**（相对页面导航开始，`performance.now()`）。
+      //    ⚠️ 四个数**单调不减**，相邻两个的差就是那一段的钱：
+      //    `scripts`（载入并执行 68 个脚本）→ `keys`（快捷键表 IPC ＋ 各面板装配）
+      //    → `edit`（编辑面接线，**含一次真实 CM6 视图构造**）→ `session`（`get_session` 往返）
+      //    → `content`（正文/启动页挂上 DOM）→ `t4_ms`（回报点）。
+      //    ⛔ 与 Rust 侧 `t1/t2/t3` 不同纪元，⛔ 不相加；它们只彼此相减。
+      //    ⚠️ 没采到是 `null`，⛔ 不填 0（"没采到"与"零成本"必须是两个数）。
+      s0_scripts_ms: bootMarkOf('scripts'),
+      s0_keys_ms: bootMarkOf('keys'),
+      s0_edit_ms: bootMarkOf('edit'),
+      s0_live_ms: bootMarkOf('live'),
+      s0_session_ms: bootMarkOf('session'),
+      s0_content_ms: bootMarkOf('content'),
 
       // ⭐ DOM 规模。**指标换过一次**（`design/0002` §10.3）：`childElementCount`
       //    只数**直接子元素**（`XL-tables` 量出 18 548，而 AST 是 860 837）——

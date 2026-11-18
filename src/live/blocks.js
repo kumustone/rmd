@@ -493,7 +493,10 @@
     if (tag === 'DIV') {
       const cls = (node.getAttribute && node.getAttribute('class')) || '';
       if (/(^|\s)rmd-math-display(\s|$)/.test(cls)) return 'math-block';
-      if (/(^|\s)rmd-diagram(\s|$)/.test(cls)) return 'diagram';
+      // ⭐ `-fallback` 也算 `diagram`：它是**同一个 CodeBlock** 的回退形态，
+      //    ⛔ 不认它的话，一篇里只要有一张画不出来的图，整篇块表对齐就会失败
+      //    （`CodeBlock` 只接受 `pre` / `diagram` 两种形状）。
+      if (/(^|\s)rmd-diagram(-fallback)?(\s|$)/.test(cls)) return 'diagram';
     }
     return 'unknown';
   }
@@ -684,12 +687,54 @@
     return null;
   }
 
+  /**
+   * `#doc` 的**顶层节点**：只留**元素**与**注释**，给 [`align`] 用（`bugs/0080`）。
+   *
+   * ⚠️ 为什么不是 `doc.children`：`INV-SEC-01` 下 comrak 把**块级原始 HTML** 渲染成
+   *    `<!-- raw HTML omitted -->` **注释**，而 [`shapeOf`] 本来就把它认成 `raw-html`
+   *    ⇒ 只取元素时块表比节点数多，[`align`] 的数量闸门会**整篇**失败
+   *    （本仓 `README.md` 实测 53 块 : 49 节点）。
+   * ⚠️ 为什么也不是裸 `childNodes`：渲染出来的顶层节点之间夹着**空白文本**，
+   *    8 个块会被数成 16 个节点，同样过不了数量闸门。
+   *
+   * ⭐ 这一份是**唯一一份**取法：调用方（`main.js::noteLive`）⛔ 别再自己写一遍过滤，
+   *    否则两侧一旦不一致，症状还是"整篇对不齐"，而单测只覆盖到其中一份。
+   *
+   * ⚠️ **临时布局外壳要拆开数**（`bugs/0297`）：冻结表格布局时 `live/cell.js` 会把
+   *    `<table>` 挪进 `div.rmd-table-freeze`（`display:table` 才吃 `table-layout: fixed`），
+   *    而外壳只是同一个块的外盒 —— 若把它当成一个顶层节点，块序号整体错位：
+   *    对齐闸门在**编辑期间**整篇失败，探针的 `块节点()[块]` 也会拿到一个没有 `.rows` 的
+   *    `div`（2026-11-09 整轮 block-probe 在 `Q9` 崩在这上面）。
+   *    ⇒ 遇到外壳就**取它的元素孩子**（外壳恒只装那一个表格），块数/次序不变。
+   *
+   * @param {{childNodes?: ArrayLike<any>}|null|undefined} doc
+   * @returns {Array} 元素与注释节点，保持文档顺序
+   */
+  function topNodes(doc) {
+    if (!doc || !doc.childNodes) return [];
+    const src = doc.childNodes;
+    const out = [];
+    for (let i = 0; i < src.length; i++) {
+      const n = src[i];
+      if (!n) continue;
+      if (n.nodeType === 1 && n.classList && n.classList.contains('rmd-table-freeze')) {
+        // ⚠️ 只拆一层、只拆元素孩子：外壳是我们自己建的，里面恒只有那张表。
+        const kids = n.children;
+        for (let j = 0; kids && j < kids.length; j++) out.push(kids[j]);
+        continue;
+      }
+      if (n.nodeType === 1 || n.nodeType === 8) out.push(n);
+    }
+    return out;
+  }
+
   const api = {
     OTHER: OTHER,
     FOOTNOTE: FOOTNOTE,
     SHAPES: SHAPES,
     toRange: toRange,
     fromPayload: fromPayload,
+    topNodes: topNodes,
     crossCheck: crossCheck,
     fromCellPayload: fromCellPayload,
     cellsOf: cellsOf,

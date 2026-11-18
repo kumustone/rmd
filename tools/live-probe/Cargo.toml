@@ -14,3 +14,19 @@ path = "src/main.rs"
 comrak = { version = "=0.56.0", default-features = false }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+
+# ⭐ `design/0059` 阶段 C（`--render-json`）：位置映射原型必须拿**产品那一次渲染**
+# 的 HTML，所以 `document/render.rs` 连同它的三个增强模块一起按 `#[path]` 编进来。
+# ⇒ 三条依赖与 `src-tauri/Cargo.toml` **逐字同版本、同特性**（差一处，"真实渲染"就不成立）。
+# ⚠️ `regex-fancy` 对齐产品的 `backend-fancy`；⛔ 不走 `backend-onig`（vendored C）。
+syntect = { version = "=5.3.0", default-features = false, features = [
+    "default-syntaxes",
+    "html",
+    "regex-fancy",
+] }
+katex-rs = { version = "=0.3.0", default-features = false }
+flowmaid = { version = "=0.33.0", default-features = false }
+# ⭐ `bugs/0095`：产品 `src-tauri/Cargo.toml` 已为 mermaid 渲染引入 `quick-xml`，
+# `document/mermaid.rs` 直接 `use quick_xml::…` ⇒ 探针必须补上，否则 `probe-live-markup`
+# 在补 `pub mod mermaid;` 之后仍会继续报 unresolved crate。
+quick-xml = { version = "0.42", default-features = false }

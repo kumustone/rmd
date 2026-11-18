@@ -1,0 +1,15 @@
+# 离屏 CLI 用例。⛔ 这里的 {{RMD}} 是**不带 gui feature** 的隔离构建
+# （target/autotest），所以「给文件」只会打印诚实的失败，⛔ 不会开窗口。
+{"id":"exec-cli-version","family":"cli","argv":["{{RMD}}","--version"],"expect":{"exit":0,"stdout_re":"^rmd \\d+\\.\\d+\\.\\d+"}}
+{"id":"exec-cli-help-lists-subcommands","family":"cli","argv":["{{RMD}}","--help"],"expect":{"exit":0,"stdout_contains":["probe","bench"]}}
+{"id":"exec-cli-probe-default-pass","family":"cli","argv":["{{RMD}}","probe","--brief"],"expect":{"exit":0,"stdout_contains":["五步全部符合预期"],"stderr_equals":""}}
+{"id":"exec-cli-probe-no-crlf","family":"cli","argv":["{{RMD}}","probe","--brief","--no-crlf"],"expect":{"exit":0,"stdout_contains":["五步全部符合预期"]}}
+{"id":"exec-cli-probe-limit","family":"cli","argv":["{{RMD}}","probe","--brief","--limit","1"],"expect":{"exit":0,"stdout_contains":["下面按前 1 条打印"]}}
+{"id":"exec-cli-probe-file","family":"cli","files":{"样例.md":"# 自定义标题\n\n正文\n"},"argv":["{{RMD}}","probe","--brief","--file","{{TMP}}/样例.md"],"expect":{"exit":0,"stdout_contains":["样例.md","自定义标题"]}}
+{"id":"exec-cli-no-args-usage","family":"cli","argv":["{{RMD}}"],"expect":{"exit":2,"stderr_contains":["用法：","rmd probe"]}}
+{"id":"exec-cli-file-without-gui","family":"cli","files":{"a.md":"# 标题\n"},"argv":["{{RMD}}","{{TMP}}/a.md"],"expect":{"exit":2,"stderr_contains":["没有编译 GUI","a.md"]}}
+{"id":"exec-cli-unknown-subcommand","family":"cli","argv":["{{RMD}}","nope"],"expect":{"exit":2,"stderr_contains":["没有编译 GUI","nope"]}}
+{"id":"exec-cli-unknown-flag","family":"cli","argv":["{{RMD}}","probe","--nope"],"expect":{"exit":2,"stderr_contains":["unexpected argument"]}}
+{"id":"exec-bench-help","family":"cli","argv":["{{RMD}}","bench","--help"],"expect":{"exit":0,"stdout_contains":["--repeat","--warmup"]}}
+{"id":"exec-bench-json","family":"cli","files":{"a.md":"# 标题\n\n正文里有文档两个字。\n"},"argv":["{{RMD}}","bench","{{TMP}}/a.md","--repeat","1","--warmup","0","--json","{{TMP}}/out.json"],"expect":{"exit":0,"files_exist":["out.json"],"file_contains":{"out.json":["\"t1_load\"","\"t2_parse\"","\"t3_render\""]}}}
+{"id":"exec-bench-missing-path","family":"cli","argv":["{{RMD}}","bench"],"expect":{"exit":2,"stderr_contains":["required"]}}

@@ -60,11 +60,14 @@ pub const LANGS: [&str; 3] = ["system", "zh", "en"];
 /// 一律落 `"system"`——与 [`Appearance::clamped`] 对未知主题名的处置**同一条口径**：
 /// 配置可以被手改，一个拼错的词不该让阅读器打不开，也⛔ 不该让它突然变成英文界面。
 pub fn normalize_language(pref: Option<&str>) -> &'static str {
-    match pref.map(str::trim) {
-        Some(p) if p.eq_ignore_ascii_case("zh") => "zh",
-        Some(p) if p.eq_ignore_ascii_case("en") => "en",
-        _ => "system",
-    }
+    // ⚠️ 判据就取自 [`LANGS`] 本身：那张表是**偏好**的封闭清单，
+    //    另写一条 `match` 会让"表里加了、归一化没加"静默分叉。
+    let p = pref.map(str::trim).unwrap_or("");
+    LANGS
+        .iter()
+        .copied()
+        .find(|l| p.eq_ignore_ascii_case(l))
+        .unwrap_or("system")
 }
 
 /// 正文基准字号（`design/0005` §2.1.1 的唯一绝对锚点）。
@@ -978,6 +981,12 @@ impl Config {
     }
 
     /// 写外部编辑器名（同样归一化，⛔ 不把空串存进文件）。
+    ///
+    /// ⚠️ **只给单测**：`design/0006` 定的 V1 里还没有界面入口——
+    /// 「只有**人**才会写它」（`data-and-state.md`），产品路径上一次都没被调用过。
+    /// ⛔ 别因为"没有调用方"就删掉：它是 `editor_name` 的**归一化对照物**，
+    /// `config` 那组往返测试全靠它。
+    #[cfg(test)]
     pub fn set_external_editor(&mut self, name: Option<&str>) {
         self.external_editor =
             name.map(str::trim).filter(|s| !s.is_empty()).map(|s| s.to_string());
@@ -1012,6 +1021,10 @@ impl Config {
     }
 
     /// ⭐ 读一条（只读；⚠️ 它**不是**授权，只是"上次看到哪儿"）。
+    ///
+    /// ⚠️ **只给单测**：产品侧读进度走的是快照（`commands/mod.rs::snapshot` 直接克隆整张表），
+    /// 这张表里没有第二条读取路径需要它。
+    #[cfg(test)]
     pub fn reading_progress_of(&self, path: &str) -> Option<&ReadingProgress> {
         self.reading_progress.get(path)
     }
@@ -1046,6 +1059,20 @@ impl Config {
     /// 删掉一个根目录的会话。返回"原来到底有没有"（⚠️ 空会话落点，幂等）。
     pub fn remove_dir_session(&mut self, root: &str) -> bool {
         self.dir_sessions.remove(root).is_some()
+    }
+
+    /// ⭐ 把某个已记录目录会话的 `last_file` 换成新值（`design/0035` §3.5 的改名迁移）。
+    ///
+    /// ⚠️ 目录**不在表里就什么也不做**（⛔ 不凭空造一条会话——那等于替用户记下一个
+    /// 他从未打开过的目录）。
+    /// ⚠️ `expanded` 原样保留；时间戳仍由 [`Config::set_dir_session`] 盖
+    /// （`INV-SESS-06`：只有后端盖章），清洗与淘汰也走同一条路。
+    pub fn set_dir_session_last_file(&mut self, root: &str, last: &str) {
+        let Some(mut s) = self.dir_sessions.get(root).cloned() else {
+            return;
+        };
+        s.last_file = Some(last.to_string());
+        self.set_dir_session(root, s);
     }
 
     /// 从磁盘读。**任何失败都返回默认值**（模块头第 3 条）。
@@ -1696,6 +1723,24 @@ mod tests {
             !out.expanded.contains(&"/r/a199/b".to_string()),
             "同深度里字节序靠后的被裁掉"
         );
+    }
+
+    #[test]
+    fn 目录会话_改last_file命中就换未命中什么也不做() {
+        // `design/0035` §3.5：改名之后把"上次读的那份"迁到新名字。
+        let mut c = Config::default();
+        c.set_dir_session_at("/r", sess(Some("/r/a.md"), &["/r/d"]), 1_000);
+
+        c.set_dir_session_last_file("/r", "/r/b.md");
+        let got = c.dir_session("/r").expect("命中的那条仍在");
+        assert_eq!(got.last_file.as_deref(), Some("/r/b.md"), "命中的目录 ⇒ 换成新值");
+        assert_eq!(got.expanded, vec!["/r/d".to_string()], "⚠️ expanded 原样保留");
+        assert!(got.updated_at >= 1_000, "时间戳仍由后端盖章");
+
+        // 未命中的目录：⛔ 不凭空造一条
+        c.set_dir_session_last_file("/nope", "/nope/a.md");
+        assert!(c.dir_session("/nope").is_none(), "目录不在表里 ⇒ 什么也不做");
+        assert_eq!(c.dir_sessions.len(), 1);
     }
 
     #[test]

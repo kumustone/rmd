@@ -77,6 +77,8 @@ function harness(o) {
     carets: [],
     /** ⭐ `pendingHost(prev)` 的台账：`after` 是"插在哪一块之后"。 */
     pendingHosts: [],
+    /** ⭐ `onStaleDocument` 的台账（`design/0047` §6 的"自动重载"）。 */
+    stale: [],
   };
 
   function payloadFor(txt) {
@@ -158,6 +160,17 @@ function harness(o) {
       }
       return state.nodes[index];
     },
+    // ⭐ 单元格节点口（`main.js::cellNodeOf`，`design/0049`）。⚠️ 不提供它，
+    //    `begin({cell})` 会在**可写性检查之前**就报 `no-node` ⇒ 下面那三条拒绝路径
+    //    （`INV-CELL-05/06`）根本走不到，测试会假装在验它。
+    cellNodeOf: function (index, flat) {
+      return { index: index, flat: flat, cell: true };
+    },
+    // ⭐ `design/0047` §6 的「身份四件套不符 ⇒ 自动重载」。⚠️ **默认不注入**：
+    //    老判据验的是"退回那条红字"的兜底路径，注入与否是两条不同的收场。
+    onStaleDocument: opt.onStaleDocument
+      ? function (a) { state.stale.push(a); }
+      : undefined,
     saveDisk: async function (arg) {
       state.saves.push(arg);
     },
@@ -180,6 +193,13 @@ function harness(o) {
         caret: function () {
           return v.caretPos;
         },
+        /**
+         * ⭐ 块内选区（`design/0059` 阶段 A：事务载荷的"选前/选后"）。
+         * ⚠️ 与真 `main.js` 同形：给 `{anchor, head}`，**保留方向**；测试可以改 `v.sel`。
+         */
+        selection: function () {
+          return v.sel ? { anchor: v.sel.anchor, head: v.sel.head } : { anchor: v.caretPos, head: v.caretPos };
+        },
         focusAt: function (p) {
           v.focused = true;
           if (p && Number.isInteger(p.pos)) v.caretPos = p.pos;
@@ -193,6 +213,7 @@ function harness(o) {
         height: v.height,
         destroy: v.destroy,
         caret: v.caret,
+        selection: v.selection,
         focusAt: v.focusAt,
       };
     },
@@ -284,6 +305,104 @@ test('块表有问题（`issues` 非空）⇒ ⛔ 不进编辑态（`INV-LIVE-06
   assert.strictEqual(h.state.begins.length, 0);
 });
 
+/**
+ * ⭐⭐ `design/0047` §6 的那一行恢复要求：
+ * 「身份四件套不符（换文档/重载/行数变了）⇒ ⛔ 不进编辑态｜用户可见『正文已变化，重新载入中』｜**自动重载**」。
+ *
+ * ⚠️⚠️ 为什么必须单独钉一条（2026-11-03 用户实测）：实现此前只做了前半句——一条红字
+ *    「正文在打开后被改过（行数 275 → 148）⇒ 就地编辑没有开始」，**正文一点不动**。
+ *    用户看到的是"我点它，它告诉我文件改过了，然后就没了"，得自己去菜单里重载。
+ *    ⇒ 判据有两半：① `onStaleDocument` **被叫到**（重载真的会发生）；
+ *    ② 授权**归还**了、一个视图都没建（⛔ 不能拿着写授权去重载）。
+ */
+test('⭐⭐ 身份不符 ⇒ 请上层**自动重载**（`design/0047` §6），⛔ 只留一条红字', async function () {
+  // 块表说整篇 3 行，而 `begin_edit` 给的文本有 4 行 ⇒ 磁盘在打开之后被改过。
+  const h = harness({ grantText: 'A\n\nC\nD', onStaleDocument: true });
+  const r = await h.ctrl.begin({ index: 0, block: h.block(0), el: h.el });
+  assert.strictEqual(r.ok, false);
+  assert.strictEqual(r.why, 'identity');
+  assert.strictEqual(h.state.stale.length, 1, '必须请上层重载（⛔ 只报一句就完事）');
+  assert.ok(
+    h.state.reports.some(function (m) { return m.indexOf('status.live-reloading') >= 0; }),
+    h.state.reports.join('|')
+  );
+  assert.strictEqual(h.state.ends.length, 1, '写授权必须归还');
+  assert.strictEqual(h.state.views.length, 0, '⛔ 一个视图都不许建');
+  assert.strictEqual(h.ctrl.state(), 'viewing');
+});
+
+test('兜底：没有注入重载口 ⇒ 仍报那条红字（⛔ 不假装重载了）', async function () {
+  const h = harness({ grantText: 'A\n\nC\nD' });
+  const r = await h.ctrl.begin({ index: 0, block: h.block(0), el: h.el });
+  assert.strictEqual(r.ok, false);
+  assert.ok(h.state.reports.join('|').indexOf('status.live-identity') >= 0, h.state.reports.join('|'));
+  assert.strictEqual(h.state.stale.length, 0);
+});
+
+// ── 表格单元格入口（`design/0049`）：一条正对照 + 三条**拒绝**路径 ────────────
+//
+// ⚠️⚠️ 为什么必须单开这一组：离屏闸门（`make probe-live-block` 的 `Q` 段）跑的是
+//    「点得进去、改得对」，⛔ 一条都不跑「这一格**不许**进去」。而拒绝错了的后果是
+//    **写坏别的格子**（`INV-CELL-05/06`），屏幕上只表现为"没进去"或"进错了格"——
+//    没有任何报错，也没有任何既有判据会红。
+//
+// ⭐ 三条拒绝路径的**共同判据**是 `begins.length === 0`：连写授权都不许申请
+//    （与上面那条「不可编辑的块」同一个口径），⛔ 不是"申请了再放弃"。
+
+/**
+ * 一张表格夹具：第 3 行是一行两格（`| c | d |` ⇒ 列区间 `[2,3)` / `[6,7)`）。
+ * ⚠️ `Block` 的种类下标必须是 `Table`（`KINDS[5]`），块级 `editable = 0`
+ *    （`design/0049` §3：格子是**另一条入口**，⛔ 不是把 `Table` 挪进块级白名单）。
+ * @param {Array|null} rows 线格式 `[[line, from, to, writable], …]`；`null` ⇒ 载荷干脆没有 `table_cells`
+ */
+function 表格载荷(rows) {
+  const p = {
+    real_path: '/tmp/a.md',
+    gen: 7,
+    doc_seq: 3,
+    line_count: 3,
+    html: 'x',
+    toc: [],
+    block_kinds: KINDS,
+    blocks: [[5, 1, 3, 0]],
+  };
+  if (rows) p.table_cells = [[0, rows]];
+  return p;
+}
+
+test('⭐ 正对照：可写的格子进得去（证明下面三条拒绝不是"这条路本来就进不去"）', async function () {
+  const h = harness({ text: '| a | b |\n|---|---|\n| c | d |', payload: 表格载荷([[3, 2, 3, 1], [3, 6, 7, 1]]) });
+  const r = await h.ctrl.begin({ index: 0, block: h.block(0), el: h.el, cell: { flat: 0 } });
+  assert.deepStrictEqual(r, { ok: true });
+  assert.strictEqual(h.state.begins.length, 1);
+  assert.strictEqual(h.state.views[0].lines[0], 'c', '视图里就是那一格的源码（⛔ 不是整行）');
+});
+
+test('⭐ `INV-CELL-05`：`writable = 0` 的格子 ⇒ 拒绝，⛔ 连 `begin_edit` 都不调', async function () {
+  // 自动补出来的空列（`blocks.rs::cell_span` 把它标成不可写）：区间落在最后一个 `|` 之后。
+  const h = harness({ text: '| a | b |\n|---|---|\n| c | d |', payload: 表格载荷([[3, 2, 3, 1], [3, 6, 7, 0]]) });
+  const r = await h.ctrl.begin({ index: 0, block: h.block(0), el: h.el, cell: { flat: 1 } });
+  assert.strictEqual(r.ok, false);
+  assert.strictEqual(h.state.begins.length, 0, '⛔ 不为一次注定失败的点击申请写授权');
+  assert.ok(h.state.reports[0].indexOf('status.cell-locked') >= 0, h.state.reports[0]);
+});
+
+test('⭐ `INV-CELL-06`：载荷里没有这一格（与 DOM 对不上）⇒ 拒绝，⛔ 不部分配对', async function () {
+  const h = harness({ text: '| a | b |\n|---|---|\n| c | d |', payload: 表格载荷([[3, 2, 3, 1], [3, 6, 7, 1]]) });
+  const r = await h.ctrl.begin({ index: 0, block: h.block(0), el: h.el, cell: { flat: 9 } });
+  assert.strictEqual(r.ok, false);
+  assert.strictEqual(h.state.begins.length, 0);
+  assert.ok(h.state.reports[0].indexOf('status.cell-pairing') >= 0, h.state.reports[0]);
+});
+
+test('⭐ 载荷里根本没有 `table_cells`（老后端）⇒ 如实告知，⛔ 不猜一个位置', async function () {
+  const h = harness({ text: '| a | b |\n|---|---|\n| c | d |', payload: 表格载荷(null) });
+  const r = await h.ctrl.begin({ index: 0, block: h.block(0), el: h.el, cell: { flat: 0 } });
+  assert.strictEqual(r.ok, false);
+  assert.strictEqual(h.state.begins.length, 0);
+  assert.ok(h.state.reports[0].indexOf('status.cell-unavailable') >= 0, h.state.reports[0]);
+});
+
 test('⭐ 身份四件套之 `line_count`：授权文本的行数对不上 ⇒ 拒绝并**归还授权**', async function () {
   // 块表说整篇 3 行，而 `begin_edit` 给的文本只有 2 行 ⇒ 行号已经陈旧。
   const h = harness({ grantText: 'A\nB' });
@@ -306,7 +425,13 @@ test('行尾不统一（`lossy`）⇒ 拒绝，且 ⛔ 不交换', async functio
 //    U6 之前是"几何对不上 ⇒ 回滚、不上屏、不交换"，代价是高过一屏的块**永远点不进去**
 //    （CM6 只测量视口内的行 ⇒ 恒定 +20.141 px）。用户 2026-10-27 拍板"体验为先"。
 //    ⚠️ 但"变矮"仍然要报：那是排版丢东西（`h1` −7 px 那一族），状态条是用户唯一看得见的那一处。
-test('⭐ 变高**只记账、⛔ 不拦人**：视图上屏、交换照做、状态条不弹（`INV-KERNEL-05`）', async function () {
+//
+// ⛔⛔ **2026-11-09 收口：下面两条只描述"当前实现"，⛔ 不是合规形态。**
+//    `design/0047` §5 `INV-LIVE-04`（2026-11-09 版）要求**进入瞬间逐像素不动**，
+//    "变高只记账"与"变矮两档都放行"都是**缺陷**（`bugs/0298` 一族）。
+//    ⇒ 它们是**特征化测试**（把现状钉住，防止重构时悄悄改掉别的）；修好之后这两条必须
+//      跟着翻转成"不进编辑态 / 回滚并说明"，⛔ 不许拿"测试是绿的"当成产品对。
+test('⚠️ 现状（缺陷）：变高**只记账、⛔ 不拦人**：视图上屏、交换照做、状态条不弹', async function () {
   // ⚠️ 这就是 bigblock 的形态（CM6 只测量视口内的行 ⇒ 高过一屏的块恒定 +20.141 px）。
   const h = harness({ height: 140 });
   const r = await h.ctrl.begin({ index: 0, block: h.block(0), el: h.el });
@@ -317,7 +442,7 @@ test('⭐ 变高**只记账、⛔ 不拦人**：视图上屏、交换照做、�
     '变高**不逐条弹状态条**（每块都弹会淹掉真错误）：' + h.state.reports.join('|'));
 });
 
-test('变矮告警阈值 0.5 px（0.5 不吭声、0.6 报一句；**两档都放行**）', async function () {
+test('⚠️ 现状（缺陷）：变矮阈值 0.5 px（0.5 不吭声、0.6 报一句；**两档都放行**）', async function () {
   const ok = harness({ height: 99.5 });
   const a = await ok.ctrl.begin({ index: 0, block: ok.block(0), el: ok.el });
   assert.strictEqual(a.ok, true);
@@ -397,6 +522,94 @@ test('提交后块的行区间跟着变（多打两行 ⇒ 后面的块不会被
   v.lines = ['A1', 'A2x'];
   await h.ctrl.commit();
   assert.strictEqual(h.state.renders[1].text, 'A1\nA2x\n\nC');
+});
+
+// ── 事务载荷（`design/0059` 阶段 A）────────────────────────────────────────
+//
+// ⭐ 这一组判的是「载荷里的每一项**真的**描述了这次变更」，⛔ 不是"字段存在"。
+//    最容易自欺的两处：
+//    ① 选后选区抄一份选前（同义反复 ⇒ 调用方永远读到自己进去时的那个）；
+//    ② 修订沿用 T0 基线（成功载荷里 `fullText` 是新文本、`revision` 却指向旧文本）。
+
+test('⭐ 事务载荷：选前/选后分开取、修订描述载荷文本、三个维度如实声明', async function () {
+  /** @type {null | ((value?: any) => void)} */
+  let release = null;
+  const h = harness({
+    // 两块夹具：第一块只占第 1 行 ⇒ 正文的后两行必须原样保留（区间不许外溢）。
+    blocksFor: function () {
+      return [[0, 1, 1, 1], [0, 3, 3, 1]];
+    },
+    // ⚠️ 卡在**异步段**（`render_preview`）里：给"提交期间光标还动了"留出可观测的窗口。
+    renderGate: function () {
+      return new Promise(function (res) {
+        release = res;
+      });
+    },
+  });
+  await h.ctrl.begin({ index: 0, block: h.block(0), el: h.el });
+  const v = h.state.views[0];
+
+  // 选前：**反向**选区（`anchor > head`）——方向必须原样保留，⛔ 不许归一成 from/to。
+  v.sel = { anchor: 1, head: 0 };
+  v.lines = ['A1'];
+  const pending = h.ctrl.commit();
+  await new Promise(function (r) {
+    setTimeout(r, 0);
+  });
+
+  // 异步段里用户把光标挪了（⛔ 没有发起第二次提交）。
+  v.sel = { anchor: 3, head: 2 };
+  // ⚠️ 走到这里说明 `render_preview` 已经真的被调用并卡住了；没卡住就是夹具坏了，
+  //    ⛔ 不许把"闸门没生效"读成"提交本来就这样"。
+  if (!release) throw new Error('前提：render_preview 必须卡在闸门里');
+  release();
+  const out = await pending;
+  assert.strictEqual(out.committed, true);
+
+  const tx = h.ctrl.lastTransaction();
+  assert.strictEqual(tx.status, 'committed');
+  // 三个维度分开声明（`design/0059` §2.1）：⛔ 不混装成 `source`。
+  assert.strictEqual(tx.operation, 'edit');
+  assert.strictEqual(tx.objectKind, 'block');
+  assert.strictEqual(tx.mode, 'live');
+
+  // ① 选前 = 发起那一刻（反向）。
+  assert.deepStrictEqual(
+    { anchor: tx.selectionBefore.anchor, head: tx.selectionBefore.head },
+    { anchor: 1, head: 0 }
+  );
+  // ② 选后 = **发布那一刻**从活动视图取的（⛔ 不是把选前抄一遍）。
+  assert.deepStrictEqual(
+    { anchor: tx.selectionAfter.anchor, head: tx.selectionAfter.head },
+    { anchor: 3, head: 2 }
+  );
+  assert.strictEqual(tx.selectionAfter.space, 'block', '块内偏移的空间必须标清');
+  assert.strictEqual(
+    tx.selectionAfter.revision.commitSeq,
+    tx.revision.commitSeq,
+    '选后选区与载荷正文必须属于同一修订'
+  );
+
+  // ③ 修订描述**载荷里这份文本**：发布让 `commitSeq` 前进了一次，
+  //    而选前选区记的是**发起时**那一版 ⇒ 两者必须正好差一。
+  assert.strictEqual(tx.revision.commitSeq, tx.selectionBefore.revision.commitSeq + 1);
+  assert.strictEqual(tx.fullText, 'A1\n\nC');
+  assert.strictEqual(tx.lineCount, 3);
+  assert.strictEqual(tx.lines.length, 3);
+});
+
+test('⭐ 事务载荷：`unchanged` 的选后 = 选前（真值没动），⛔ 不冒充一次提交', async function () {
+  const h = harness();
+  await h.ctrl.begin({ index: 0, block: h.block(0), el: h.el });
+  const v = h.state.views[0];
+  v.sel = { anchor: 2, head: 2 };
+  const out = await h.ctrl.commit();
+  assert.strictEqual(out.committed, false);
+  const tx = h.ctrl.lastTransaction();
+  assert.strictEqual(tx.status, 'unchanged');
+  assert.deepStrictEqual(tx.selectionAfter, tx.selectionBefore);
+  assert.strictEqual(h.state.renders.length, 0, '⛔ 没改动还发渲染');
+  assert.strictEqual(tx.revision.commitSeq, 0, '修订仍停在基线那一版');
 });
 
 test('⭐ 身份复核失败（回包行数不对）⇒ ⛔ 不 mount，报「结构不符」', async function () {
@@ -652,7 +865,9 @@ test('⭐⭐ 发布段挂载炸了之后**怎么退出**：`leave()` 报失败�
   const left = await h.ctrl.leave({});
   assert.deepStrictEqual(
     left,
-    { ok: false, committed: false, failed: true, why: 'mount boom' },
+    // ⭐ `pending: true`（`design/0058` §2.2）：失败时视图里**还有没提交的字**，
+    //    调用方（切文档 / 关窗口）必须能读出来，⛔ 不能只看到一句"失败"。
+    { ok: false, committed: false, failed: true, why: 'mount boom', pending: true },
     '⛔ 挂载失败不许被读成"没改动、退出成功"'
   );
   assert.strictEqual(h.ctrl.state(), 'editing', '失败之后仍留在编辑态（⛔ 不许静默收场）');
@@ -695,7 +910,106 @@ test('回到 Viewing 后 `⌘Z` 撤最近一次提交（走同一条渲染提交
   assert.ok(h.state.reports.join('|').indexOf('status.live-undo') >= 0);
 });
 
-// ── 换文档 / 边界 ─────────────────────────────────────────────────────────
+// ── 重做（`bugs/0020` §8，2026-11-02）────────────────────────────────────
+
+test('⭐ `⇧⌘Z` 重做最近一次撤销：内容回到提交后那份，⛔ 不动磁盘', async function () {
+  const h = harness();
+  await h.ctrl.begin({ index: 0, block: h.block(0), el: h.el });
+  h.type(0, 'Q');
+  await h.ctrl.leave({});
+  assert.strictEqual(h.ctrl.canRedo(), false, '没撤销过 ⇒ 没有可重做的');
+  assert.strictEqual(await h.ctrl.undo(), true);
+  assert.strictEqual(h.ctrl.canRedo(), true);
+  assert.strictEqual(await h.ctrl.redo(), true);
+  assert.strictEqual(h.state.renders[h.state.renders.length - 1].text, 'Q\n\nC', '内容回到提交后');
+  assert.strictEqual(h.ctrl.canRedo(), false);
+  assert.strictEqual(h.ctrl.canUndo(), true);
+  assert.ok(h.state.reports.join('|').indexOf('status.live-redo') >= 0);
+  // ⚠️ 重做只是内存里的提交栈，⛔ 不写盘（`design/0047` §2.5）。
+  assert.strictEqual(h.state.saves.length, 0, '磁盘一个字节都没动');
+});
+
+test('⭐ `⇧⌘Z` 没有可重做的 ⇒ `false` 并说一声（⛔ 无声 no-op）', async function () {
+  const h = harness();
+  await h.ctrl.begin({ index: 0, block: h.block(0), el: h.el });
+  h.type(0, 'Q');
+  await h.ctrl.leave({});
+  assert.strictEqual(await h.ctrl.redo(), false);
+  assert.ok(h.state.reports.join('|').indexOf('status.live-nothing-to-redo') >= 0);
+});
+
+test('⭐ 撤销之后**新提交** ⇒ 重做栈作废（`⇧⌘Z` 回到没有）', async function () {
+  const h = harness();
+  await h.ctrl.begin({ index: 0, block: h.block(0), el: h.el });
+  h.type(0, 'Q');
+  await h.ctrl.leave({});
+  assert.strictEqual(await h.ctrl.undo(), true);
+  assert.strictEqual(h.ctrl.canRedo(), true);
+  await h.ctrl.begin({ index: 0, block: h.block(0), el: h.el });
+  h.type(0, 'Z');
+  await h.ctrl.leave({});
+  assert.strictEqual(h.ctrl.canRedo(), false, '内容分叉 ⇒ 旧的重做目标不成立');
+});
+
+// ── ⭐ 撤销/重做的**失败原子性**（`bugs/0020` 评审 P0，2026-11-02）──────────
+//   ⚠️⚠️ 旧写法先同步改真值与两侧栈、再 await submit()，失败时什么都不还原：
+//   屏幕停在旧文本、模型已经换了 ⇒ 下一次 ⌘S 会把**屏幕上没显示过**的内容写盘。
+
+test('⭐⭐ 撤销渲染失败 ⇒ 全文/两侧栈原样还原，保存⛔ 不写出没显示过的内容', async function () {
+  const opt = {};
+  const h = harness(opt);
+  await h.ctrl.begin({ index: 0, block: h.block(0), el: h.el });
+  h.type(0, 'Q');
+  await h.ctrl.leave({});
+  const committed = h.ctrl.fullText();
+  assert.strictEqual(committed, 'Q\n\nC');
+
+  opt.renderFails = true;
+  assert.strictEqual(await h.ctrl.undo(), false, '渲染失败 ⇒ 撤销不能报成功');
+  opt.renderFails = false;
+
+  assert.strictEqual(h.ctrl.fullText(), committed, '⚠️ 模型必须原样（⛔ 不许留在"已撤销"那份）');
+  assert.strictEqual(h.ctrl.canUndo(), true, '条目必须回到提交栈');
+  assert.strictEqual(h.ctrl.canRedo(), false, '⛔ 不许留在重做栈里（那会把失败现场当成可重做）');
+  assert.strictEqual(h.ctrl.isDirty(), true, '提交还没保存 ⇒ 脏状态不能被撤销失败清掉');
+
+  // 失败之后保存，写出的必须是**屏幕上那份**（= 模型那份）。
+  await h.ctrl.save();
+  const last = h.state.saves[h.state.saves.length - 1];
+  assert.strictEqual(last.text, committed, '⛔ 写盘内容必须与屏幕一致');
+});
+
+test('⭐⭐ 重做渲染失败 ⇒ 同样原样还原（屏幕 A、模型不许变成 B）', async function () {
+  const opt = {};
+  const h = harness(opt);
+  await h.ctrl.begin({ index: 0, block: h.block(0), el: h.el });
+  h.type(0, 'Q');
+  await h.ctrl.leave({});
+  assert.strictEqual(await h.ctrl.undo(), true);
+  const undone = h.ctrl.fullText();
+  assert.strictEqual(undone, 'A\n\nC');
+
+  opt.renderFails = true;
+  assert.strictEqual(await h.ctrl.redo(), false);
+  opt.renderFails = false;
+
+  assert.strictEqual(h.ctrl.fullText(), undone, '⚠️ 仍是撤销之后那份');
+  assert.strictEqual(h.ctrl.canRedo(), true, '条目必须回到重做栈');
+  assert.strictEqual(h.ctrl.canUndo(), false, '⛔ 不许留在提交栈里');
+});
+
+test('⭐ 只打开文档、还没进过编辑时 `⌘Z` ⇒ 说一声（⛔ 静默 no-op）', async function () {
+  const h = harness();
+  // ⚠️ 会话是在 `begin()` 里建的 ⇒ 这里 `session === null`、`state === 'viewing'`。
+  assert.strictEqual(h.ctrl.state(), 'viewing');
+  assert.strictEqual(await h.ctrl.undo(), false);
+  assert.ok(
+    h.state.reports.join('|').indexOf('status.live-nothing-to-undo') >= 0,
+    '没有会话 ≠ 这个语境不归我：必须说一句'
+  );
+});
+
+
 
 test('⭐ `reseat()`：提交换掉整棵 `#doc` 之后，同一个视图重新挂到新节点上', async function () {
   // ⚠️ 这条守的是"提交完屏幕上那一块**看不见了**"——`mountDocument` 是
@@ -733,7 +1047,10 @@ test('`reset()`：拆活动视图、清会话与栈', async function () {
   assert.strictEqual(h.state.unswaps, 2, '活动视图也要拆掉');
 });
 
-test('块太大 ⇒ ⛔ 不进编辑态（`limits` 可注入；阈值是**未标定的初值**）', async function () {
+// ⚠️ 这是 **`design/0059` 阶段 E 的欠账**，⛔ 不是产品终态：超大块点不进去
+//    （`editable=false`）本身就是"用户点了没反应"的一种形态。`INV-LIVE-04` ① 要求
+//    **进得去且逐像素不动**；本条只钉住"预算还在时不要更糟"（⛔ 别把拒绝当成合规结论）。
+test('⚠️ 欠账：块太大 ⇒ 当前实现不进编辑态（`limits` 可注入；阈值是**未标定的初值**）', async function () {
   const h = harness({ text: 'A\nB\nC', limits: { maxBlockLines: 2 } });
   const r = await h.ctrl.begin({ index: 0, block: h.block(0), el: h.el });
   assert.strictEqual(r.ok, false);
@@ -788,12 +1105,16 @@ async function 进第一块() {
   return h;
 }
 
-test('⭐ `⌘↵`：在**这一块之后**插三行空行，光标落进新段落，⛔ 不退出编辑态', async function () {
+test('⭐ `⌘↵`：在**这一块之后**插空行（块后已有空行 ⇒ 2 行），光标落进新段落，⛔ 不退出编辑态', async function () {
   const h = await 进第一块();
   const ok = await h.ctrl.newParagraph();
   assert.strictEqual(ok, true);
   assert.strictEqual(h.ctrl.state(), 'editing', '⌘↵ 之后必须**仍**在编辑态（用户原话）');
-  assert.strictEqual(h.text(), 'A\n\n\n\n\nB', '会话里真的多了三行空行（上分隔 / 新段落 / 下分隔）');
+  // ⭐ 块后**本来就有一行空行** ⇒ 只插 2 行（上分隔 ＋ 新段落），原来那行当新段落的下分隔
+  //    （`bugs/0079`：无条件插三行会让新段落下方留 2 个空行，每按一次多一个）。
+  //    ⚠️ 所以文本里是**三行空行**：中间那行是**新段落本体**（还没敲字，空串），
+  //    ⛔ 不是第二个下分隔 —— 判据看的是「下分隔只有一行」，不是「空行只有两行」。
+  assert.strictEqual(h.text(), 'A\n\n\n\nB', '只插了 2 行：上分隔 ＋ 新段落（原有空行当下分隔）');
   assert.deepStrictEqual(
     h.state.carets[h.state.carets.length - 1],
     0,
@@ -808,13 +1129,13 @@ test('⭐ 中文落进新段落，后面已有的正文逐字不变（用户点�
   await h.ctrl.newParagraph();
   h.type(0, '你好'); // 中文上屏
   const v = h.state.views[h.state.views.length - 1];
-  assert.strictEqual(v.offsets, 2, '新段落是 0-based 第 2 行（三行空行的**中间**那一行）');
+  assert.strictEqual(v.offsets, 2, '新段落是 0-based 第 2 行（插入行的**后一行**）');
   assert.strictEqual(h.ctrl.state(), 'editing');
   // 再按一次：把「你好」提交成真块，并**在它之后**再新起一段（连续两次 `⌘↵` 不许插到上面去）
   const ok = await h.ctrl.newParagraph();
   assert.strictEqual(ok, true);
-  // ⚠️ 空行的**条数**会随每次 `⌘↵` 累积（每次插三行；原稿那一行空行不在三行之内），
-  //    那个数没有产品含义 ⇒ 判据比**非空行**的次序，⛔ 不比空行个数。
+  // ⚠️ 空行的**条数**现在每次固定（`bugs/0079` 修完不再累积）⇒ 判据仍比**非空行**的次序，
+  //    ⛔ 不比空行个数（那属于 `bugs/0079` 自己的判据）。
   assert.deepStrictEqual(
     h.text().split('\n').filter(function (l) { return l.trim() !== ''; }),
     ['A', '你好', 'B'],
@@ -824,18 +1145,67 @@ test('⭐ 中文落进新段落，后面已有的正文逐字不变（用户点�
   assert.ok(/\n\nB$/.test(h.text()), 'B 前仍有空行分隔（⛔ 不许跟新段落并进同一段）');
 });
 
+test('⭐⭐ `bugs/0079` §6 ①②：`⌘↵` ＋ 输入 ＋ 退出 ⇒ 新段落下方**只有 1 个空行**，连按不累积', async function () {
+  // ⚠️ 这一条量的是**提交出去的正文**（`h.text()` 取最后一次 `render_preview` 的入参），
+  //    ⛔ 不是缓冲区：§6 ①② 说的「保存后的文件」就是这一份。
+  const h = await 进第一块();
+  await h.ctrl.newParagraph();
+  h.type(0, '甲'); // ⚠️ 下标是**这一份视图内**的行（新段落视图只有一行）
+  const out = await h.ctrl.leave({});
+  assert.strictEqual(out.ok, true);
+  assert.strictEqual(
+    h.text(),
+    'A\n\n甲\n\nB',
+    '新段落下方**只有 1 个**空行（修复前是 2 个，每按一次多一个）'
+  );
+  // ② 连按第二次（重新点进「甲」那一块再 `⌘↵`）⇒ ⛔ 不累积，仍是每侧 1 个空行
+  await h.ctrl.begin({ index: 1, block: h.block(1), el: h.el });
+  await h.ctrl.newParagraph();
+  h.type(0, '乙');
+  assert.strictEqual((await h.ctrl.leave({})).ok, true);
+  assert.strictEqual(h.text(), 'A\n\n甲\n\n乙\n\nB', '第二次之后仍然只有 1 个空行（修复前 3 个）');
+});
+
+test('⭐ `bugs/0079` §6 ③：文档末尾（块后**没有**分隔行）走 3 行那一支，末尾不多出空行', async function () {
+  // ⚠️ 标题块后 / 列表块后与段落块后走的是**同一行** `insertAt = b.to`
+  //    ⇒ 真正分成两支的只有「`b.to` 后面本来有没有空行」，文档末尾是 3 行那一支的常态形态。
+  const h = harness({ text: 'A', blocksFor: 段落块 });
+  await h.ctrl.begin({ index: 0, block: h.block(0), el: h.el });
+  await h.ctrl.newParagraph();
+  assert.strictEqual(h.text(), 'A\n\n\n', '文档末尾：上分隔 ＋ 新段落 ＋ 下分隔');
+  h.type(0, '甲');
+  assert.strictEqual((await h.ctrl.leave({})).ok, true);
+  // 文件以**一个**换行收尾（⛔ 不是 `A\n\n甲\n\n` 那种多出来的空行）
+  assert.strictEqual(h.text(), 'A\n\n甲\n');
+  // 另两种起点（标题块后 / 列表块后）走的是**同一行** `insertAt = b.to`，
+  // 差别只在块种类 ⇒ 各跑一遍，防止将来有人给某个种类单独加分支。
+  const 起点 = [
+    ['标题块后', '# 行内\n\nB', [[1, 1, 1, 1]], '# 行内\n\n甲\n\nB'],
+    ['列表块后', '- 一项\n- 二项\n\nB', [[3, 1, 2, 1]], '- 一项\n- 二项\n\n甲\n\nB'],
+  ];
+  for (let i = 0; i < 起点.length; i++) {
+    const 名 = 起点[i][0];
+    const hh = harness({ text: 起点[i][1], blocksFor: function () { return 起点[i][2]; } });
+    await hh.ctrl.begin({ index: 0, block: hh.block(0), el: hh.el });
+    await hh.ctrl.newParagraph();
+    hh.type(0, '甲');
+    assert.strictEqual((await hh.ctrl.leave({})).ok, true);
+    assert.strictEqual(hh.text(), 起点[i][3], '§6 ③ ' + 名);
+  }
+});
+
 test('⭐⭐ 一次 `⌘Z` 恢复「操作前的内容**与光标**」，⛔ 不吃掉后面那一块（用户点名的③）', async function () {
   const h = await 进第一块();
   h.type(0, 'AX'); // ⌘↵ **之前**敲的字
   h.setCaret(1); // 光标停在 X 之前
   assert.strictEqual(await h.ctrl.newParagraph(), true);
-  assert.strictEqual(h.text(), 'AX\n\n\n\n\nB');
+  assert.strictEqual(h.text(), 'AX\n\n\n\nB');
   // ⭐ 一次 ⌘Z（键级历史已空 ⇒ `main.js::undoOnce` 把这一整步交给 `undoNewParagraph`）
   assert.strictEqual(await h.ctrl.undoNewParagraph(), true);
   assert.strictEqual(
     h.text(),
     'AX\n\nB',
-    '⛔ 只撤那三行：⌘↵ 之前敲的字必须还在，后面那一块的 B 也必须还在'
+    '⛔ 只撤那几行空行：⌘↵ 之前敲的字必须还在，后面那一块的 B 也必须还在'
   );
   assert.strictEqual(h.ctrl.state(), 'editing', '撤销之后仍在编辑态，⛔ 不是退回阅读态');
   assert.strictEqual(h.ctrl.activeIndex(), 0, '回到操作前那一块');

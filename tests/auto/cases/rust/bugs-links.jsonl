@@ -1,0 +1,784 @@
+# bugs-links 家族：从 docs/bugs/ 历史缺陷出发的链接分类 / 语言判定 / 外部编辑器 argv 深度回归。
+# 期望值 = 2026-11-08 产品当前行为；⚠️ 疑似缺陷条目只钉现状、不改产品。
+# 源自 docs/bugs/0001（点击文档里的链接，整个应用会重载一遍）
+# scheme 大小写与畸形外链：分类错了就会把整页导航交给 WebKit，重演 0001 的重载。
+{"id":"buglink-0001-001-scheme-00","family":"bugs-links","check":"link","input":{"href":"http://example.com"},"expect":{"kind":"external","url":"http://example.com"}}
+{"id":"buglink-0001-002-scheme-01","family":"bugs-links","check":"link","input":{"href":"https://example.com/"},"expect":{"kind":"external","url":"https://example.com/"}}
+{"id":"buglink-0001-003-scheme-02","family":"bugs-links","check":"link","input":{"href":"HTTPS://Example.COM/X"},"expect":{"kind":"external","url":"HTTPS://Example.COM/X"}}
+{"id":"buglink-0001-004-scheme-03","family":"bugs-links","check":"link","input":{"href":"HtTp://example.com/a"},"expect":{"kind":"external","url":"HtTp://example.com/a"}}
+{"id":"buglink-0001-005-scheme-04","family":"bugs-links","check":"link","input":{"href":"hTtPs://e.com/p?q=1#f"},"expect":{"kind":"external","url":"hTtPs://e.com/p?q=1#f"}}
+{"id":"buglink-0001-006-scheme-05","family":"bugs-links","check":"link","input":{"href":"HTTP://E.COM"},"expect":{"kind":"external","url":"HTTP://E.COM"}}
+{"id":"buglink-0001-007-scheme-06","family":"bugs-links","check":"link","input":{"href":"https://e.com:443/x"},"expect":{"kind":"external","url":"https://e.com:443/x"}}
+{"id":"buglink-0001-008-scheme-07","family":"bugs-links","check":"link","input":{"href":"https://e.com:8443/x?y=1"},"expect":{"kind":"external","url":"https://e.com:8443/x?y=1"}}
+{"id":"buglink-0001-009-scheme-08","family":"bugs-links","check":"link","input":{"href":"https://e.com:0/x"},"expect":{"kind":"external","url":"https://e.com:0/x"}}
+{"id":"buglink-0001-010-scheme-09","family":"bugs-links","check":"link","input":{"href":"https://e.com:65535/x"},"expect":{"kind":"external","url":"https://e.com:65535/x"}}
+# ⚠️ 疑似缺陷：端口号完全不做范围校验，65536 / 超长 / 负端口都直接进 external。
+{"id":"buglink-0001-011-scheme-10","family":"bugs-links","check":"link","input":{"href":"https://e.com:65536/x"},"expect":{"kind":"external","url":"https://e.com:65536/x"}}
+{"id":"buglink-0001-012-scheme-11","family":"bugs-links","check":"link","input":{"href":"https://e.com:99999999999999999999/x"},"expect":{"kind":"external","url":"https://e.com:99999999999999999999/x"}}
+{"id":"buglink-0001-013-scheme-12","family":"bugs-links","check":"link","input":{"href":"https://e.com:-1/x"},"expect":{"kind":"external","url":"https://e.com:-1/x"}}
+{"id":"buglink-0001-014-scheme-13","family":"bugs-links","check":"link","input":{"href":"http://127.0.0.1:8080/x"},"expect":{"kind":"external","url":"http://127.0.0.1:8080/x"}}
+{"id":"buglink-0001-015-scheme-14","family":"bugs-links","check":"link","input":{"href":"http://[::1]/x"},"expect":{"kind":"external","url":"http://[::1]/x"}}
+{"id":"buglink-0001-016-scheme-15","family":"bugs-links","check":"link","input":{"href":"http://[::1]:8080/x"},"expect":{"kind":"external","url":"http://[::1]:8080/x"}}
+{"id":"buglink-0001-017-scheme-16","family":"bugs-links","check":"link","input":{"href":"http://[2001:db8::1]/x"},"expect":{"kind":"external","url":"http://[2001:db8::1]/x"}}
+# ⚠️ 疑似缺陷：未闭合或只有半个方括号的 IPv6 权威段也被判 external，畸形 URL 直接交给 /usr/bin/open。
+{"id":"buglink-0001-018-scheme-17","family":"bugs-links","check":"link","input":{"href":"http://[::1"},"expect":{"kind":"external","url":"http://[::1"}}
+{"id":"buglink-0001-019-scheme-18","family":"bugs-links","check":"link","input":{"href":"http://]"},"expect":{"kind":"external","url":"http://]"}}
+{"id":"buglink-0001-020-scheme-19","family":"bugs-links","check":"link","input":{"href":"http://[]"},"expect":{"kind":"external","url":"http://[]"}}
+{"id":"buglink-0001-021-scheme-20","family":"bugs-links","check":"link","input":{"href":"https://例子.中国/路径"},"expect":{"kind":"external","url":"https://例子.中国/路径"}}
+{"id":"buglink-0001-022-scheme-21","family":"bugs-links","check":"link","input":{"href":"https://xn--fsqu00a.xn--fiqs8s/x"},"expect":{"kind":"external","url":"https://xn--fsqu00a.xn--fiqs8s/x"}}
+{"id":"buglink-0001-023-scheme-22","family":"bugs-links","check":"link","input":{"href":"https://e.com/%E4%B8%AD"},"expect":{"kind":"external","url":"https://e.com/%E4%B8%AD"}}
+{"id":"buglink-0001-024-scheme-23","family":"bugs-links","check":"link","input":{"href":"https://e.com/a%2Fb"},"expect":{"kind":"external","url":"https://e.com/a%2Fb"}}
+# ⚠️ 疑似缺陷：无效百分号序列不判畸形，照样当 external 交给系统浏览器。
+{"id":"buglink-0001-025-scheme-24","family":"bugs-links","check":"link","input":{"href":"https://e.com/a%zzb"},"expect":{"kind":"external","url":"https://e.com/a%zzb"}}
+{"id":"buglink-0001-026-scheme-25","family":"bugs-links","check":"link","input":{"href":"https://e.com/%"},"expect":{"kind":"external","url":"https://e.com/%"}}
+{"id":"buglink-0001-027-scheme-26","family":"bugs-links","check":"link","input":{"href":"https://e.com/a%2520b"},"expect":{"kind":"external","url":"https://e.com/a%2520b"}}
+{"id":"buglink-0001-028-scheme-27","family":"bugs-links","check":"link","input":{"href":"https://e.com/#"},"expect":{"kind":"external","url":"https://e.com/#"}}
+{"id":"buglink-0001-029-scheme-28","family":"bugs-links","check":"link","input":{"href":"https://e.com/?"},"expect":{"kind":"external","url":"https://e.com/?"}}
+{"id":"buglink-0001-030-scheme-29","family":"bugs-links","check":"link","input":{"href":"https://e.com/#?"},"expect":{"kind":"external","url":"https://e.com/#?"}}
+{"id":"buglink-0001-031-scheme-30","family":"bugs-links","check":"link","input":{"href":"https://e.com/a?b=c&d=e#f"},"expect":{"kind":"external","url":"https://e.com/a?b=c&d=e#f"}}
+{"id":"buglink-0001-032-scheme-31","family":"bugs-links","check":"link","input":{"href":"https://e.com/a?x=#y"},"expect":{"kind":"external","url":"https://e.com/a?x=#y"}}
+{"id":"buglink-0001-033-scheme-32","family":"bugs-links","check":"link","input":{"href":"https://e.com/a#x?y"},"expect":{"kind":"external","url":"https://e.com/a#x?y"}}
+{"id":"buglink-0001-034-scheme-33","family":"bugs-links","check":"link","input":{"href":"https://e.com/a?x=1#f?g"},"expect":{"kind":"external","url":"https://e.com/a?x=1#f?g"}}
+{"id":"buglink-0001-035-scheme-34","family":"bugs-links","check":"link","input":{"href":"https://e.com//double//slash"},"expect":{"kind":"external","url":"https://e.com//double//slash"}}
+{"id":"buglink-0001-036-scheme-35","family":"bugs-links","check":"link","input":{"href":"https://e.com/."},"expect":{"kind":"external","url":"https://e.com/."}}
+{"id":"buglink-0001-037-scheme-36","family":"bugs-links","check":"link","input":{"href":"https://e.com/.."},"expect":{"kind":"external","url":"https://e.com/.."}}
+{"id":"buglink-0001-038-scheme-37","family":"bugs-links","check":"link","input":{"href":"https://e.com/../x"},"expect":{"kind":"external","url":"https://e.com/../x"}}
+{"id":"buglink-0001-039-scheme-38","family":"bugs-links","check":"link","input":{"href":"https://e.com/中 文"},"expect":{"kind":"unsupported","scheme":"https"}}
+{"id":"buglink-0001-040-scheme-39","family":"bugs-links","check":"link","input":{"href":"https://e.com/中"},"expect":{"kind":"external","url":"https://e.com/中"}}
+{"id":"buglink-0001-041-scheme-40","family":"bugs-links","check":"link","input":{"href":"https://e.com/🙂"},"expect":{"kind":"external","url":"https://e.com/🙂"}}
+{"id":"buglink-0001-042-scheme-41","family":"bugs-links","check":"link","input":{"href":"https://user@e.com/x"},"expect":{"kind":"unsupported","scheme":"https"}}
+{"id":"buglink-0001-043-scheme-42","family":"bugs-links","check":"link","input":{"href":"https://user:pass@e.com/x"},"expect":{"kind":"unsupported","scheme":"https"}}
+{"id":"buglink-0001-044-scheme-43","family":"bugs-links","check":"link","input":{"href":"https://e.com@evil/x"},"expect":{"kind":"unsupported","scheme":"https"}}
+{"id":"buglink-0001-045-scheme-44","family":"bugs-links","check":"link","input":{"href":"https://exa mple.com/x"},"expect":{"kind":"unsupported","scheme":"https"}}
+{"id":"buglink-0001-046-scheme-45","family":"bugs-links","check":"link","input":{"href":"https://e.com/a b"},"expect":{"kind":"unsupported","scheme":"https"}}
+{"id":"buglink-0001-047-scheme-46","family":"bugs-links","check":"link","input":{"href":"https://e.com/a\tb"},"expect":{"kind":"unsupported","scheme":"https"}}
+{"id":"buglink-0001-048-scheme-47","family":"bugs-links","check":"link","input":{"href":"https://e.com/a\nb"},"expect":{"kind":"unsupported","scheme":"https"}}
+{"id":"buglink-0001-049-scheme-48","family":"bugs-links","check":"link","input":{"href":"https://e.com/a\rb"},"expect":{"kind":"unsupported","scheme":"https"}}
+{"id":"buglink-0001-050-scheme-49","family":"bugs-links","check":"link","input":{"href":"https://e.com/a\u0000b"},"expect":{"kind":"unsupported","scheme":"https"}}
+{"id":"buglink-0001-051-scheme-50","family":"bugs-links","check":"link","input":{"href":"https://e.com\\evil"},"expect":{"kind":"unsupported","scheme":"https"}}
+{"id":"buglink-0001-052-scheme-51","family":"bugs-links","check":"link","input":{"href":"https://e.com/a\"b"},"expect":{"kind":"external","url":"https://e.com/a\"b"}}
+{"id":"buglink-0001-053-scheme-52","family":"bugs-links","check":"link","input":{"href":"https://e.com/a'b"},"expect":{"kind":"external","url":"https://e.com/a'b"}}
+{"id":"buglink-0001-054-scheme-53","family":"bugs-links","check":"link","input":{"href":"https://e.com/a<b"},"expect":{"kind":"external","url":"https://e.com/a<b"}}
+{"id":"buglink-0001-055-scheme-54","family":"bugs-links","check":"link","input":{"href":"https://e.com/a>b"},"expect":{"kind":"external","url":"https://e.com/a>b"}}
+{"id":"buglink-0001-056-scheme-55","family":"bugs-links","check":"link","input":{"href":"https:///x"},"expect":{"kind":"unsupported","scheme":"https"}}
+{"id":"buglink-0001-057-scheme-56","family":"bugs-links","check":"link","input":{"href":"https://"},"expect":{"kind":"unsupported","scheme":"https"}}
+{"id":"buglink-0001-058-scheme-57","family":"bugs-links","check":"link","input":{"href":"https://?"},"expect":{"kind":"unsupported","scheme":"https"}}
+{"id":"buglink-0001-059-scheme-58","family":"bugs-links","check":"link","input":{"href":"https://#f"},"expect":{"kind":"unsupported","scheme":"https"}}
+{"id":"buglink-0001-060-scheme-59","family":"bugs-links","check":"link","input":{"href":"https:x"},"expect":{"kind":"unsupported","scheme":"https"}}
+{"id":"buglink-0001-061-scheme-60","family":"bugs-links","check":"link","input":{"href":"https:/x"},"expect":{"kind":"unsupported","scheme":"https"}}
+{"id":"buglink-0001-062-scheme-61","family":"bugs-links","check":"link","input":{"href":"https:example.com"},"expect":{"kind":"unsupported","scheme":"https"}}
+{"id":"buglink-0001-063-scheme-62","family":"bugs-links","check":"link","input":{"href":"http:/example.com"},"expect":{"kind":"unsupported","scheme":"http"}}
+{"id":"buglink-0001-064-scheme-63","family":"bugs-links","check":"link","input":{"href":"http:////e.com"},"expect":{"kind":"unsupported","scheme":"http"}}
+{"id":"buglink-0001-065-scheme-64","family":"bugs-links","check":"link","input":{"href":"http:"},"expect":{"kind":"unsupported","scheme":"http"}}
+{"id":"buglink-0001-066-scheme-65","family":"bugs-links","check":"link","input":{"href":"https://e.com: 80/x"},"expect":{"kind":"unsupported","scheme":"https"}}
+{"id":"buglink-0001-067-scheme-66","family":"bugs-links","check":"link","input":{"href":"https://-e.com/x"},"expect":{"kind":"external","url":"https://-e.com/x"}}
+# ⚠️ 疑似缺陷：权威段允许 ".."，https://../x 被判 external。
+{"id":"buglink-0001-068-scheme-67","family":"bugs-links","check":"link","input":{"href":"https://e..com/x"},"expect":{"kind":"external","url":"https://e..com/x"}}
+{"id":"buglink-0001-069-scheme-68","family":"bugs-links","check":"link","input":{"href":"https://.com/x"},"expect":{"kind":"external","url":"https://.com/x"}}
+# ⚠️ 疑似缺陷：权威段里的百分号编码不被拒绝，https://%2F/x 也被判 external。
+{"id":"buglink-0001-070-scheme-69","family":"bugs-links","check":"link","input":{"href":"https://../x"},"expect":{"kind":"external","url":"https://../x"}}
+{"id":"buglink-0001-071-scheme-70","family":"bugs-links","check":"link","input":{"href":"https://%2F/x"},"expect":{"kind":"external","url":"https://%2F/x"}}
+{"id":"buglink-0001-072-scheme-71","family":"bugs-links","check":"link","input":{"href":"https://e.com./x"},"expect":{"kind":"external","url":"https://e.com./x"}}
+{"id":"buglink-0001-073-scheme-72","family":"bugs-links","check":"link","input":{"href":" https://e.com "},"expect":{"kind":"external","url":"https://e.com"}}
+{"id":"buglink-0001-074-scheme-73","family":"bugs-links","check":"link","input":{"href":"\thttps://e.com\n"},"expect":{"kind":"external","url":"https://e.com"}}
+{"id":"buglink-0001-075-scheme-74","family":"bugs-links","check":"link","input":{"href":" https://e.com "},"expect":{"kind":"external","url":"https://e.com"}}
+{"id":"buglink-0001-076-scheme-75","family":"bugs-links","check":"link","input":{"href":"https://e.com/ "},"expect":{"kind":"external","url":"https://e.com/"}}
+# 裸 URL 尾随标点：分类器只做词法切分，不替调用方剥标点——钉住现状供上层对照。
+{"id":"buglink-0001-077-punct-00","family":"bugs-links","check":"link","input":{"href":"https://e.com/a."},"expect":{"kind":"external","url":"https://e.com/a."}}
+{"id":"buglink-0001-078-punct-01","family":"bugs-links","check":"link","input":{"href":"https://e.com/a,"},"expect":{"kind":"external","url":"https://e.com/a,"}}
+{"id":"buglink-0001-079-punct-02","family":"bugs-links","check":"link","input":{"href":"https://e.com/a;"},"expect":{"kind":"external","url":"https://e.com/a;"}}
+{"id":"buglink-0001-080-punct-03","family":"bugs-links","check":"link","input":{"href":"https://e.com/a:"},"expect":{"kind":"external","url":"https://e.com/a:"}}
+{"id":"buglink-0001-081-punct-04","family":"bugs-links","check":"link","input":{"href":"https://e.com/a!"},"expect":{"kind":"external","url":"https://e.com/a!"}}
+{"id":"buglink-0001-082-punct-05","family":"bugs-links","check":"link","input":{"href":"https://e.com/a?"},"expect":{"kind":"external","url":"https://e.com/a?"}}
+{"id":"buglink-0001-083-punct-06","family":"bugs-links","check":"link","input":{"href":"https://e.com/a#"},"expect":{"kind":"external","url":"https://e.com/a#"}}
+{"id":"buglink-0001-084-punct-07","family":"bugs-links","check":"link","input":{"href":"https://e.com/a)"},"expect":{"kind":"external","url":"https://e.com/a)"}}
+{"id":"buglink-0001-085-punct-08","family":"bugs-links","check":"link","input":{"href":"https://e.com/a]"},"expect":{"kind":"external","url":"https://e.com/a]"}}
+{"id":"buglink-0001-086-punct-09","family":"bugs-links","check":"link","input":{"href":"https://e.com/a}"},"expect":{"kind":"external","url":"https://e.com/a}"}}
+{"id":"buglink-0001-087-punct-10","family":"bugs-links","check":"link","input":{"href":"https://e.com/a》"},"expect":{"kind":"external","url":"https://e.com/a》"}}
+{"id":"buglink-0001-088-punct-11","family":"bugs-links","check":"link","input":{"href":"https://e.com/a。"},"expect":{"kind":"external","url":"https://e.com/a。"}}
+# ⚠️ 疑似缺陷：括号/书名号/引号包住的裸 URL 整串落进 local_path，而不是剥掉包裹后按外链处理。
+{"id":"buglink-0001-089-punct-12","family":"bugs-links","check":"link","input":{"href":"(https://e.com/a)"},"expect":{"kind":"local_path","path":"(https://e.com/a)","fragment":null}}
+{"id":"buglink-0001-090-punct-13","family":"bugs-links","check":"link","input":{"href":"[https://e.com/a]"},"expect":{"kind":"local_path","path":"[https://e.com/a]","fragment":null}}
+{"id":"buglink-0001-091-punct-14","family":"bugs-links","check":"link","input":{"href":"《https://e.com/a》"},"expect":{"kind":"local_path","path":"《https://e.com/a》","fragment":null}}
+{"id":"buglink-0001-092-punct-15","family":"bugs-links","check":"link","input":{"href":"“https://e.com/a”"},"expect":{"kind":"local_path","path":"“https://e.com/a”","fragment":null}}
+# ⚠️ 疑似缺陷：一条 href 里出现两个裸 URL 时，整串因空格被判 unsupported，而不是只看第一个。
+{"id":"buglink-0001-093-punct-16","family":"bugs-links","check":"link","input":{"href":"https://e.com/a, https://e.com/b"},"expect":{"kind":"unsupported","scheme":"https"}}
+{"id":"buglink-0001-094-punct-17","family":"bugs-links","check":"link","input":{"href":"https://e.com/a\nhttps://e.com/b"},"expect":{"kind":"unsupported","scheme":"https"}}
+{"id":"buglink-0001-095-punct-18","family":"bugs-links","check":"link","input":{"href":"https://e.com/a　"},"expect":{"kind":"external","url":"https://e.com/a"}}
+{"id":"buglink-0001-096-punct-19","family":"bugs-links","check":"link","input":{"href":"https://e.com/a。"},"expect":{"kind":"external","url":"https://e.com/a。"}}
+# 协议相对 //host：与 http(s) 同等外部唤起，不能落进本地路径。
+{"id":"buglink-0001-097-proto-rel-00","family":"bugs-links","check":"link","input":{"href":"//e.com"},"expect":{"kind":"external","url":"https://e.com"}}
+{"id":"buglink-0001-098-proto-rel-01","family":"bugs-links","check":"link","input":{"href":"//e.com/"},"expect":{"kind":"external","url":"https://e.com/"}}
+{"id":"buglink-0001-099-proto-rel-02","family":"bugs-links","check":"link","input":{"href":"//e.com/x?q#f"},"expect":{"kind":"external","url":"https://e.com/x?q#f"}}
+{"id":"buglink-0001-100-proto-rel-03","family":"bugs-links","check":"link","input":{"href":"//E.COM/X"},"expect":{"kind":"external","url":"https://E.COM/X"}}
+{"id":"buglink-0001-101-proto-rel-04","family":"bugs-links","check":"link","input":{"href":"//e.com:8080/x"},"expect":{"kind":"external","url":"https://e.com:8080/x"}}
+{"id":"buglink-0001-102-proto-rel-05","family":"bugs-links","check":"link","input":{"href":"//[::1]/x"},"expect":{"kind":"external","url":"https://[::1]/x"}}
+{"id":"buglink-0001-103-proto-rel-06","family":"bugs-links","check":"link","input":{"href":"//e.com/中"},"expect":{"kind":"external","url":"https://e.com/中"}}
+{"id":"buglink-0001-104-proto-rel-07","family":"bugs-links","check":"link","input":{"href":"//e.com/🙂"},"expect":{"kind":"external","url":"https://e.com/🙂"}}
+{"id":"buglink-0001-105-proto-rel-08","family":"bugs-links","check":"link","input":{"href":"//e.com#f"},"expect":{"kind":"external","url":"https://e.com#f"}}
+{"id":"buglink-0001-106-proto-rel-09","family":"bugs-links","check":"link","input":{"href":"//e.com?x"},"expect":{"kind":"external","url":"https://e.com?x"}}
+{"id":"buglink-0001-107-proto-rel-10","family":"bugs-links","check":"link","input":{"href":"//e.com/a%20b"},"expect":{"kind":"external","url":"https://e.com/a%20b"}}
+{"id":"buglink-0001-108-proto-rel-11","family":"bugs-links","check":"link","input":{"href":"//"},"expect":{"kind":"unsupported","scheme":"https"}}
+{"id":"buglink-0001-109-proto-rel-12","family":"bugs-links","check":"link","input":{"href":"///x"},"expect":{"kind":"unsupported","scheme":"https"}}
+{"id":"buglink-0001-110-proto-rel-13","family":"bugs-links","check":"link","input":{"href":"////"},"expect":{"kind":"unsupported","scheme":"https"}}
+{"id":"buglink-0001-111-proto-rel-14","family":"bugs-links","check":"link","input":{"href":"//e.com\\x"},"expect":{"kind":"unsupported","scheme":"https"}}
+{"id":"buglink-0001-112-proto-rel-15","family":"bugs-links","check":"link","input":{"href":"//user@e.com/x"},"expect":{"kind":"unsupported","scheme":"https"}}
+{"id":"buglink-0001-113-proto-rel-16","family":"bugs-links","check":"link","input":{"href":"//e.com/x y"},"expect":{"kind":"unsupported","scheme":"https"}}
+{"id":"buglink-0001-114-proto-rel-17","family":"bugs-links","check":"link","input":{"href":"//exa\tmple.com/x"},"expect":{"kind":"unsupported","scheme":"https"}}
+{"id":"buglink-0001-115-proto-rel-18","family":"bugs-links","check":"link","input":{"href":"//e.com:"},"expect":{"kind":"external","url":"https://e.com:"}}
+{"id":"buglink-0001-116-proto-rel-19","family":"bugs-links","check":"link","input":{"href":"//e.com/../x"},"expect":{"kind":"external","url":"https://e.com/../x"}}
+# 源自 docs/bugs/0058（⌘+点击文档内的链接什么也不发生）
+# 危险与未知 scheme：一律 unsupported，绝不能被当成可唤起目标。
+{"id":"buglink-0058-001-scheme-00","family":"bugs-links","check":"link","input":{"href":"javascript:alert(1)"},"expect":{"kind":"unsupported","scheme":"javascript"}}
+{"id":"buglink-0058-002-scheme-01","family":"bugs-links","check":"link","input":{"href":"JavaScript:alert(1)"},"expect":{"kind":"unsupported","scheme":"javascript"}}
+{"id":"buglink-0058-003-scheme-02","family":"bugs-links","check":"link","input":{"href":"JAVASCRIPT:void(0)"},"expect":{"kind":"unsupported","scheme":"javascript"}}
+{"id":"buglink-0058-004-scheme-03","family":"bugs-links","check":"link","input":{"href":" javascript:1 "},"expect":{"kind":"unsupported","scheme":"javascript"}}
+{"id":"buglink-0058-005-scheme-04","family":"bugs-links","check":"link","input":{"href":"java\tscript:1"},"expect":{"kind":"local_path","path":"java\tscript:1","fragment":null}}
+{"id":"buglink-0058-006-scheme-05","family":"bugs-links","check":"link","input":{"href":"java\nscript:1"},"expect":{"kind":"local_path","path":"java\nscript:1","fragment":null}}
+{"id":"buglink-0058-007-scheme-06","family":"bugs-links","check":"link","input":{"href":"jav ascript:1"},"expect":{"kind":"local_path","path":"jav ascript:1","fragment":null}}
+{"id":"buglink-0058-008-scheme-07","family":"bugs-links","check":"link","input":{"href":"javascript://alert(1)"},"expect":{"kind":"unsupported","scheme":"javascript"}}
+{"id":"buglink-0058-009-scheme-08","family":"bugs-links","check":"link","input":{"href":"javascript:"},"expect":{"kind":"unsupported","scheme":"javascript"}}
+{"id":"buglink-0058-010-scheme-09","family":"bugs-links","check":"link","input":{"href":"data:text/html,<script>"},"expect":{"kind":"unsupported","scheme":"data"}}
+{"id":"buglink-0058-011-scheme-10","family":"bugs-links","check":"link","input":{"href":"DATA:TEXT/HTML,<b>"},"expect":{"kind":"unsupported","scheme":"data"}}
+{"id":"buglink-0058-012-scheme-11","family":"bugs-links","check":"link","input":{"href":"dat a:text"},"expect":{"kind":"local_path","path":"dat a:text","fragment":null}}
+{"id":"buglink-0058-013-scheme-12","family":"bugs-links","check":"link","input":{"href":"data:"},"expect":{"kind":"unsupported","scheme":"data"}}
+{"id":"buglink-0058-014-scheme-13","family":"bugs-links","check":"link","input":{"href":"vbscript:msgbox(1)"},"expect":{"kind":"unsupported","scheme":"vbscript"}}
+{"id":"buglink-0058-015-scheme-14","family":"bugs-links","check":"link","input":{"href":"VBScript:x"},"expect":{"kind":"unsupported","scheme":"vbscript"}}
+{"id":"buglink-0058-016-scheme-15","family":"bugs-links","check":"link","input":{"href":"vbscript:"},"expect":{"kind":"unsupported","scheme":"vbscript"}}
+{"id":"buglink-0058-017-scheme-16","family":"bugs-links","check":"link","input":{"href":"mailto:a@b"},"expect":{"kind":"unsupported","scheme":"mailto"}}
+{"id":"buglink-0058-018-scheme-17","family":"bugs-links","check":"link","input":{"href":"MAILTO:A@B"},"expect":{"kind":"unsupported","scheme":"mailto"}}
+{"id":"buglink-0058-019-scheme-18","family":"bugs-links","check":"link","input":{"href":"mailto:"},"expect":{"kind":"unsupported","scheme":"mailto"}}
+{"id":"buglink-0058-020-scheme-19","family":"bugs-links","check":"link","input":{"href":"tel:+8613800138000"},"expect":{"kind":"unsupported","scheme":"tel"}}
+{"id":"buglink-0058-021-scheme-20","family":"bugs-links","check":"link","input":{"href":"TEL:110"},"expect":{"kind":"unsupported","scheme":"tel"}}
+{"id":"buglink-0058-022-scheme-21","family":"bugs-links","check":"link","input":{"href":"tel:"},"expect":{"kind":"unsupported","scheme":"tel"}}
+{"id":"buglink-0058-023-scheme-22","family":"bugs-links","check":"link","input":{"href":"ftp://e.com/x"},"expect":{"kind":"unsupported","scheme":"ftp"}}
+{"id":"buglink-0058-024-scheme-23","family":"bugs-links","check":"link","input":{"href":"ftps://e.com"},"expect":{"kind":"unsupported","scheme":"ftps"}}
+{"id":"buglink-0058-025-scheme-24","family":"bugs-links","check":"link","input":{"href":"sftp://e.com"},"expect":{"kind":"unsupported","scheme":"sftp"}}
+{"id":"buglink-0058-026-scheme-25","family":"bugs-links","check":"link","input":{"href":"ssh://e.com"},"expect":{"kind":"unsupported","scheme":"ssh"}}
+{"id":"buglink-0058-027-scheme-26","family":"bugs-links","check":"link","input":{"href":"git://e.com"},"expect":{"kind":"unsupported","scheme":"git"}}
+{"id":"buglink-0058-028-scheme-27","family":"bugs-links","check":"link","input":{"href":"git+ssh://e.com/x"},"expect":{"kind":"unsupported","scheme":"git+ssh"}}
+{"id":"buglink-0058-029-scheme-28","family":"bugs-links","check":"link","input":{"href":"svn+ssh://e.com"},"expect":{"kind":"unsupported","scheme":"svn+ssh"}}
+{"id":"buglink-0058-030-scheme-29","family":"bugs-links","check":"link","input":{"href":"ws://e.com"},"expect":{"kind":"unsupported","scheme":"ws"}}
+{"id":"buglink-0058-031-scheme-30","family":"bugs-links","check":"link","input":{"href":"wss://e.com"},"expect":{"kind":"unsupported","scheme":"wss"}}
+{"id":"buglink-0058-032-scheme-31","family":"bugs-links","check":"link","input":{"href":"about:blank"},"expect":{"kind":"unsupported","scheme":"about"}}
+{"id":"buglink-0058-033-scheme-32","family":"bugs-links","check":"link","input":{"href":"chrome://settings"},"expect":{"kind":"unsupported","scheme":"chrome"}}
+{"id":"buglink-0058-034-scheme-33","family":"bugs-links","check":"link","input":{"href":"jar:file:/x"},"expect":{"kind":"unsupported","scheme":"jar"}}
+{"id":"buglink-0058-035-scheme-34","family":"bugs-links","check":"link","input":{"href":"blob:https://e.com/x"},"expect":{"kind":"unsupported","scheme":"blob"}}
+{"id":"buglink-0058-036-scheme-35","family":"bugs-links","check":"link","input":{"href":"view-source:https://e.com"},"expect":{"kind":"unsupported","scheme":"view-source"}}
+{"id":"buglink-0058-037-scheme-36","family":"bugs-links","check":"link","input":{"href":"itms-apps://e.com"},"expect":{"kind":"unsupported","scheme":"itms-apps"}}
+{"id":"buglink-0058-038-scheme-37","family":"bugs-links","check":"link","input":{"href":"x-apple.systempreferences:com.apple"},"expect":{"kind":"unsupported","scheme":"x-apple.systempreferences"}}
+{"id":"buglink-0058-039-scheme-38","family":"bugs-links","check":"link","input":{"href":"a+b:c"},"expect":{"kind":"unsupported","scheme":"a+b"}}
+{"id":"buglink-0058-040-scheme-39","family":"bugs-links","check":"link","input":{"href":"a-b:c"},"expect":{"kind":"unsupported","scheme":"a-b"}}
+{"id":"buglink-0058-041-scheme-40","family":"bugs-links","check":"link","input":{"href":"a.b:c"},"expect":{"kind":"unsupported","scheme":"a.b"}}
+{"id":"buglink-0058-042-scheme-41","family":"bugs-links","check":"link","input":{"href":"a1:c"},"expect":{"kind":"unsupported","scheme":"a1"}}
+{"id":"buglink-0058-043-scheme-42","family":"bugs-links","check":"link","input":{"href":"A:c"},"expect":{"kind":"unsupported","scheme":"a"}}
+{"id":"buglink-0058-044-scheme-43","family":"bugs-links","check":"link","input":{"href":"a:x"},"expect":{"kind":"unsupported","scheme":"a"}}
+{"id":"buglink-0058-045-scheme-44","family":"bugs-links","check":"link","input":{"href":"x:y"},"expect":{"kind":"unsupported","scheme":"x"}}
+{"id":"buglink-0058-046-scheme-45","family":"bugs-links","check":"link","input":{"href":"C:\\Users\\a.md"},"expect":{"kind":"unsupported","scheme":"c"}}
+{"id":"buglink-0058-047-scheme-46","family":"bugs-links","check":"link","input":{"href":"C:/Users/a.md"},"expect":{"kind":"unsupported","scheme":"c"}}
+{"id":"buglink-0058-048-scheme-47","family":"bugs-links","check":"link","input":{"href":"c:relative"},"expect":{"kind":"unsupported","scheme":"c"}}
+{"id":"buglink-0058-049-scheme-48","family":"bugs-links","check":"link","input":{"href":"1abc:x"},"expect":{"kind":"local_path","path":"1abc:x","fragment":null}}
+{"id":"buglink-0058-050-scheme-49","family":"bugs-links","check":"link","input":{"href":"+abc:x"},"expect":{"kind":"local_path","path":"+abc:x","fragment":null}}
+{"id":"buglink-0058-051-scheme-50","family":"bugs-links","check":"link","input":{"href":"-abc:x"},"expect":{"kind":"local_path","path":"-abc:x","fragment":null}}
+{"id":"buglink-0058-052-scheme-51","family":"bugs-links","check":"link","input":{"href":".abc:x"},"expect":{"kind":"local_path","path":".abc:x","fragment":null}}
+{"id":"buglink-0058-053-scheme-52","family":"bugs-links","check":"link","input":{"href":"a_b:c"},"expect":{"kind":"local_path","path":"a_b:c","fragment":null}}
+# 受控标记 file:/rmd-file:/rmd-unsupported:：标记只是编码，分类层不给特权。
+{"id":"buglink-0058-054-marker-00","family":"bugs-links","check":"link","input":{"href":"file:///etc/passwd"},"expect":{"kind":"local_file","path":"/etc/passwd","fragment":null}}
+{"id":"buglink-0058-055-marker-01","family":"bugs-links","check":"link","input":{"href":"FILE:///private/etc/hosts"},"expect":{"kind":"local_file","path":"/private/etc/hosts","fragment":null}}
+{"id":"buglink-0058-056-marker-02","family":"bugs-links","check":"link","input":{"href":"file://localhost/etc/hosts"},"expect":{"kind":"local_file","path":"/etc/hosts","fragment":null}}
+{"id":"buglink-0058-057-marker-03","family":"bugs-links","check":"link","input":{"href":"file://LOCALHOST/etc/hosts"},"expect":{"kind":"local_file","path":"/etc/hosts","fragment":null}}
+{"id":"buglink-0058-058-marker-04","family":"bugs-links","check":"link","input":{"href":"file://evil/etc/hosts"},"expect":{"kind":"unsupported","scheme":"file"}}
+{"id":"buglink-0058-059-marker-05","family":"bugs-links","check":"link","input":{"href":"file://localhost:80/etc"},"expect":{"kind":"unsupported","scheme":"file"}}
+{"id":"buglink-0058-060-marker-06","family":"bugs-links","check":"link","input":{"href":"file:relative"},"expect":{"kind":"unsupported","scheme":"file"}}
+{"id":"buglink-0058-061-marker-07","family":"bugs-links","check":"link","input":{"href":"file:/tmp/a"},"expect":{"kind":"local_file","path":"/tmp/a","fragment":null}}
+{"id":"buglink-0058-062-marker-08","family":"bugs-links","check":"link","input":{"href":"file:///tmp/a b"},"expect":{"kind":"local_file","path":"/tmp/a b","fragment":null}}
+{"id":"buglink-0058-063-marker-09","family":"bugs-links","check":"link","input":{"href":"file:///tmp/a%20b"},"expect":{"kind":"local_file","path":"/tmp/a b","fragment":null}}
+{"id":"buglink-0058-064-marker-10","family":"bugs-links","check":"link","input":{"href":"file:///tmp/a#frag"},"expect":{"kind":"local_file","path":"/tmp/a","fragment":"frag"}}
+{"id":"buglink-0058-065-marker-11","family":"bugs-links","check":"link","input":{"href":"file:///tmp/a?x"},"expect":{"kind":"local_query"}}
+{"id":"buglink-0058-066-marker-12","family":"bugs-links","check":"link","input":{"href":"file:///tmp/a#f?g"},"expect":{"kind":"local_file","path":"/tmp/a","fragment":"f?g"}}
+{"id":"buglink-0058-067-marker-13","family":"bugs-links","check":"link","input":{"href":"file:///tmp/a#%E4%B8%AD"},"expect":{"kind":"local_file","path":"/tmp/a","fragment":"中"}}
+{"id":"buglink-0058-068-marker-14","family":"bugs-links","check":"link","input":{"href":"file://"},"expect":{"kind":"unsupported","scheme":"file"}}
+{"id":"buglink-0058-069-marker-15","family":"bugs-links","check":"link","input":{"href":"file:///"},"expect":{"kind":"local_file","path":"/","fragment":null}}
+{"id":"buglink-0058-070-marker-16","family":"bugs-links","check":"link","input":{"href":"file:////x"},"expect":{"kind":"local_file","path":"//x","fragment":null}}
+{"id":"buglink-0058-071-marker-17","family":"bugs-links","check":"link","input":{"href":"file:/"},"expect":{"kind":"local_file","path":"/","fragment":null}}
+{"id":"buglink-0058-072-marker-18","family":"bugs-links","check":"link","input":{"href":"file:."},"expect":{"kind":"unsupported","scheme":"file"}}
+{"id":"buglink-0058-073-marker-19","family":"bugs-links","check":"link","input":{"href":"file:C:/x"},"expect":{"kind":"unsupported","scheme":"file"}}
+{"id":"buglink-0058-074-marker-20","family":"bugs-links","check":"link","input":{"href":"file:///C:/x"},"expect":{"kind":"local_file","path":"/C:/x","fragment":null}}
+{"id":"buglink-0058-075-marker-21","family":"bugs-links","check":"link","input":{"href":"file:///tmp/a%2Fb"},"expect":{"kind":"local_file","path":"/tmp/a/b","fragment":null}}
+# ⚠️ 疑似缺陷：直接出现的 file: 链接在分类层不做词法归一，%2e%2e 解码后原样带 ../ 交给下游。
+{"id":"buglink-0058-076-marker-22","family":"bugs-links","check":"link","input":{"href":"file:///tmp/%2e%2e/x"},"expect":{"kind":"local_file","path":"/tmp/../x","fragment":null}}
+{"id":"buglink-0058-077-marker-23","family":"bugs-links","check":"link","input":{"href":"file:///tmp/a%2520b"},"expect":{"kind":"local_file","path":"/tmp/a%20b","fragment":null}}
+{"id":"buglink-0058-078-marker-24","family":"bugs-links","check":"link","input":{"href":"rmd-file:/tmp/x"},"expect":{"kind":"local_file","path":"/tmp/x","fragment":null}}
+{"id":"buglink-0058-079-marker-25","family":"bugs-links","check":"link","input":{"href":"RMD-FILE:/tmp/x"},"expect":{"kind":"local_file","path":"/tmp/x","fragment":null}}
+{"id":"buglink-0058-080-marker-26","family":"bugs-links","check":"link","input":{"href":"rmd-file:///tmp/x"},"expect":{"kind":"local_file","path":"/tmp/x","fragment":null}}
+# ⚠️ 疑似缺陷：rmd-file: 忽略 authority，rmd-file://evil/tmp/x 被当成 /tmp/x；标记只是编码，但静默丢主机名的形状容易误导。
+{"id":"buglink-0058-081-marker-27","family":"bugs-links","check":"link","input":{"href":"rmd-file://evil/tmp/x"},"expect":{"kind":"local_file","path":"/tmp/x","fragment":null}}
+{"id":"buglink-0058-082-marker-28","family":"bugs-links","check":"link","input":{"href":"rmd-file:relative"},"expect":{"kind":"local_file","path":"relative","fragment":null}}
+# ⚠️ 疑似缺陷：rmd-file: 空路径被判 local_file（path 为空），而不是 empty/unsupported，只能靠授权层兜底。
+{"id":"buglink-0058-083-marker-29","family":"bugs-links","check":"link","input":{"href":"rmd-file:"},"expect":{"kind":"local_file","path":"","fragment":null}}
+{"id":"buglink-0058-084-marker-30","family":"bugs-links","check":"link","input":{"href":"rmd-file:/a?x"},"expect":{"kind":"local_query"}}
+{"id":"buglink-0058-085-marker-31","family":"bugs-links","check":"link","input":{"href":"rmd-file:/a#f"},"expect":{"kind":"local_file","path":"/a","fragment":"f"}}
+{"id":"buglink-0058-086-marker-32","family":"bugs-links","check":"link","input":{"href":"rmd-file:/a#%20"},"expect":{"kind":"local_file","path":"/a","fragment":" "}}
+{"id":"buglink-0058-087-marker-33","family":"bugs-links","check":"link","input":{"href":"rmd-file:/a#"},"expect":{"kind":"local_file","path":"/a","fragment":null}}
+{"id":"buglink-0058-088-marker-34","family":"bugs-links","check":"link","input":{"href":"rmd-unsupported:file"},"expect":{"kind":"unsupported","scheme":"file"}}
+{"id":"buglink-0058-089-marker-35","family":"bugs-links","check":"link","input":{"href":"RMD-UNSUPPORTED:JAVASCRIPT"},"expect":{"kind":"unsupported","scheme":"javascript"}}
+{"id":"buglink-0058-090-marker-36","family":"bugs-links","check":"link","input":{"href":"rmd-unsupported:"},"expect":{"kind":"unsupported","scheme":"?"}}
+{"id":"buglink-0058-091-marker-37","family":"bugs-links","check":"link","input":{"href":"rmd-unsupported:?"},"expect":{"kind":"unsupported","scheme":"?"}}
+{"id":"buglink-0058-092-marker-38","family":"bugs-links","check":"link","input":{"href":"rmd-unsupported:#"},"expect":{"kind":"unsupported","scheme":"?"}}
+{"id":"buglink-0058-093-marker-39","family":"bugs-links","check":"link","input":{"href":"rmd-unsupported:MyScheme"},"expect":{"kind":"unsupported","scheme":"myscheme"}}
+{"id":"buglink-0058-094-marker-40","family":"bugs-links","check":"link","input":{"href":"rmd-unsupported:foo%20bar"},"expect":{"kind":"unsupported","scheme":"foo%20bar"}}
+{"id":"buglink-0058-095-marker-41","family":"bugs-links","check":"link","input":{"href":"RMD-UNSUPPORTED:ß"},"expect":{"kind":"unsupported","scheme":"ß"}}
+{"id":"buglink-0058-096-marker-42","family":"bugs-links","check":"link","input":{"href":"rmd-unsupported: "},"expect":{"kind":"unsupported","scheme":"?"}}
+{"id":"buglink-0058-097-marker-43","family":"bugs-links","check":"link","input":{"href":"rmd-unsupported:/a/b"},"expect":{"kind":"unsupported","scheme":"/a/b"}}
+{"id":"buglink-0058-098-marker-44","family":"bugs-links","check":"link","input":{"href":"rmd-unsupported:JAVASCRIPT#frag"},"expect":{"kind":"unsupported","scheme":"javascript"}}
+# 源自 docs/bugs/0059（点正文里的链接会进入编辑状态）
+# 同文档锚点：fragment 解码一次、加号不转空格、重复井号保留。
+{"id":"buglink-0059-001-anchor-00","family":"bugs-links","check":"link","input":{"href":"#"},"expect":{"kind":"anchor","fragment":""}}
+{"id":"buglink-0059-002-anchor-01","family":"bugs-links","check":"link","input":{"href":"#a"},"expect":{"kind":"anchor","fragment":"a"}}
+{"id":"buglink-0059-003-anchor-02","family":"bugs-links","check":"link","input":{"href":"#A"},"expect":{"kind":"anchor","fragment":"A"}}
+{"id":"buglink-0059-004-anchor-03","family":"bugs-links","check":"link","input":{"href":"#a b"},"expect":{"kind":"anchor","fragment":"a b"}}
+{"id":"buglink-0059-005-anchor-04","family":"bugs-links","check":"link","input":{"href":"# a"},"expect":{"kind":"anchor","fragment":" a"}}
+{"id":"buglink-0059-006-anchor-05","family":"bugs-links","check":"link","input":{"href":"#a "},"expect":{"kind":"anchor","fragment":"a"}}
+{"id":"buglink-0059-007-anchor-06","family":"bugs-links","check":"link","input":{"href":"  #a  "},"expect":{"kind":"anchor","fragment":"a"}}
+{"id":"buglink-0059-008-anchor-07","family":"bugs-links","check":"link","input":{"href":"#a%20b"},"expect":{"kind":"anchor","fragment":"a b"}}
+{"id":"buglink-0059-009-anchor-08","family":"bugs-links","check":"link","input":{"href":"#a%2Bb"},"expect":{"kind":"anchor","fragment":"a+b"}}
+{"id":"buglink-0059-010-anchor-09","family":"bugs-links","check":"link","input":{"href":"#a+b"},"expect":{"kind":"anchor","fragment":"a+b"}}
+{"id":"buglink-0059-011-anchor-10","family":"bugs-links","check":"link","input":{"href":"#a%23b"},"expect":{"kind":"anchor","fragment":"a#b"}}
+{"id":"buglink-0059-012-anchor-11","family":"bugs-links","check":"link","input":{"href":"#a#b"},"expect":{"kind":"anchor","fragment":"a#b"}}
+{"id":"buglink-0059-013-anchor-12","family":"bugs-links","check":"link","input":{"href":"#a?b"},"expect":{"kind":"anchor","fragment":"a?b"}}
+{"id":"buglink-0059-014-anchor-13","family":"bugs-links","check":"link","input":{"href":"#a&b"},"expect":{"kind":"anchor","fragment":"a&b"}}
+{"id":"buglink-0059-015-anchor-14","family":"bugs-links","check":"link","input":{"href":"#a=b"},"expect":{"kind":"anchor","fragment":"a=b"}}
+{"id":"buglink-0059-016-anchor-15","family":"bugs-links","check":"link","input":{"href":"#a/b"},"expect":{"kind":"anchor","fragment":"a/b"}}
+{"id":"buglink-0059-017-anchor-16","family":"bugs-links","check":"link","input":{"href":"#a%2Fb"},"expect":{"kind":"anchor","fragment":"a/b"}}
+{"id":"buglink-0059-018-anchor-17","family":"bugs-links","check":"link","input":{"href":"#a%2520b"},"expect":{"kind":"anchor","fragment":"a%20b"}}
+{"id":"buglink-0059-019-anchor-18","family":"bugs-links","check":"link","input":{"href":"#%E4%B8%AD"},"expect":{"kind":"anchor","fragment":"中"}}
+{"id":"buglink-0059-020-anchor-19","family":"bugs-links","check":"link","input":{"href":"#%F0%9F%99%82"},"expect":{"kind":"anchor","fragment":"🙂"}}
+{"id":"buglink-0059-021-anchor-20","family":"bugs-links","check":"link","input":{"href":"#%FF"},"expect":{"kind":"anchor","fragment":"�"}}
+{"id":"buglink-0059-022-anchor-21","family":"bugs-links","check":"link","input":{"href":"#%E4%B8"},"expect":{"kind":"anchor","fragment":"�"}}
+{"id":"buglink-0059-023-anchor-22","family":"bugs-links","check":"link","input":{"href":"#%zz"},"expect":{"kind":"anchor","fragment":"%zz"}}
+{"id":"buglink-0059-024-anchor-23","family":"bugs-links","check":"link","input":{"href":"#%"},"expect":{"kind":"anchor","fragment":"%"}}
+{"id":"buglink-0059-025-anchor-24","family":"bugs-links","check":"link","input":{"href":"#%2"},"expect":{"kind":"anchor","fragment":"%2"}}
+{"id":"buglink-0059-026-anchor-25","family":"bugs-links","check":"link","input":{"href":"#100%"},"expect":{"kind":"anchor","fragment":"100%"}}
+{"id":"buglink-0059-027-anchor-26","family":"bugs-links","check":"link","input":{"href":"#%00"},"expect":{"kind":"anchor","fragment":"\u0000"}}
+{"id":"buglink-0059-028-anchor-27","family":"bugs-links","check":"link","input":{"href":"#a%00b"},"expect":{"kind":"anchor","fragment":"a\u0000b"}}
+{"id":"buglink-0059-029-anchor-28","family":"bugs-links","check":"link","input":{"href":"#\ta"},"expect":{"kind":"anchor","fragment":"\ta"}}
+{"id":"buglink-0059-030-anchor-29","family":"bugs-links","check":"link","input":{"href":"#中文"},"expect":{"kind":"anchor","fragment":"中文"}}
+{"id":"buglink-0059-031-anchor-30","family":"bugs-links","check":"link","input":{"href":"#🙂"},"expect":{"kind":"anchor","fragment":"🙂"}}
+{"id":"buglink-0059-032-anchor-31","family":"bugs-links","check":"link","input":{"href":"#%E4%B8%AD%F0%9F%99%82"},"expect":{"kind":"anchor","fragment":"中🙂"}}
+{"id":"buglink-0059-033-anchor-32","family":"bugs-links","check":"link","input":{"href":"#a%3Fb"},"expect":{"kind":"anchor","fragment":"a?b"}}
+{"id":"buglink-0059-034-anchor-33","family":"bugs-links","check":"link","input":{"href":"#a%3Db"},"expect":{"kind":"anchor","fragment":"a=b"}}
+{"id":"buglink-0059-035-anchor-34","family":"bugs-links","check":"link","input":{"href":"#a%26b"},"expect":{"kind":"anchor","fragment":"a&b"}}
+{"id":"buglink-0059-036-anchor-35","family":"bugs-links","check":"link","input":{"href":"#a%25b"},"expect":{"kind":"anchor","fragment":"a%b"}}
+{"id":"buglink-0059-037-anchor-36","family":"bugs-links","check":"link","input":{"href":"#a%b"},"expect":{"kind":"anchor","fragment":"a%b"}}
+{"id":"buglink-0059-038-anchor-37","family":"bugs-links","check":"link","input":{"href":"#a%2"},"expect":{"kind":"anchor","fragment":"a%2"}}
+{"id":"buglink-0059-039-anchor-38","family":"bugs-links","check":"link","input":{"href":"#a%%41"},"expect":{"kind":"anchor","fragment":"a%A"}}
+# ⚠️ 疑似缺陷：%%41 被解成 "%A"——非法转义里夹着的合法两位被继续吞掉，与「非法序列原样保留」的注释不完全一致。
+{"id":"buglink-0059-040-anchor-39","family":"bugs-links","check":"link","input":{"href":"#a%C3%A9"},"expect":{"kind":"anchor","fragment":"aé"}}
+{"id":"buglink-0059-041-anchor-40","family":"bugs-links","check":"link","input":{"href":"##a"},"expect":{"kind":"anchor","fragment":"#a"}}
+{"id":"buglink-0059-042-anchor-41","family":"bugs-links","check":"link","input":{"href":"#?"},"expect":{"kind":"anchor","fragment":"?"}}
+{"id":"buglink-0059-043-anchor-42","family":"bugs-links","check":"link","input":{"href":"#="},"expect":{"kind":"anchor","fragment":"="}}
+{"id":"buglink-0059-044-anchor-43","family":"bugs-links","check":"link","input":{"href":"#!"},"expect":{"kind":"anchor","fragment":"!"}}
+{"id":"buglink-0059-045-anchor-44","family":"bugs-links","check":"link","input":{"href":"#~"},"expect":{"kind":"anchor","fragment":"~"}}
+# 相对/绝对路径与查询串：query 先于 scheme 切分，本地 query 一律不支持。
+{"id":"buglink-0059-046-local-00","family":"bugs-links","check":"link","input":{"href":"docs/a.md"},"expect":{"kind":"local_path","path":"docs/a.md","fragment":null}}
+{"id":"buglink-0059-047-local-01","family":"bugs-links","check":"link","input":{"href":"./a.md"},"expect":{"kind":"local_path","path":"./a.md","fragment":null}}
+{"id":"buglink-0059-048-local-02","family":"bugs-links","check":"link","input":{"href":"../a.md"},"expect":{"kind":"local_path","path":"../a.md","fragment":null}}
+{"id":"buglink-0059-049-local-03","family":"bugs-links","check":"link","input":{"href":"../../a/b.md"},"expect":{"kind":"local_path","path":"../../a/b.md","fragment":null}}
+{"id":"buglink-0059-050-local-04","family":"bugs-links","check":"link","input":{"href":"../../../../etc/passwd"},"expect":{"kind":"local_path","path":"../../../../etc/passwd","fragment":null}}
+{"id":"buglink-0059-051-local-05","family":"bugs-links","check":"link","input":{"href":"/etc/passwd"},"expect":{"kind":"local_path","path":"/etc/passwd","fragment":null}}
+{"id":"buglink-0059-052-local-06","family":"bugs-links","check":"link","input":{"href":"/Users/x/中文 文件.md"},"expect":{"kind":"local_path","path":"/Users/x/中文 文件.md","fragment":null}}
+{"id":"buglink-0059-053-local-07","family":"bugs-links","check":"link","input":{"href":"/Users/x/🙂.md"},"expect":{"kind":"local_path","path":"/Users/x/🙂.md","fragment":null}}
+{"id":"buglink-0059-054-local-08","family":"bugs-links","check":"link","input":{"href":"/tmp/a%20b.md"},"expect":{"kind":"local_path","path":"/tmp/a b.md","fragment":null}}
+{"id":"buglink-0059-055-local-09","family":"bugs-links","check":"link","input":{"href":"/tmp/100%.md"},"expect":{"kind":"local_path","path":"/tmp/100%.md","fragment":null}}
+{"id":"buglink-0059-056-local-10","family":"bugs-links","check":"link","input":{"href":"/tmp/a%zz.md"},"expect":{"kind":"local_path","path":"/tmp/a%zz.md","fragment":null}}
+{"id":"buglink-0059-057-local-11","family":"bugs-links","check":"link","input":{"href":"/tmp/a%2Fb.md"},"expect":{"kind":"local_path","path":"/tmp/a/b.md","fragment":null}}
+{"id":"buglink-0059-058-local-12","family":"bugs-links","check":"link","input":{"href":"/tmp/a%2520b.md"},"expect":{"kind":"local_path","path":"/tmp/a%20b.md","fragment":null}}
+{"id":"buglink-0059-059-local-13","family":"bugs-links","check":"link","input":{"href":"/tmp/%E4%B8%AD.md"},"expect":{"kind":"local_path","path":"/tmp/中.md","fragment":null}}
+{"id":"buglink-0059-060-local-14","family":"bugs-links","check":"link","input":{"href":"a.md#sec"},"expect":{"kind":"local_path","path":"a.md","fragment":"sec"}}
+{"id":"buglink-0059-061-local-15","family":"bugs-links","check":"link","input":{"href":"a.md#"},"expect":{"kind":"local_path","path":"a.md","fragment":null}}
+{"id":"buglink-0059-062-local-16","family":"bugs-links","check":"link","input":{"href":"a.md#%20"},"expect":{"kind":"local_path","path":"a.md","fragment":" "}}
+{"id":"buglink-0059-063-local-17","family":"bugs-links","check":"link","input":{"href":"a.md#%2520"},"expect":{"kind":"local_path","path":"a.md","fragment":"%20"}}
+{"id":"buglink-0059-064-local-18","family":"bugs-links","check":"link","input":{"href":"a.md#中"},"expect":{"kind":"local_path","path":"a.md","fragment":"中"}}
+{"id":"buglink-0059-065-local-19","family":"bugs-links","check":"link","input":{"href":"a.md#🙂"},"expect":{"kind":"local_path","path":"a.md","fragment":"🙂"}}
+{"id":"buglink-0059-066-local-20","family":"bugs-links","check":"link","input":{"href":"a.md#a#b"},"expect":{"kind":"local_path","path":"a.md","fragment":"a#b"}}
+{"id":"buglink-0059-067-local-21","family":"bugs-links","check":"link","input":{"href":"a.md#x?y"},"expect":{"kind":"local_path","path":"a.md","fragment":"x?y"}}
+{"id":"buglink-0059-068-local-22","family":"bugs-links","check":"link","input":{"href":"a.md?raw=1"},"expect":{"kind":"local_query"}}
+{"id":"buglink-0059-069-local-23","family":"bugs-links","check":"link","input":{"href":"?raw=1"},"expect":{"kind":"local_query"}}
+{"id":"buglink-0059-070-local-24","family":"bugs-links","check":"link","input":{"href":"a.md?x=1#f"},"expect":{"kind":"local_query"}}
+{"id":"buglink-0059-071-local-25","family":"bugs-links","check":"link","input":{"href":"../p.png?v=2"},"expect":{"kind":"local_query"}}
+{"id":"buglink-0059-072-local-26","family":"bugs-links","check":"link","input":{"href":"a.md?x=1?y=2"},"expect":{"kind":"local_query"}}
+{"id":"buglink-0059-073-local-27","family":"bugs-links","check":"link","input":{"href":"a.md?#f"},"expect":{"kind":"local_query"}}
+{"id":"buglink-0059-074-local-28","family":"bugs-links","check":"link","input":{"href":"a.md?#"},"expect":{"kind":"local_query"}}
+{"id":"buglink-0059-075-local-29","family":"bugs-links","check":"link","input":{"href":"a b.md"},"expect":{"kind":"local_path","path":"a b.md","fragment":null}}
+{"id":"buglink-0059-076-local-30","family":"bugs-links","check":"link","input":{"href":"a\tb.md"},"expect":{"kind":"local_path","path":"a\tb.md","fragment":null}}
+{"id":"buglink-0059-077-local-31","family":"bugs-links","check":"link","input":{"href":"🙂.md"},"expect":{"kind":"local_path","path":"🙂.md","fragment":null}}
+{"id":"buglink-0059-078-local-32","family":"bugs-links","check":"link","input":{"href":"中文/文件.md"},"expect":{"kind":"local_path","path":"中文/文件.md","fragment":null}}
+{"id":"buglink-0059-079-local-33","family":"bugs-links","check":"link","input":{"href":"注意：../a.md"},"expect":{"kind":"local_path","path":"注意：../a.md","fragment":null}}
+{"id":"buglink-0059-080-local-34","family":"bugs-links","check":"link","input":{"href":"notes/a:b.md"},"expect":{"kind":"local_path","path":"notes/a:b.md","fragment":null}}
+{"id":"buglink-0059-081-local-35","family":"bugs-links","check":"link","input":{"href":"a_b:c"},"expect":{"kind":"local_path","path":"a_b:c","fragment":null}}
+{"id":"buglink-0059-082-local-36","family":"bugs-links","check":"link","input":{"href":"~/a.md"},"expect":{"kind":"local_path","path":"~/a.md","fragment":null}}
+{"id":"buglink-0059-083-local-37","family":"bugs-links","check":"link","input":{"href":"~user/a.md"},"expect":{"kind":"local_path","path":"~user/a.md","fragment":null}}
+{"id":"buglink-0059-084-local-38","family":"bugs-links","check":"link","input":{"href":"/"},"expect":{"kind":"local_path","path":"/","fragment":null}}
+{"id":"buglink-0059-085-local-39","family":"bugs-links","check":"link","input":{"href":"."},"expect":{"kind":"local_path","path":".","fragment":null}}
+{"id":"buglink-0059-086-local-40","family":"bugs-links","check":"link","input":{"href":".."},"expect":{"kind":"local_path","path":"..","fragment":null}}
+{"id":"buglink-0059-087-local-41","family":"bugs-links","check":"link","input":{"href":"a//b"},"expect":{"kind":"local_path","path":"a//b","fragment":null}}
+{"id":"buglink-0059-088-local-42","family":"bugs-links","check":"link","input":{"href":"/a/../b"},"expect":{"kind":"local_path","path":"/a/../b","fragment":null}}
+{"id":"buglink-0059-089-local-43","family":"bugs-links","check":"link","input":{"href":"a/../b"},"expect":{"kind":"local_path","path":"a/../b","fragment":null}}
+{"id":"buglink-0059-090-local-44","family":"bugs-links","check":"link","input":{"href":"%2Fetc"},"expect":{"kind":"local_path","path":"/etc","fragment":null}}
+{"id":"buglink-0059-091-local-45","family":"bugs-links","check":"link","input":{"href":"%2E%2E/a"},"expect":{"kind":"local_path","path":"../a","fragment":null}}
+{"id":"buglink-0059-092-local-46","family":"bugs-links","check":"link","input":{"href":"%23anchor"},"expect":{"kind":"local_path","path":"#anchor","fragment":null}}
+{"id":"buglink-0059-093-local-47","family":"bugs-links","check":"link","input":{"href":"%3Fq"},"expect":{"kind":"local_path","path":"?q","fragment":null}}
+{"id":"buglink-0059-094-local-48","family":"bugs-links","check":"link","input":{"href":"a%23b"},"expect":{"kind":"local_path","path":"a#b","fragment":null}}
+{"id":"buglink-0059-095-local-49","family":"bugs-links","check":"link","input":{"href":"a%3Fb"},"expect":{"kind":"local_path","path":"a?b","fragment":null}}
+{"id":"buglink-0059-096-local-50","family":"bugs-links","check":"link","input":{"href":"a%25b"},"expect":{"kind":"local_path","path":"a%b","fragment":null}}
+{"id":"buglink-0059-097-local-51","family":"bugs-links","check":"link","input":{"href":"a%2Bb"},"expect":{"kind":"local_path","path":"a+b","fragment":null}}
+{"id":"buglink-0059-098-local-52","family":"bugs-links","check":"link","input":{"href":"路径#锚点"},"expect":{"kind":"local_path","path":"路径","fragment":"锚点"}}
+{"id":"buglink-0059-099-local-53","family":"bugs-links","check":"link","input":{"href":"http//e.com"},"expect":{"kind":"local_path","path":"http//e.com","fragment":null}}
+{"id":"buglink-0059-100-local-54","family":"bugs-links","check":"link","input":{"href":"a%5Cb.md"},"expect":{"kind":"local_path","path":"a\\b.md","fragment":null}}
+{"id":"buglink-0059-101-local-55","family":"bugs-links","check":"link","input":{"href":"a/..%2F..%2Fb"},"expect":{"kind":"local_path","path":"a/../../b","fragment":null}}
+# 百分号编码/解码往返：encode 后再 decode 必须逐字回来。
+{"id":"buglink-0059-102-roundtrip-enc-00","family":"bugs-links","check":"link_codec","input":{"fn":"encode","s":""},"expect":{"value":""}}
+{"id":"buglink-0059-103-roundtrip-dec-00","family":"bugs-links","check":"link_codec","input":{"fn":"decode","s":""},"expect":{"value":""}}
+{"id":"buglink-0059-104-roundtrip-enc-01","family":"bugs-links","check":"link_codec","input":{"fn":"encode","s":"/"},"expect":{"value":"/"}}
+{"id":"buglink-0059-105-roundtrip-dec-01","family":"bugs-links","check":"link_codec","input":{"fn":"decode","s":"/"},"expect":{"value":"/"}}
+{"id":"buglink-0059-106-roundtrip-enc-02","family":"bugs-links","check":"link_codec","input":{"fn":"encode","s":"a"},"expect":{"value":"a"}}
+{"id":"buglink-0059-107-roundtrip-dec-02","family":"bugs-links","check":"link_codec","input":{"fn":"decode","s":"a"},"expect":{"value":"a"}}
+{"id":"buglink-0059-108-roundtrip-enc-03","family":"bugs-links","check":"link_codec","input":{"fn":"encode","s":"/a/b"},"expect":{"value":"/a/b"}}
+{"id":"buglink-0059-109-roundtrip-dec-03","family":"bugs-links","check":"link_codec","input":{"fn":"decode","s":"/a/b"},"expect":{"value":"/a/b"}}
+{"id":"buglink-0059-110-roundtrip-enc-04","family":"bugs-links","check":"link_codec","input":{"fn":"encode","s":"a b"},"expect":{"value":"a%20b"}}
+{"id":"buglink-0059-111-roundtrip-dec-04","family":"bugs-links","check":"link_codec","input":{"fn":"decode","s":"a%20b"},"expect":{"value":"a b"}}
+{"id":"buglink-0059-112-roundtrip-enc-05","family":"bugs-links","check":"link_codec","input":{"fn":"encode","s":"  "},"expect":{"value":"%20%20"}}
+{"id":"buglink-0059-113-roundtrip-dec-05","family":"bugs-links","check":"link_codec","input":{"fn":"decode","s":"%20%20"},"expect":{"value":"  "}}
+{"id":"buglink-0059-114-roundtrip-enc-06","family":"bugs-links","check":"link_codec","input":{"fn":"encode","s":"a+b"},"expect":{"value":"a%2Bb"}}
+{"id":"buglink-0059-115-roundtrip-dec-06","family":"bugs-links","check":"link_codec","input":{"fn":"decode","s":"a%2Bb"},"expect":{"value":"a+b"}}
+{"id":"buglink-0059-116-roundtrip-enc-07","family":"bugs-links","check":"link_codec","input":{"fn":"encode","s":"a#b"},"expect":{"value":"a%23b"}}
+{"id":"buglink-0059-117-roundtrip-dec-07","family":"bugs-links","check":"link_codec","input":{"fn":"decode","s":"a%23b"},"expect":{"value":"a#b"}}
+{"id":"buglink-0059-118-roundtrip-enc-08","family":"bugs-links","check":"link_codec","input":{"fn":"encode","s":"a?b"},"expect":{"value":"a%3Fb"}}
+{"id":"buglink-0059-119-roundtrip-dec-08","family":"bugs-links","check":"link_codec","input":{"fn":"decode","s":"a%3Fb"},"expect":{"value":"a?b"}}
+{"id":"buglink-0059-120-roundtrip-enc-09","family":"bugs-links","check":"link_codec","input":{"fn":"encode","s":"a%b"},"expect":{"value":"a%25b"}}
+{"id":"buglink-0059-121-roundtrip-dec-09","family":"bugs-links","check":"link_codec","input":{"fn":"decode","s":"a%25b"},"expect":{"value":"a%b"}}
+{"id":"buglink-0059-122-roundtrip-enc-10","family":"bugs-links","check":"link_codec","input":{"fn":"encode","s":"a/b"},"expect":{"value":"a/b"}}
+{"id":"buglink-0059-123-roundtrip-dec-10","family":"bugs-links","check":"link_codec","input":{"fn":"decode","s":"a/b"},"expect":{"value":"a/b"}}
+{"id":"buglink-0059-124-roundtrip-enc-11","family":"bugs-links","check":"link_codec","input":{"fn":"encode","s":"-_.~"},"expect":{"value":"-_.~"}}
+{"id":"buglink-0059-125-roundtrip-dec-11","family":"bugs-links","check":"link_codec","input":{"fn":"decode","s":"-_.~"},"expect":{"value":"-_.~"}}
+{"id":"buglink-0059-126-roundtrip-enc-12","family":"bugs-links","check":"link_codec","input":{"fn":"encode","s":"abcXYZ019"},"expect":{"value":"abcXYZ019"}}
+{"id":"buglink-0059-127-roundtrip-dec-12","family":"bugs-links","check":"link_codec","input":{"fn":"decode","s":"abcXYZ019"},"expect":{"value":"abcXYZ019"}}
+{"id":"buglink-0059-128-roundtrip-enc-13","family":"bugs-links","check":"link_codec","input":{"fn":"encode","s":"é"},"expect":{"value":"%C3%A9"}}
+{"id":"buglink-0059-129-roundtrip-dec-13","family":"bugs-links","check":"link_codec","input":{"fn":"decode","s":"%C3%A9"},"expect":{"value":"é"}}
+{"id":"buglink-0059-130-roundtrip-enc-14","family":"bugs-links","check":"link_codec","input":{"fn":"encode","s":"中"},"expect":{"value":"%E4%B8%AD"}}
+{"id":"buglink-0059-131-roundtrip-dec-14","family":"bugs-links","check":"link_codec","input":{"fn":"decode","s":"%E4%B8%AD"},"expect":{"value":"中"}}
+{"id":"buglink-0059-132-roundtrip-enc-15","family":"bugs-links","check":"link_codec","input":{"fn":"encode","s":"中文文件"},"expect":{"value":"%E4%B8%AD%E6%96%87%E6%96%87%E4%BB%B6"}}
+{"id":"buglink-0059-133-roundtrip-dec-15","family":"bugs-links","check":"link_codec","input":{"fn":"decode","s":"%E4%B8%AD%E6%96%87%E6%96%87%E4%BB%B6"},"expect":{"value":"中文文件"}}
+{"id":"buglink-0059-134-roundtrip-enc-16","family":"bugs-links","check":"link_codec","input":{"fn":"encode","s":"🙂"},"expect":{"value":"%F0%9F%99%82"}}
+{"id":"buglink-0059-135-roundtrip-dec-16","family":"bugs-links","check":"link_codec","input":{"fn":"decode","s":"%F0%9F%99%82"},"expect":{"value":"🙂"}}
+{"id":"buglink-0059-136-roundtrip-enc-17","family":"bugs-links","check":"link_codec","input":{"fn":"encode","s":"🙂🙂"},"expect":{"value":"%F0%9F%99%82%F0%9F%99%82"}}
+{"id":"buglink-0059-137-roundtrip-dec-17","family":"bugs-links","check":"link_codec","input":{"fn":"decode","s":"%F0%9F%99%82%F0%9F%99%82"},"expect":{"value":"🙂🙂"}}
+{"id":"buglink-0059-138-roundtrip-enc-18","family":"bugs-links","check":"link_codec","input":{"fn":"encode","s":"/tmp/中文 文件#1?.md"},"expect":{"value":"/tmp/%E4%B8%AD%E6%96%87%20%E6%96%87%E4%BB%B6%231%3F.md"}}
+{"id":"buglink-0059-139-roundtrip-dec-18","family":"bugs-links","check":"link_codec","input":{"fn":"decode","s":"/tmp/%E4%B8%AD%E6%96%87%20%E6%96%87%E4%BB%B6%231%3F.md"},"expect":{"value":"/tmp/中文 文件#1?.md"}}
+{"id":"buglink-0059-140-roundtrip-enc-19","family":"bugs-links","check":"link_codec","input":{"fn":"encode","s":"/tmp/😀/x y#z"},"expect":{"value":"/tmp/%F0%9F%98%80/x%20y%23z"}}
+{"id":"buglink-0059-141-roundtrip-dec-19","family":"bugs-links","check":"link_codec","input":{"fn":"decode","s":"/tmp/%F0%9F%98%80/x%20y%23z"},"expect":{"value":"/tmp/😀/x y#z"}}
+{"id":"buglink-0059-142-roundtrip-enc-20","family":"bugs-links","check":"link_codec","input":{"fn":"encode","s":"a\tb"},"expect":{"value":"a%09b"}}
+{"id":"buglink-0059-143-roundtrip-dec-20","family":"bugs-links","check":"link_codec","input":{"fn":"decode","s":"a%09b"},"expect":{"value":"a\tb"}}
+{"id":"buglink-0059-144-roundtrip-enc-21","family":"bugs-links","check":"link_codec","input":{"fn":"encode","s":"a\nb"},"expect":{"value":"a%0Ab"}}
+{"id":"buglink-0059-145-roundtrip-dec-21","family":"bugs-links","check":"link_codec","input":{"fn":"decode","s":"a%0Ab"},"expect":{"value":"a\nb"}}
+{"id":"buglink-0059-146-roundtrip-enc-22","family":"bugs-links","check":"link_codec","input":{"fn":"encode","s":"a\\b"},"expect":{"value":"a%5Cb"}}
+{"id":"buglink-0059-147-roundtrip-dec-22","family":"bugs-links","check":"link_codec","input":{"fn":"decode","s":"a%5Cb"},"expect":{"value":"a\\b"}}
+{"id":"buglink-0059-148-roundtrip-enc-23","family":"bugs-links","check":"link_codec","input":{"fn":"encode","s":"a\"b"},"expect":{"value":"a%22b"}}
+{"id":"buglink-0059-149-roundtrip-dec-23","family":"bugs-links","check":"link_codec","input":{"fn":"decode","s":"a%22b"},"expect":{"value":"a\"b"}}
+{"id":"buglink-0059-150-roundtrip-enc-24","family":"bugs-links","check":"link_codec","input":{"fn":"encode","s":"a'b"},"expect":{"value":"a%27b"}}
+{"id":"buglink-0059-151-roundtrip-dec-24","family":"bugs-links","check":"link_codec","input":{"fn":"decode","s":"a%27b"},"expect":{"value":"a'b"}}
+{"id":"buglink-0059-152-roundtrip-enc-25","family":"bugs-links","check":"link_codec","input":{"fn":"encode","s":"a&b"},"expect":{"value":"a%26b"}}
+{"id":"buglink-0059-153-roundtrip-dec-25","family":"bugs-links","check":"link_codec","input":{"fn":"decode","s":"a%26b"},"expect":{"value":"a&b"}}
+{"id":"buglink-0059-154-roundtrip-enc-26","family":"bugs-links","check":"link_codec","input":{"fn":"encode","s":"a=b"},"expect":{"value":"a%3Db"}}
+{"id":"buglink-0059-155-roundtrip-dec-26","family":"bugs-links","check":"link_codec","input":{"fn":"decode","s":"a%3Db"},"expect":{"value":"a=b"}}
+{"id":"buglink-0059-156-roundtrip-enc-27","family":"bugs-links","check":"link_codec","input":{"fn":"encode","s":"a:b"},"expect":{"value":"a%3Ab"}}
+{"id":"buglink-0059-157-roundtrip-dec-27","family":"bugs-links","check":"link_codec","input":{"fn":"decode","s":"a%3Ab"},"expect":{"value":"a:b"}}
+{"id":"buglink-0059-158-roundtrip-enc-28","family":"bugs-links","check":"link_codec","input":{"fn":"encode","s":"a;b"},"expect":{"value":"a%3Bb"}}
+{"id":"buglink-0059-159-roundtrip-dec-28","family":"bugs-links","check":"link_codec","input":{"fn":"decode","s":"a%3Bb"},"expect":{"value":"a;b"}}
+{"id":"buglink-0059-160-roundtrip-enc-29","family":"bugs-links","check":"link_codec","input":{"fn":"encode","s":"a@b"},"expect":{"value":"a%40b"}}
+{"id":"buglink-0059-161-roundtrip-dec-29","family":"bugs-links","check":"link_codec","input":{"fn":"decode","s":"a%40b"},"expect":{"value":"a@b"}}
+# 畸形百分号序列：非法就原样保留，不报错也不吞字节。
+{"id":"buglink-0059-162-bad-decode-00","family":"bugs-links","check":"link_codec","input":{"fn":"decode","s":"%"},"expect":{"value":"%"}}
+{"id":"buglink-0059-163-bad-decode-01","family":"bugs-links","check":"link_codec","input":{"fn":"decode","s":"%2"},"expect":{"value":"%2"}}
+{"id":"buglink-0059-164-bad-decode-02","family":"bugs-links","check":"link_codec","input":{"fn":"decode","s":"%zz"},"expect":{"value":"%zz"}}
+{"id":"buglink-0059-165-bad-decode-03","family":"bugs-links","check":"link_codec","input":{"fn":"decode","s":"100%"},"expect":{"value":"100%"}}
+{"id":"buglink-0059-166-bad-decode-04","family":"bugs-links","check":"link_codec","input":{"fn":"decode","s":"%25"},"expect":{"value":"%"}}
+{"id":"buglink-0059-167-bad-decode-05","family":"bugs-links","check":"link_codec","input":{"fn":"decode","s":"%%20"},"expect":{"value":"% "}}
+{"id":"buglink-0059-168-bad-decode-06","family":"bugs-links","check":"link_codec","input":{"fn":"decode","s":"%%41"},"expect":{"value":"%A"}}
+{"id":"buglink-0059-169-bad-decode-07","family":"bugs-links","check":"link_codec","input":{"fn":"decode","s":"%4%1"},"expect":{"value":"%4%1"}}
+{"id":"buglink-0059-170-bad-decode-08","family":"bugs-links","check":"link_codec","input":{"fn":"decode","s":"%zz%20"},"expect":{"value":"%zz "}}
+{"id":"buglink-0059-171-bad-decode-09","family":"bugs-links","check":"link_codec","input":{"fn":"decode","s":"%E4%B8%AD%2"},"expect":{"value":"中%2"}}
+{"id":"buglink-0059-172-bad-decode-10","family":"bugs-links","check":"link_codec","input":{"fn":"decode","s":"a%00b"},"expect":{"value":"a\u0000b"}}
+{"id":"buglink-0059-173-bad-decode-11","family":"bugs-links","check":"link_codec","input":{"fn":"decode","s":"%FF"},"expect":{"value":"�"}}
+{"id":"buglink-0059-174-bad-decode-12","family":"bugs-links","check":"link_codec","input":{"fn":"decode","s":"%F0%9F"},"expect":{"value":"�"}}
+{"id":"buglink-0059-175-bad-decode-13","family":"bugs-links","check":"link_codec","input":{"fn":"decode","s":"%C0%80"},"expect":{"value":"��"}}
+{"id":"buglink-0059-176-bad-decode-14","family":"bugs-links","check":"link_codec","input":{"fn":"decode","s":"%ED%A0%80"},"expect":{"value":"���"}}
+# 编码保留集与必编字符：% # ? 空格与非 ASCII 必须编码，斜杠保留。
+{"id":"buglink-0059-177-enc-00-reserved","family":"bugs-links","check":"link_codec","input":{"fn":"encode","s":"abcXYZ019-_.~"},"expect":{"value":"abcXYZ019-_.~"}}
+{"id":"buglink-0059-178-enc-01-slash","family":"bugs-links","check":"link_codec","input":{"fn":"encode","s":"/a/b"},"expect":{"value":"/a/b"}}
+{"id":"buglink-0059-179-enc-02-space","family":"bugs-links","check":"link_codec","input":{"fn":"encode","s":"a b"},"expect":{"value":"a%20b"}}
+{"id":"buglink-0059-180-enc-03-cjk","family":"bugs-links","check":"link_codec","input":{"fn":"encode","s":"中"},"expect":{"value":"%E4%B8%AD"}}
+{"id":"buglink-0059-181-enc-04-emoji","family":"bugs-links","check":"link_codec","input":{"fn":"encode","s":"🙂"},"expect":{"value":"%F0%9F%99%82"}}
+{"id":"buglink-0059-182-enc-05-plus","family":"bugs-links","check":"link_codec","input":{"fn":"encode","s":"+"},"expect":{"value":"%2B"}}
+{"id":"buglink-0059-183-enc-06-percent","family":"bugs-links","check":"link_codec","input":{"fn":"encode","s":"%"},"expect":{"value":"%25"}}
+{"id":"buglink-0059-184-enc-07-hash","family":"bugs-links","check":"link_codec","input":{"fn":"encode","s":"#"},"expect":{"value":"%23"}}
+{"id":"buglink-0059-185-enc-08-question","family":"bugs-links","check":"link_codec","input":{"fn":"encode","s":"?"},"expect":{"value":"%3F"}}
+{"id":"buglink-0059-186-enc-09-colon","family":"bugs-links","check":"link_codec","input":{"fn":"encode","s":":"},"expect":{"value":"%3A"}}
+# 源自 docs/bugs/0011（首次公开后 CI 首跑三红：两条排序测试把"语言"当常量，一条取锁测试把"调度延迟"当成本函数的界）
+# AppleLanguages 正常形态：取第一个双引号串，按 - 切首段，只认 zh。
+{"id":"buglink-0011-001-normal-00","family":"bugs-links","check":"lang_apple","input":{"text":"(\"zh-Hans-CN\")"},"expect":"zh"}
+{"id":"buglink-0011-002-normal-01","family":"bugs-links","check":"lang_apple","input":{"text":"(\n    \"zh-Hans-CN\"\n)\n"},"expect":"zh"}
+{"id":"buglink-0011-003-normal-02","family":"bugs-links","check":"lang_apple","input":{"text":"(\"zh\")"},"expect":"zh"}
+{"id":"buglink-0011-004-normal-03","family":"bugs-links","check":"lang_apple","input":{"text":"(\"ZH\")"},"expect":"zh"}
+{"id":"buglink-0011-005-normal-04","family":"bugs-links","check":"lang_apple","input":{"text":"(\"Zh-Hans-CN\")"},"expect":"zh"}
+{"id":"buglink-0011-006-normal-05","family":"bugs-links","check":"lang_apple","input":{"text":"(\"zh-CN\")"},"expect":"zh"}
+{"id":"buglink-0011-007-normal-06","family":"bugs-links","check":"lang_apple","input":{"text":"(\"zh-Hant-TW\")"},"expect":"zh"}
+{"id":"buglink-0011-008-normal-07","family":"bugs-links","check":"lang_apple","input":{"text":"(\"zh-Hans\")"},"expect":"zh"}
+{"id":"buglink-0011-009-normal-08","family":"bugs-links","check":"lang_apple","input":{"text":"(\"zh-Hans-HK\")"},"expect":"zh"}
+{"id":"buglink-0011-010-normal-09","family":"bugs-links","check":"lang_apple","input":{"text":"(\"zh-\")"},"expect":"zh"}
+{"id":"buglink-0011-011-normal-10","family":"bugs-links","check":"lang_apple","input":{"text":"(\"zh--CN\")"},"expect":"zh"}
+{"id":"buglink-0011-012-normal-11","family":"bugs-links","check":"lang_apple","input":{"text":"(\"zh -Hans-CN\")"},"expect":"zh"}
+{"id":"buglink-0011-013-normal-12","family":"bugs-links","check":"lang_apple","input":{"text":"(\" zh-Hans-CN \")"},"expect":"zh"}
+{"id":"buglink-0011-014-normal-13","family":"bugs-links","check":"lang_apple","input":{"text":"(\"zh\t-Hans\")"},"expect":"zh"}
+{"id":"buglink-0011-015-normal-14","family":"bugs-links","check":"lang_apple","input":{"text":"(\"zh\n-Hans\")"},"expect":"zh"}
+{"id":"buglink-0011-016-normal-15","family":"bugs-links","check":"lang_apple","input":{"text":"(\"en-US\")"},"expect":"en"}
+{"id":"buglink-0011-017-normal-16","family":"bugs-links","check":"lang_apple","input":{"text":"(\"en\")"},"expect":"en"}
+{"id":"buglink-0011-018-normal-17","family":"bugs-links","check":"lang_apple","input":{"text":"(\"EN\")"},"expect":"en"}
+{"id":"buglink-0011-019-normal-18","family":"bugs-links","check":"lang_apple","input":{"text":"(\"En-GB\")"},"expect":"en"}
+{"id":"buglink-0011-020-normal-19","family":"bugs-links","check":"lang_apple","input":{"text":"(\"fr-FR\")"},"expect":"en"}
+{"id":"buglink-0011-021-normal-20","family":"bugs-links","check":"lang_apple","input":{"text":"(\"ja-JP\")"},"expect":"en"}
+{"id":"buglink-0011-022-normal-21","family":"bugs-links","check":"lang_apple","input":{"text":"(\"de\")"},"expect":"en"}
+{"id":"buglink-0011-023-normal-22","family":"bugs-links","check":"lang_apple","input":{"text":"(\"cn\")"},"expect":"en"}
+{"id":"buglink-0011-024-normal-23","family":"bugs-links","check":"lang_apple","input":{"text":"(\"hans\")"},"expect":"en"}
+{"id":"buglink-0011-025-normal-24","family":"bugs-links","check":"lang_apple","input":{"text":"(\"zh_CN\")"},"expect":"en"}
+{"id":"buglink-0011-026-normal-25","family":"bugs-links","check":"lang_apple","input":{"text":"(\"zh Hans\")"},"expect":"en"}
+{"id":"buglink-0011-027-normal-26","family":"bugs-links","check":"lang_apple","input":{"text":"(\"zh,en\")"},"expect":"en"}
+{"id":"buglink-0011-028-normal-27","family":"bugs-links","check":"lang_apple","input":{"text":"(\"zh;en\")"},"expect":"en"}
+{"id":"buglink-0011-029-normal-28","family":"bugs-links","check":"lang_apple","input":{"text":"(\"zh.en\")"},"expect":"en"}
+{"id":"buglink-0011-030-normal-29","family":"bugs-links","check":"lang_apple","input":{"text":"(\"zhh\")"},"expect":"en"}
+{"id":"buglink-0011-031-normal-30","family":"bugs-links","check":"lang_apple","input":{"text":"(\"zhx-CN\")"},"expect":"en"}
+{"id":"buglink-0011-032-normal-31","family":"bugs-links","check":"lang_apple","input":{"text":"(\"yue-Hant-HK\")"},"expect":"en"}
+# 畸形串：空串、空标签、单引号、无引号、未闭合一律英文，不猜。
+{"id":"buglink-0011-033-malformed-00","family":"bugs-links","check":"lang_apple","input":{"text":""},"expect":"en"}
+{"id":"buglink-0011-034-malformed-01","family":"bugs-links","check":"lang_apple","input":{"text":"   "},"expect":"en"}
+{"id":"buglink-0011-035-malformed-02","family":"bugs-links","check":"lang_apple","input":{"text":"()"},"expect":"en"}
+{"id":"buglink-0011-036-malformed-03","family":"bugs-links","check":"lang_apple","input":{"text":"( )"},"expect":"en"}
+{"id":"buglink-0011-037-malformed-04","family":"bugs-links","check":"lang_apple","input":{"text":"(\n)"},"expect":"en"}
+{"id":"buglink-0011-038-malformed-05","family":"bugs-links","check":"lang_apple","input":{"text":"(\"zh"},"expect":"en"}
+{"id":"buglink-0011-039-malformed-06","family":"bugs-links","check":"lang_apple","input":{"text":"('zh')"},"expect":"en"}
+{"id":"buglink-0011-040-malformed-07","family":"bugs-links","check":"lang_apple","input":{"text":"(zh-Hans-CN)"},"expect":"en"}
+{"id":"buglink-0011-041-malformed-08","family":"bugs-links","check":"lang_apple","input":{"text":"zh-Hans-CN"},"expect":"en"}
+{"id":"buglink-0011-042-malformed-09","family":"bugs-links","check":"lang_apple","input":{"text":"(\"\")"},"expect":"en"}
+{"id":"buglink-0011-043-malformed-10","family":"bugs-links","check":"lang_apple","input":{"text":"(\" \")"},"expect":"en"}
+{"id":"buglink-0011-044-malformed-11","family":"bugs-links","check":"lang_apple","input":{"text":"(\"\\t\")"},"expect":"en"}
+{"id":"buglink-0011-045-malformed-12","family":"bugs-links","check":"lang_apple","input":{"text":"(\"\\n\")"},"expect":"en"}
+{"id":"buglink-0011-046-malformed-13","family":"bugs-links","check":"lang_apple","input":{"text":"(\"zh\\\"\")"},"expect":"en"}
+{"id":"buglink-0011-047-malformed-14","family":"bugs-links","check":"lang_apple","input":{"text":"(\"zh-Hans-CN"},"expect":"en"}
+{"id":"buglink-0011-048-malformed-15","family":"bugs-links","check":"lang_apple","input":{"text":"\"zh-Hans-CN\""},"expect":"zh"}
+{"id":"buglink-0011-049-malformed-16","family":"bugs-links","check":"lang_apple","input":{"text":"\"\""},"expect":"en"}
+{"id":"buglink-0011-050-malformed-17","family":"bugs-links","check":"lang_apple","input":{"text":"(\"zh-Hans-CN\" \"en-US\")"},"expect":"zh"}
+{"id":"buglink-0011-051-malformed-18","family":"bugs-links","check":"lang_apple","input":{"text":"(\"en-US\" \"zh-Hans-CN\")"},"expect":"en"}
+{"id":"buglink-0011-052-malformed-19","family":"bugs-links","check":"lang_apple","input":{"text":"(\"ZH-hans-cn\")"},"expect":"zh"}
+{"id":"buglink-0011-053-malformed-20","family":"bugs-links","check":"lang_apple","input":{"text":"(\"zH-HANS-CN\")"},"expect":"zh"}
+{"id":"buglink-0011-054-malformed-21","family":"bugs-links","check":"lang_apple","input":{"text":"(\"zh-Hans-CN-extra\")"},"expect":"zh"}
+{"id":"buglink-0011-055-malformed-22","family":"bugs-links","check":"lang_apple","input":{"text":"( \"zh-Hans-CN\" )"},"expect":"zh"}
+{"id":"buglink-0011-056-malformed-23","family":"bugs-links","check":"lang_apple","input":{"text":"(\t\"zh-Hans-CN\"\t)"},"expect":"zh"}
+{"id":"buglink-0011-057-malformed-24","family":"bugs-links","check":"lang_apple","input":{"text":"(\r\n\"zh-Hans-CN\"\r\n)"},"expect":"zh"}
+{"id":"buglink-0011-058-malformed-25","family":"bugs-links","check":"lang_apple","input":{"text":"(\"zh-Hans-CN\");"},"expect":"zh"}
+{"id":"buglink-0011-059-malformed-26","family":"bugs-links","check":"lang_apple","input":{"text":"(\"zh-Hans-CN\") // comment"},"expect":"zh"}
+# ⚠️ 疑似缺陷：解析器在整段输出里找第一个双引号串，注释/错误文案里的引号也会参与语言裁定。
+{"id":"buglink-0011-060-malformed-27","family":"bugs-links","check":"lang_apple","input":{"text":"// comment \"en-US\"\n(\"zh-Hans-CN\")"},"expect":"en"}
+{"id":"buglink-0011-061-malformed-28","family":"bugs-links","check":"lang_apple","input":{"text":"The value \"zh-Hans-CN\" is set"},"expect":"zh"}
+{"id":"buglink-0011-062-malformed-29","family":"bugs-links","check":"lang_apple","input":{"text":"No such key: \"en-US\""},"expect":"en"}
+# ⚠️ 疑似缺陷：错误文案里出现 "zh-Hans-CN" 时也会被判成中文，说明解析没有限定在数组正文。
+{"id":"buglink-0011-063-malformed-30","family":"bugs-links","check":"lang_apple","input":{"text":"The domain \"zh-Hans-CN\" does not exist"},"expect":"zh"}
+{"id":"buglink-0011-064-malformed-31","family":"bugs-links","check":"lang_apple","input":{"text":"(\"zh\")(\"en\")"},"expect":"zh"}
+{"id":"buglink-0011-065-malformed-32","family":"bugs-links","check":"lang_apple","input":{"text":"(\" zh \")"},"expect":"zh"}
+{"id":"buglink-0011-066-malformed-33","family":"bugs-links","check":"lang_apple","input":{"text":"(\"  en  \")"},"expect":"en"}
+{"id":"buglink-0011-067-malformed-34","family":"bugs-links","check":"lang_apple","input":{"text":"(\"zh\tCN\")"},"expect":"en"}
+{"id":"buglink-0011-068-malformed-35","family":"bugs-links","check":"lang_apple","input":{"text":"(\"zh CN\")"},"expect":"en"}
+{"id":"buglink-0011-069-malformed-36","family":"bugs-links","check":"lang_apple","input":{"text":"(\"zh/CN\")"},"expect":"en"}
+{"id":"buglink-0011-070-malformed-37","family":"bugs-links","check":"lang_apple","input":{"text":"(\"zh+CN\")"},"expect":"en"}
+{"id":"buglink-0011-071-malformed-38","family":"bugs-links","check":"lang_apple","input":{"text":"(\"zh-CN-x\")"},"expect":"zh"}
+{"id":"buglink-0011-072-malformed-39","family":"bugs-links","check":"lang_apple","input":{"text":"(\"ZH-hans\")"},"expect":"zh"}
+{"id":"buglink-0011-073-malformed-40","family":"bugs-links","check":"lang_apple","input":{"text":"(\" z h \")"},"expect":"en"}
+{"id":"buglink-0011-074-malformed-41","family":"bugs-links","check":"lang_apple","input":{"text":"(\"zh -Hans\")"},"expect":"zh"}
+{"id":"buglink-0011-075-malformed-42","family":"bugs-links","check":"lang_apple","input":{"text":"(\" zh \")"},"expect":"zh"}
+{"id":"buglink-0011-076-malformed-43","family":"bugs-links","check":"lang_apple","input":{"text":"(\"​zh\")"},"expect":"en"}
+{"id":"buglink-0011-077-malformed-44","family":"bugs-links","check":"lang_apple","input":{"text":"(\"zh​\")"},"expect":"en"}
+{"id":"buglink-0011-078-malformed-45","family":"bugs-links","check":"lang_apple","input":{"text":"(\"中文\")"},"expect":"en"}
+{"id":"buglink-0011-079-malformed-46","family":"bugs-links","check":"lang_apple","input":{"text":"(\"zh-Hans-CN\u0000\")"},"expect":"zh"}
+{"id":"buglink-0011-080-malformed-47","family":"bugs-links","check":"lang_apple","input":{"text":"(\"zh\u0000-Hans\")"},"expect":"en"}
+{"id":"buglink-0011-081-malformed-48","family":"bugs-links","check":"lang_apple","input":{"text":"(\" en-US \")"},"expect":"en"}
+{"id":"buglink-0011-082-malformed-49","family":"bugs-links","check":"lang_apple","input":{"text":"(\" \") (\"zh\")"},"expect":"en"}
+{"id":"buglink-0011-083-malformed-50","family":"bugs-links","check":"lang_apple","input":{"text":"( \"en\" )"},"expect":"en"}
+{"id":"buglink-0011-084-malformed-51","family":"bugs-links","check":"lang_apple","input":{"text":"(  \"zh\"  )"},"expect":"zh"}
+# 多语言列表：只有第一个标签有裁定权，后面即使有 zh 也不改判。
+{"id":"buglink-0011-085-multi-00","family":"bugs-links","check":"lang_apple","input":{"text":"(\"zh-Hans-CN\", \"en-US\")"},"expect":"zh"}
+{"id":"buglink-0011-086-multi-01","family":"bugs-links","check":"lang_apple","input":{"text":"(\"en-US\", \"zh-Hans-CN\")"},"expect":"en"}
+{"id":"buglink-0011-087-multi-02","family":"bugs-links","check":"lang_apple","input":{"text":"(\"fr-FR\", \"zh-Hans-CN\")"},"expect":"en"}
+{"id":"buglink-0011-088-multi-03","family":"bugs-links","check":"lang_apple","input":{"text":"(\"zh-Hans-CN\", \"en-US\", \"fr-FR\")"},"expect":"zh"}
+{"id":"buglink-0011-089-multi-04","family":"bugs-links","check":"lang_apple","input":{"text":"(\"xx\", \"zh\")"},"expect":"en"}
+{"id":"buglink-0011-090-multi-05","family":"bugs-links","check":"lang_apple","input":{"text":"(\"zh\", \"en\")"},"expect":"zh"}
+# ⚠️ 疑似缺陷：首个标签为空串时直接判英文，后面的 "zh-Hans-CN" 被完全忽略。
+{"id":"buglink-0011-091-multi-06","family":"bugs-links","check":"lang_apple","input":{"text":"(\"\", \"zh-Hans-CN\")"},"expect":"en"}
+{"id":"buglink-0011-092-multi-07","family":"bugs-links","check":"lang_apple","input":{"text":"(\"\", \"en-US\")"},"expect":"en"}
+{"id":"buglink-0011-093-multi-08","family":"bugs-links","check":"lang_apple","input":{"text":"(\"zh-Hant-TW\", \"zh-Hans-CN\")"},"expect":"zh"}
+{"id":"buglink-0011-094-multi-09","family":"bugs-links","check":"lang_apple","input":{"text":"(\"en-GB\", \"en-US\", \"zh-Hans-CN\")"},"expect":"en"}
+{"id":"buglink-0011-095-multi-10","family":"bugs-links","check":"lang_apple","input":{"text":"(\n  \"en-US\",\n  \"zh-Hans-CN\"\n)"},"expect":"en"}
+{"id":"buglink-0011-096-multi-11","family":"bugs-links","check":"lang_apple","input":{"text":"(\n  \"zh-Hans-CN\",\n  \"en-US\"\n)"},"expect":"zh"}
+{"id":"buglink-0011-097-multi-12","family":"bugs-links","check":"lang_apple","input":{"text":"(\"ja-JP\", \"en-US\", \"zh-Hans-CN\")"},"expect":"en"}
+{"id":"buglink-0011-098-multi-13","family":"bugs-links","check":"lang_apple","input":{"text":"(\"de-DE\", \"fr-FR\")"},"expect":"en"}
+{"id":"buglink-0011-099-multi-14","family":"bugs-links","check":"lang_apple","input":{"text":"(\"zh\",)"},"expect":"zh"}
+# 源自 docs/bugs/0193（L2 测试页语言写死 `zh`、且不注入产品 Rust 侧的 `__rmdLang`：界面文案与用户真实配置不一致且不留痕）
+# 显式 zh/en 的大小写与首尾空白：归一化后必须压过系统语言。
+{"id":"buglink-0193-001-explicit-00","family":"bugs-links","check":"lang","input":{"preference":"zh","system":"en"},"expect":"zh"}
+{"id":"buglink-0193-002-explicit-01","family":"bugs-links","check":"lang","input":{"preference":"ZH","system":"en"},"expect":"zh"}
+{"id":"buglink-0193-003-explicit-02","family":"bugs-links","check":"lang","input":{"preference":"Zh","system":"en"},"expect":"zh"}
+{"id":"buglink-0193-004-explicit-03","family":"bugs-links","check":"lang","input":{"preference":"zh","system":"zh"},"expect":"zh"}
+{"id":"buglink-0193-005-explicit-04","family":"bugs-links","check":"lang","input":{"preference":"ZH","system":"zh"},"expect":"zh"}
+{"id":"buglink-0193-006-explicit-05","family":"bugs-links","check":"lang","input":{"preference":"en","system":"zh"},"expect":"en"}
+{"id":"buglink-0193-007-explicit-06","family":"bugs-links","check":"lang","input":{"preference":"EN","system":"zh"},"expect":"en"}
+{"id":"buglink-0193-008-explicit-07","family":"bugs-links","check":"lang","input":{"preference":"En","system":"zh"},"expect":"en"}
+{"id":"buglink-0193-009-explicit-08","family":"bugs-links","check":"lang","input":{"preference":"en","system":"en"},"expect":"en"}
+{"id":"buglink-0193-010-explicit-09","family":"bugs-links","check":"lang","input":{"preference":"EN","system":"en"},"expect":"en"}
+{"id":"buglink-0193-011-explicit-10","family":"bugs-links","check":"lang","input":{"preference":" zh ","system":"en"},"expect":"zh"}
+{"id":"buglink-0193-012-explicit-11","family":"bugs-links","check":"lang","input":{"preference":"\tzh\n","system":"en"},"expect":"zh"}
+{"id":"buglink-0193-013-explicit-12","family":"bugs-links","check":"lang","input":{"preference":" zh ","system":"en"},"expect":"zh"}
+{"id":"buglink-0193-014-explicit-13","family":"bugs-links","check":"lang","input":{"preference":"zh\n","system":"en"},"expect":"zh"}
+{"id":"buglink-0193-015-explicit-14","family":"bugs-links","check":"lang","input":{"preference":"zh\t","system":"en"},"expect":"zh"}
+{"id":"buglink-0193-016-explicit-15","family":"bugs-links","check":"lang","input":{"preference":" en ","system":"zh"},"expect":"en"}
+{"id":"buglink-0193-017-explicit-16","family":"bugs-links","check":"lang","input":{"preference":"\ten\n","system":"zh"},"expect":"en"}
+{"id":"buglink-0193-018-explicit-17","family":"bugs-links","check":"lang","input":{"preference":" en ","system":"zh"},"expect":"en"}
+{"id":"buglink-0193-019-explicit-18","family":"bugs-links","check":"lang","input":{"preference":"en\n","system":"zh"},"expect":"en"}
+{"id":"buglink-0193-020-explicit-19","family":"bugs-links","check":"lang","input":{"preference":"en\t","system":"zh"},"expect":"en"}
+# region/下划线/相近词都不算显式档：回落系统，而不是猜成 zh。
+{"id":"buglink-0193-021-unknown-00","family":"bugs-links","check":"lang","input":{"preference":"zh-CN","system":"zh"},"expect":"zh"}
+{"id":"buglink-0193-022-unknown-01","family":"bugs-links","check":"lang","input":{"preference":"zh_CN","system":"en"},"expect":"en"}
+{"id":"buglink-0193-023-unknown-02","family":"bugs-links","check":"lang","input":{"preference":"zh-Hans","system":"zh"},"expect":"zh"}
+{"id":"buglink-0193-024-unknown-03","family":"bugs-links","check":"lang","input":{"preference":"zh-Hans-CN","system":"en"},"expect":"en"}
+{"id":"buglink-0193-025-unknown-04","family":"bugs-links","check":"lang","input":{"preference":"en-US","system":"zh"},"expect":"zh"}
+{"id":"buglink-0193-026-unknown-05","family":"bugs-links","check":"lang","input":{"preference":"en_US","system":"en"},"expect":"en"}
+{"id":"buglink-0193-027-unknown-06","family":"bugs-links","check":"lang","input":{"preference":"EN-US","system":"zh"},"expect":"zh"}
+{"id":"buglink-0193-028-unknown-07","family":"bugs-links","check":"lang","input":{"preference":"en-GB","system":"en"},"expect":"en"}
+{"id":"buglink-0193-029-unknown-08","family":"bugs-links","check":"lang","input":{"preference":"zh-hans-cn","system":"zh"},"expect":"zh"}
+{"id":"buglink-0193-030-unknown-09","family":"bugs-links","check":"lang","input":{"preference":"ZH-CN","system":"en"},"expect":"en"}
+{"id":"buglink-0193-031-unknown-10","family":"bugs-links","check":"lang","input":{"preference":"eng","system":"zh"},"expect":"zh"}
+{"id":"buglink-0193-032-unknown-11","family":"bugs-links","check":"lang","input":{"preference":"english","system":"en"},"expect":"en"}
+{"id":"buglink-0193-033-unknown-12","family":"bugs-links","check":"lang","input":{"preference":"zh2","system":"zh"},"expect":"zh"}
+{"id":"buglink-0193-034-unknown-13","family":"bugs-links","check":"lang","input":{"preference":"zh zh","system":"en"},"expect":"en"}
+{"id":"buglink-0193-035-unknown-14","family":"bugs-links","check":"lang","input":{"preference":"zh/en","system":"zh"},"expect":"zh"}
+{"id":"buglink-0193-036-unknown-15","family":"bugs-links","check":"lang","input":{"preference":"zh-en","system":"en"},"expect":"en"}
+{"id":"buglink-0193-037-unknown-16","family":"bugs-links","check":"lang","input":{"preference":"e","system":"zh"},"expect":"zh"}
+{"id":"buglink-0193-038-unknown-17","family":"bugs-links","check":"lang","input":{"preference":"z","system":"en"},"expect":"en"}
+{"id":"buglink-0193-039-unknown-18","family":"bugs-links","check":"lang","input":{"preference":"system2","system":"zh"},"expect":"zh"}
+{"id":"buglink-0193-040-unknown-19","family":"bugs-links","check":"lang","input":{"preference":"auto","system":"en"},"expect":"en"}
+{"id":"buglink-0193-041-unknown-20","family":"bugs-links","check":"lang","input":{"preference":"中文","system":"zh"},"expect":"zh"}
+{"id":"buglink-0193-042-unknown-21","family":"bugs-links","check":"lang","input":{"preference":"中","system":"en"},"expect":"en"}
+{"id":"buglink-0193-043-unknown-22","family":"bugs-links","check":"lang","input":{"preference":"fr","system":"zh"},"expect":"zh"}
+{"id":"buglink-0193-044-unknown-23","family":"bugs-links","check":"lang","input":{"preference":"de","system":"en"},"expect":"en"}
+{"id":"buglink-0193-045-unknown-24","family":"bugs-links","check":"lang","input":{"preference":"System","system":"zh"},"expect":"zh"}
+{"id":"buglink-0193-046-unknown-25","family":"bugs-links","check":"lang","input":{"preference":"ＳＹＳＴＥＭ","system":"en"},"expect":"en"}
+{"id":"buglink-0193-047-unknown-26","family":"bugs-links","check":"lang","input":{"preference":"ｚｈ","system":"zh"},"expect":"zh"}
+{"id":"buglink-0193-048-unknown-27","family":"bugs-links","check":"lang","input":{"preference":"zh​","system":"en"},"expect":"en"}
+# ⚠️ 疑似缺陷：零宽字符让显式 zh 静默回落系统语言；肉眼看不出的字节改变了界面语言。
+{"id":"buglink-0193-049-unknown-28","family":"bugs-links","check":"lang","input":{"preference":"​zh","system":"zh"},"expect":"zh"}
+{"id":"buglink-0193-050-unknown-29","family":"bugs-links","check":"lang","input":{"preference":"zh\u0000","system":"en"},"expect":"en"}
+{"id":"buglink-0193-051-unknown-30","family":"bugs-links","check":"lang","input":{"preference":"\u0000zh","system":"zh"},"expect":"zh"}
+{"id":"buglink-0193-052-unknown-31","family":"bugs-links","check":"lang","input":{"preference":"en\u0000","system":"en"},"expect":"en"}
+{"id":"buglink-0193-053-unknown-32","family":"bugs-links","check":"lang","input":{"preference":"system\u0000","system":"zh"},"expect":"zh"}
+# 中文/空白周边：trim 的边界（NBSP、全角空格、零宽字符）必须分清。
+{"id":"buglink-0193-054-space-00","family":"bugs-links","check":"lang","input":{"preference":"system","system":"zh"},"expect":"zh"}
+{"id":"buglink-0193-055-space-01","family":"bugs-links","check":"lang","input":{"preference":"SYSTEM","system":"en"},"expect":"en"}
+{"id":"buglink-0193-056-space-02","family":"bugs-links","check":"lang","input":{"preference":" System ","system":"zh"},"expect":"zh"}
+{"id":"buglink-0193-057-space-03","family":"bugs-links","check":"lang","input":{"preference":"","system":"en"},"expect":"en"}
+{"id":"buglink-0193-058-space-04","family":"bugs-links","check":"lang","input":{"preference":"   ","system":"zh"},"expect":"zh"}
+{"id":"buglink-0193-059-space-05","family":"bugs-links","check":"lang","input":{"preference":"\t\n","system":"en"},"expect":"en"}
+{"id":"buglink-0193-060-space-06","family":"bugs-links","check":"lang","input":{"preference":" ","system":"zh"},"expect":"zh"}
+{"id":"buglink-0193-061-space-07","family":"bugs-links","check":"lang","input":{"preference":"　","system":"en"},"expect":"en"}
+{"id":"buglink-0193-062-space-08","family":"bugs-links","check":"lang","input":{"preference":"zh　","system":"en"},"expect":"zh"}
+{"id":"buglink-0193-063-space-09","family":"bugs-links","check":"lang","input":{"preference":"　zh","system":"en"},"expect":"zh"}
+{"id":"buglink-0193-064-space-10","family":"bugs-links","check":"lang","input":{"preference":" zh","system":"en"},"expect":"zh"}
+{"id":"buglink-0193-065-space-11","family":"bugs-links","check":"lang","input":{"preference":"zh ","system":"en"},"expect":"zh"}
+# ⚠️ 疑似缺陷：零宽前缀没有被裁剪，zh 偏好被当成未知词而回落系统语言。
+{"id":"buglink-0193-066-space-12","family":"bugs-links","check":"lang","input":{"preference":"​ zh","system":"en"},"expect":"en"}
+{"id":"buglink-0193-067-space-13","family":"bugs-links","check":"lang","input":{"preference":"zh ​","system":"en"},"expect":"en"}
+{"id":"buglink-0193-068-space-14","family":"bugs-links","check":"lang","input":{"preference":"\u000bzh","system":"en"},"expect":"zh"}
+{"id":"buglink-0193-069-space-15","family":"bugs-links","check":"lang","input":{"preference":"zh\f","system":"en"},"expect":"zh"}
+{"id":"buglink-0193-070-space-16","family":"bugs-links","check":"lang","input":{"preference":"\u0085zh","system":"en"},"expect":"zh"}
+{"id":"buglink-0193-071-space-17","family":"bugs-links","check":"lang","input":{"preference":"zh\u0085","system":"en"},"expect":"zh"}
+# 源自 docs/bugs/0156（`--fixtures-json` 给相对路径时，`--mutations` 跑批以裸 `FileExistsError` 崩溃，退出码 1 不在契约里）
+# 词法归一：消 ./.. 与重复斜杠，绝对路径不越过根，相对路径保留前导 ..。
+{"id":"buglink-0156-001-normalize-00","family":"bugs-links","check":"link_codec","input":{"fn":"normalize","s":""},"expect":{"value":""}}
+{"id":"buglink-0156-002-normalize-01","family":"bugs-links","check":"link_codec","input":{"fn":"normalize","s":"/"},"expect":{"value":"/"}}
+{"id":"buglink-0156-003-normalize-02","family":"bugs-links","check":"link_codec","input":{"fn":"normalize","s":"//"},"expect":{"value":"/"}}
+{"id":"buglink-0156-004-normalize-03","family":"bugs-links","check":"link_codec","input":{"fn":"normalize","s":"///"},"expect":{"value":"/"}}
+{"id":"buglink-0156-005-normalize-04","family":"bugs-links","check":"link_codec","input":{"fn":"normalize","s":"////"},"expect":{"value":"/"}}
+{"id":"buglink-0156-006-normalize-05","family":"bugs-links","check":"link_codec","input":{"fn":"normalize","s":"."},"expect":{"value":""}}
+{"id":"buglink-0156-007-normalize-06","family":"bugs-links","check":"link_codec","input":{"fn":"normalize","s":"./"},"expect":{"value":""}}
+{"id":"buglink-0156-008-normalize-07","family":"bugs-links","check":"link_codec","input":{"fn":"normalize","s":"./."},"expect":{"value":""}}
+{"id":"buglink-0156-009-normalize-08","family":"bugs-links","check":"link_codec","input":{"fn":"normalize","s":".."},"expect":{"value":".."}}
+{"id":"buglink-0156-010-normalize-09","family":"bugs-links","check":"link_codec","input":{"fn":"normalize","s":"../"},"expect":{"value":".."}}
+{"id":"buglink-0156-011-normalize-10","family":"bugs-links","check":"link_codec","input":{"fn":"normalize","s":"../.."},"expect":{"value":"../.."}}
+{"id":"buglink-0156-012-normalize-11","family":"bugs-links","check":"link_codec","input":{"fn":"normalize","s":"../../"},"expect":{"value":"../.."}}
+{"id":"buglink-0156-013-normalize-12","family":"bugs-links","check":"link_codec","input":{"fn":"normalize","s":"a"},"expect":{"value":"a"}}
+{"id":"buglink-0156-014-normalize-13","family":"bugs-links","check":"link_codec","input":{"fn":"normalize","s":"a/"},"expect":{"value":"a"}}
+{"id":"buglink-0156-015-normalize-14","family":"bugs-links","check":"link_codec","input":{"fn":"normalize","s":"a//"},"expect":{"value":"a"}}
+{"id":"buglink-0156-016-normalize-15","family":"bugs-links","check":"link_codec","input":{"fn":"normalize","s":"a//b"},"expect":{"value":"a/b"}}
+{"id":"buglink-0156-017-normalize-16","family":"bugs-links","check":"link_codec","input":{"fn":"normalize","s":"a/./b"},"expect":{"value":"a/b"}}
+{"id":"buglink-0156-018-normalize-17","family":"bugs-links","check":"link_codec","input":{"fn":"normalize","s":"a/../b"},"expect":{"value":"b"}}
+{"id":"buglink-0156-019-normalize-18","family":"bugs-links","check":"link_codec","input":{"fn":"normalize","s":"a/../../b"},"expect":{"value":"../b"}}
+{"id":"buglink-0156-020-normalize-19","family":"bugs-links","check":"link_codec","input":{"fn":"normalize","s":"a/../../../b"},"expect":{"value":"../../b"}}
+{"id":"buglink-0156-021-normalize-20","family":"bugs-links","check":"link_codec","input":{"fn":"normalize","s":"../a"},"expect":{"value":"../a"}}
+{"id":"buglink-0156-022-normalize-21","family":"bugs-links","check":"link_codec","input":{"fn":"normalize","s":"../a/.."},"expect":{"value":".."}}
+{"id":"buglink-0156-023-normalize-22","family":"bugs-links","check":"link_codec","input":{"fn":"normalize","s":"../a/../.."},"expect":{"value":"../.."}}
+{"id":"buglink-0156-024-normalize-23","family":"bugs-links","check":"link_codec","input":{"fn":"normalize","s":"../a/../../.."},"expect":{"value":"../../.."}}
+{"id":"buglink-0156-025-normalize-24","family":"bugs-links","check":"link_codec","input":{"fn":"normalize","s":"/a/.."},"expect":{"value":"/"}}
+{"id":"buglink-0156-026-normalize-25","family":"bugs-links","check":"link_codec","input":{"fn":"normalize","s":"/a/../.."},"expect":{"value":"/"}}
+{"id":"buglink-0156-027-normalize-26","family":"bugs-links","check":"link_codec","input":{"fn":"normalize","s":"/.."},"expect":{"value":"/"}}
+{"id":"buglink-0156-028-normalize-27","family":"bugs-links","check":"link_codec","input":{"fn":"normalize","s":"/../.."},"expect":{"value":"/"}}
+{"id":"buglink-0156-029-normalize-28","family":"bugs-links","check":"link_codec","input":{"fn":"normalize","s":"/../../a"},"expect":{"value":"/a"}}
+{"id":"buglink-0156-030-normalize-29","family":"bugs-links","check":"link_codec","input":{"fn":"normalize","s":"/a/b/../../c"},"expect":{"value":"/c"}}
+{"id":"buglink-0156-031-normalize-30","family":"bugs-links","check":"link_codec","input":{"fn":"normalize","s":"/a/b/../../../c"},"expect":{"value":"/c"}}
+{"id":"buglink-0156-032-normalize-31","family":"bugs-links","check":"link_codec","input":{"fn":"normalize","s":"/a//b/./c/../d"},"expect":{"value":"/a/b/d"}}
+{"id":"buglink-0156-033-normalize-32","family":"bugs-links","check":"link_codec","input":{"fn":"normalize","s":"/a/..."},"expect":{"value":"/a/..."}}
+{"id":"buglink-0156-034-normalize-33","family":"bugs-links","check":"link_codec","input":{"fn":"normalize","s":"/a/..../b"},"expect":{"value":"/a/..../b"}}
+{"id":"buglink-0156-035-normalize-34","family":"bugs-links","check":"link_codec","input":{"fn":"normalize","s":"/a/.hidden"},"expect":{"value":"/a/.hidden"}}
+{"id":"buglink-0156-036-normalize-35","family":"bugs-links","check":"link_codec","input":{"fn":"normalize","s":"/a/..hidden"},"expect":{"value":"/a/..hidden"}}
+{"id":"buglink-0156-037-normalize-36","family":"bugs-links","check":"link_codec","input":{"fn":"normalize","s":"/a/hidden."},"expect":{"value":"/a/hidden."}}
+{"id":"buglink-0156-038-normalize-37","family":"bugs-links","check":"link_codec","input":{"fn":"normalize","s":"中文/../文件"},"expect":{"value":"文件"}}
+{"id":"buglink-0156-039-normalize-38","family":"bugs-links","check":"link_codec","input":{"fn":"normalize","s":"/中文/文件/../说明.md"},"expect":{"value":"/中文/说明.md"}}
+{"id":"buglink-0156-040-normalize-39","family":"bugs-links","check":"link_codec","input":{"fn":"normalize","s":"/tmp/😀/../x"},"expect":{"value":"/tmp/x"}}
+{"id":"buglink-0156-041-normalize-40","family":"bugs-links","check":"link_codec","input":{"fn":"normalize","s":"/tmp/a b/../c"},"expect":{"value":"/tmp/c"}}
+{"id":"buglink-0156-042-normalize-41","family":"bugs-links","check":"link_codec","input":{"fn":"normalize","s":"/tmp/a%20b/../c"},"expect":{"value":"/tmp/c"}}
+{"id":"buglink-0156-043-normalize-42","family":"bugs-links","check":"link_codec","input":{"fn":"normalize","s":"a/.."},"expect":{"value":""}}
+{"id":"buglink-0156-044-normalize-43","family":"bugs-links","check":"link_codec","input":{"fn":"normalize","s":"a/../.."},"expect":{"value":".."}}
+{"id":"buglink-0156-045-normalize-44","family":"bugs-links","check":"link_codec","input":{"fn":"normalize","s":"a/../../.."},"expect":{"value":"../.."}}
+{"id":"buglink-0156-046-normalize-45","family":"bugs-links","check":"link_codec","input":{"fn":"normalize","s":"a/..."},"expect":{"value":"a/..."}}
+{"id":"buglink-0156-047-normalize-46","family":"bugs-links","check":"link_codec","input":{"fn":"normalize","s":"a/.../b"},"expect":{"value":"a/.../b"}}
+{"id":"buglink-0156-048-normalize-47","family":"bugs-links","check":"link_codec","input":{"fn":"normalize","s":"/a/.. /b"},"expect":{"value":"/a/.. /b"}}
+{"id":"buglink-0156-049-normalize-48","family":"bugs-links","check":"link_codec","input":{"fn":"normalize","s":"/a/../ /b"},"expect":{"value":"/ /b"}}
+{"id":"buglink-0156-050-normalize-49","family":"bugs-links","check":"link_codec","input":{"fn":"normalize","s":" "},"expect":{"value":" "}}
+{"id":"buglink-0156-051-normalize-50","family":"bugs-links","check":"link_codec","input":{"fn":"normalize","s":"/ "},"expect":{"value":"/ "}}
+{"id":"buglink-0156-052-normalize-51","family":"bugs-links","check":"link_codec","input":{"fn":"normalize","s":"a/./../b"},"expect":{"value":"b"}}
+{"id":"buglink-0156-053-normalize-52","family":"bugs-links","check":"link_codec","input":{"fn":"normalize","s":"./../a"},"expect":{"value":"../a"}}
+{"id":"buglink-0156-054-normalize-53","family":"bugs-links","check":"link_codec","input":{"fn":"normalize","s":"./../../a"},"expect":{"value":"../../a"}}
+{"id":"buglink-0156-055-normalize-54","family":"bugs-links","check":"link_codec","input":{"fn":"normalize","s":"..//a"},"expect":{"value":"../a"}}
+{"id":"buglink-0156-056-normalize-55","family":"bugs-links","check":"link_codec","input":{"fn":"normalize","s":".././a"},"expect":{"value":"../a"}}
+{"id":"buglink-0156-057-normalize-56","family":"bugs-links","check":"link_codec","input":{"fn":"normalize","s":"../..//a"},"expect":{"value":"../../a"}}
+{"id":"buglink-0156-058-normalize-57","family":"bugs-links","check":"link_codec","input":{"fn":"normalize","s":"/./a"},"expect":{"value":"/a"}}
+{"id":"buglink-0156-059-normalize-58","family":"bugs-links","check":"link_codec","input":{"fn":"normalize","s":"/../a"},"expect":{"value":"/a"}}
+{"id":"buglink-0156-060-normalize-59","family":"bugs-links","check":"link_codec","input":{"fn":"normalize","s":"C:/a/../b"},"expect":{"value":"C:/b"}}
+{"id":"buglink-0156-061-normalize-60","family":"bugs-links","check":"link_codec","input":{"fn":"normalize","s":"~/a/../b"},"expect":{"value":"~/b"}}
+{"id":"buglink-0156-062-normalize-61","family":"bugs-links","check":"link_codec","input":{"fn":"normalize","s":"~"},"expect":{"value":"~"}}
+{"id":"buglink-0156-063-normalize-62","family":"bugs-links","check":"link_codec","input":{"fn":"normalize","s":"//a//b//"},"expect":{"value":"/a/b"}}
+{"id":"buglink-0156-064-normalize-63","family":"bugs-links","check":"link_codec","input":{"fn":"normalize","s":"/a/b/."},"expect":{"value":"/a/b"}}
+{"id":"buglink-0156-065-normalize-64","family":"bugs-links","check":"link_codec","input":{"fn":"normalize","s":"/a/b/.."},"expect":{"value":"/a"}}
+{"id":"buglink-0156-066-normalize-65","family":"bugs-links","check":"link_codec","input":{"fn":"normalize","s":"/."},"expect":{"value":"/"}}
+# 本地路径的 ..、~、盘符、中文、空格、emoji：分类层不归一，原样保留给授权层。
+{"id":"buglink-0156-067-local-path-00","family":"bugs-links","check":"link","input":{"href":"docs/../a.md"},"expect":{"kind":"local_path","path":"docs/../a.md","fragment":null}}
+{"id":"buglink-0156-068-local-path-01","family":"bugs-links","check":"link","input":{"href":"/a/./b.md"},"expect":{"kind":"local_path","path":"/a/./b.md","fragment":null}}
+{"id":"buglink-0156-069-local-path-02","family":"bugs-links","check":"link","input":{"href":"/a//b.md"},"expect":{"kind":"local_path","path":"/a//b.md","fragment":null}}
+{"id":"buglink-0156-070-local-path-03","family":"bugs-links","check":"link","input":{"href":"~/x.md"},"expect":{"kind":"local_path","path":"~/x.md","fragment":null}}
+{"id":"buglink-0156-071-local-path-04","family":"bugs-links","check":"link","input":{"href":"~user/x.md"},"expect":{"kind":"local_path","path":"~user/x.md","fragment":null}}
+{"id":"buglink-0156-072-local-path-05","family":"bugs-links","check":"link","input":{"href":"../../../etc/passwd"},"expect":{"kind":"local_path","path":"../../../etc/passwd","fragment":null}}
+{"id":"buglink-0156-073-local-path-06","family":"bugs-links","check":"link","input":{"href":"/Users/example/文档/说明.md"},"expect":{"kind":"local_path","path":"/Users/example/文档/说明.md","fragment":null}}
+{"id":"buglink-0156-074-local-path-07","family":"bugs-links","check":"link","input":{"href":"/Users/example/My Notes/a b.md"},"expect":{"kind":"local_path","path":"/Users/example/My Notes/a b.md","fragment":null}}
+{"id":"buglink-0156-075-local-path-08","family":"bugs-links","check":"link","input":{"href":"/tmp/🙂🙂.md"},"expect":{"kind":"local_path","path":"/tmp/🙂🙂.md","fragment":null}}
+{"id":"buglink-0156-076-local-path-09","family":"bugs-links","check":"link","input":{"href":"/tmp/中文 目录/🙂 文件.md"},"expect":{"kind":"local_path","path":"/tmp/中文 目录/🙂 文件.md","fragment":null}}
+{"id":"buglink-0156-077-local-path-10","family":"bugs-links","check":"link","input":{"href":"C:/x.md"},"expect":{"kind":"unsupported","scheme":"c"}}
+{"id":"buglink-0156-078-local-path-11","family":"bugs-links","check":"link","input":{"href":"C:\\x.md"},"expect":{"kind":"unsupported","scheme":"c"}}
+{"id":"buglink-0156-079-local-path-12","family":"bugs-links","check":"link","input":{"href":"/a%2Fb.md"},"expect":{"kind":"local_path","path":"/a/b.md","fragment":null}}
+{"id":"buglink-0156-080-local-path-13","family":"bugs-links","check":"link","input":{"href":"a/..%2F..%2Fb"},"expect":{"kind":"local_path","path":"a/../../b","fragment":null}}
+{"id":"buglink-0156-081-local-path-14","family":"bugs-links","check":"link","input":{"href":"a%5Cb.md"},"expect":{"kind":"local_path","path":"a\\b.md","fragment":null}}
+{"id":"buglink-0156-082-local-path-15","family":"bugs-links","check":"link","input":{"href":"/tmp/a%00b.md"},"expect":{"kind":"local_path","path":"/tmp/a\u0000b.md","fragment":null}}
+# 源自 docs/bugs/0005（没有打开文档时按 `⌘E`，状态条说「打不开外部编辑器：**操作失败**」——真相是「你还没打开文档」）
+# 默认编辑器 argv：路径含空格/引号/换行/前导短横时仍逐字、独立、在 -- 之后。
+{"id":"buglink-0005-001-default-00","family":"bugs-links","check":"argv","input":{"fn":"editor","configured":null,"path":"/tmp/a.md"},"expect":{"argv":["/usr/bin/open","-t","--","/tmp/a.md"],"len":4}}
+{"id":"buglink-0005-002-default-01","family":"bugs-links","check":"argv","input":{"fn":"editor","configured":null,"path":"/tmp/a b.md"},"expect":{"argv":["/usr/bin/open","-t","--","/tmp/a b.md"],"len":4}}
+{"id":"buglink-0005-003-default-02","family":"bugs-links","check":"argv","input":{"fn":"editor","configured":null,"path":"/tmp/中文 文件.md"},"expect":{"argv":["/usr/bin/open","-t","--","/tmp/中文 文件.md"],"len":4}}
+{"id":"buglink-0005-004-default-03","family":"bugs-links","check":"argv","input":{"fn":"editor","configured":null,"path":"/tmp/🙂.md"},"expect":{"argv":["/usr/bin/open","-t","--","/tmp/🙂.md"],"len":4}}
+{"id":"buglink-0005-005-default-04","family":"bugs-links","check":"argv","input":{"fn":"editor","configured":null,"path":"/tmp/a'b.md"},"expect":{"argv":["/usr/bin/open","-t","--","/tmp/a'b.md"],"len":4}}
+{"id":"buglink-0005-006-default-05","family":"bugs-links","check":"argv","input":{"fn":"editor","configured":null,"path":"/tmp/a\"b.md"},"expect":{"argv":["/usr/bin/open","-t","--","/tmp/a\"b.md"],"len":4}}
+{"id":"buglink-0005-007-default-06","family":"bugs-links","check":"argv","input":{"fn":"editor","configured":null,"path":"/tmp/a`b.md"},"expect":{"argv":["/usr/bin/open","-t","--","/tmp/a`b.md"],"len":4}}
+{"id":"buglink-0005-008-default-07","family":"bugs-links","check":"argv","input":{"fn":"editor","configured":null,"path":"/tmp/a$(b).md"},"expect":{"argv":["/usr/bin/open","-t","--","/tmp/a$(b).md"],"len":4}}
+{"id":"buglink-0005-009-default-08","family":"bugs-links","check":"argv","input":{"fn":"editor","configured":null,"path":"/tmp/a;b.md"},"expect":{"argv":["/usr/bin/open","-t","--","/tmp/a;b.md"],"len":4}}
+{"id":"buglink-0005-010-default-09","family":"bugs-links","check":"argv","input":{"fn":"editor","configured":null,"path":"/tmp/a|b.md"},"expect":{"argv":["/usr/bin/open","-t","--","/tmp/a|b.md"],"len":4}}
+{"id":"buglink-0005-011-default-10","family":"bugs-links","check":"argv","input":{"fn":"editor","configured":null,"path":"/tmp/a&b.md"},"expect":{"argv":["/usr/bin/open","-t","--","/tmp/a&b.md"],"len":4}}
+{"id":"buglink-0005-012-default-11","family":"bugs-links","check":"argv","input":{"fn":"editor","configured":null,"path":"/tmp/a>b.md"},"expect":{"argv":["/usr/bin/open","-t","--","/tmp/a>b.md"],"len":4}}
+{"id":"buglink-0005-013-default-12","family":"bugs-links","check":"argv","input":{"fn":"editor","configured":null,"path":"/tmp/a<b.md"},"expect":{"argv":["/usr/bin/open","-t","--","/tmp/a<b.md"],"len":4}}
+{"id":"buglink-0005-014-default-13","family":"bugs-links","check":"argv","input":{"fn":"editor","configured":null,"path":"/tmp/a\nb.md"},"expect":{"argv":["/usr/bin/open","-t","--","/tmp/a\nb.md"],"len":4}}
+{"id":"buglink-0005-015-default-14","family":"bugs-links","check":"argv","input":{"fn":"editor","configured":null,"path":"/tmp/a\tb.md"},"expect":{"argv":["/usr/bin/open","-t","--","/tmp/a\tb.md"],"len":4}}
+{"id":"buglink-0005-016-default-15","family":"bugs-links","check":"argv","input":{"fn":"editor","configured":null,"path":"/tmp/a\rb.md"},"expect":{"argv":["/usr/bin/open","-t","--","/tmp/a\rb.md"],"len":4}}
+{"id":"buglink-0005-017-default-16","family":"bugs-links","check":"argv","input":{"fn":"editor","configured":null,"path":"/tmp/a\\b.md"},"expect":{"argv":["/usr/bin/open","-t","--","/tmp/a\\b.md"],"len":4}}
+{"id":"buglink-0005-018-default-17","family":"bugs-links","check":"argv","input":{"fn":"editor","configured":null,"path":"/tmp/a%20b.md"},"expect":{"argv":["/usr/bin/open","-t","--","/tmp/a%20b.md"],"len":4}}
+{"id":"buglink-0005-019-default-18","family":"bugs-links","check":"argv","input":{"fn":"editor","configured":null,"path":"/tmp/a%2Fb.md"},"expect":{"argv":["/usr/bin/open","-t","--","/tmp/a%2Fb.md"],"len":4}}
+{"id":"buglink-0005-020-default-19","family":"bugs-links","check":"argv","input":{"fn":"editor","configured":null,"path":"/tmp/~/a.md"},"expect":{"argv":["/usr/bin/open","-t","--","/tmp/~/a.md"],"len":4}}
+# ⚠️ 疑似缺陷：~ 不做展开，原样作为路径交给 open；生产路径来自 canonicalize，但 argv 层本身不设防。
+{"id":"buglink-0005-021-default-20","family":"bugs-links","check":"argv","input":{"fn":"editor","configured":null,"path":"~/a.md"},"expect":{"argv":["/usr/bin/open","-t","--","~/a.md"],"len":4}}
+{"id":"buglink-0005-022-default-21","family":"bugs-links","check":"argv","input":{"fn":"editor","configured":null,"path":"-weird.md"},"expect":{"argv":["/usr/bin/open","-t","--","-weird.md"],"len":4}}
+{"id":"buglink-0005-023-default-22","family":"bugs-links","check":"argv","input":{"fn":"editor","configured":null,"path":"--"},"expect":{"argv":["/usr/bin/open","-t","--","--"],"len":4}}
+{"id":"buglink-0005-024-default-23","family":"bugs-links","check":"argv","input":{"fn":"editor","configured":null,"path":"-"},"expect":{"argv":["/usr/bin/open","-t","--","-"],"len":4}}
+{"id":"buglink-0005-025-default-24","family":"bugs-links","check":"argv","input":{"fn":"editor","configured":null,"path":"--help"},"expect":{"argv":["/usr/bin/open","-t","--","--help"],"len":4}}
+{"id":"buglink-0005-026-default-25","family":"bugs-links","check":"argv","input":{"fn":"editor","configured":null,"path":""},"expect":{"argv":["/usr/bin/open","-t","--",""],"len":4}}
+{"id":"buglink-0005-027-default-26","family":"bugs-links","check":"argv","input":{"fn":"editor","configured":null,"path":"."},"expect":{"argv":["/usr/bin/open","-t","--","."],"len":4}}
+{"id":"buglink-0005-028-default-27","family":"bugs-links","check":"argv","input":{"fn":"editor","configured":null,"path":".."},"expect":{"argv":["/usr/bin/open","-t","--",".."],"len":4}}
+{"id":"buglink-0005-029-default-28","family":"bugs-links","check":"argv","input":{"fn":"editor","configured":null,"path":"a.md"},"expect":{"argv":["/usr/bin/open","-t","--","a.md"],"len":4}}
+{"id":"buglink-0005-030-default-29","family":"bugs-links","check":"argv","input":{"fn":"editor","configured":null,"path":"/tmp/a.md #1"},"expect":{"argv":["/usr/bin/open","-t","--","/tmp/a.md #1"],"len":4}}
+{"id":"buglink-0005-031-default-30","family":"bugs-links","check":"argv","input":{"fn":"editor","configured":null,"path":"/tmp/🙂🙂.md"},"expect":{"argv":["/usr/bin/open","-t","--","/tmp/🙂🙂.md"],"len":4}}
+{"id":"buglink-0005-032-default-31","family":"bugs-links","check":"argv","input":{"fn":"editor","configured":null,"path":"/tmp/中 文/文件.md"},"expect":{"argv":["/usr/bin/open","-t","--","/tmp/中 文/文件.md"],"len":4}}
+# ⚠️ 疑似缺陷：路径含 NUL 时 argv 里仍原样带着 NUL，直到 execve 才失败；argv 层没有提前拒绝。
+{"id":"buglink-0005-033-default-32","family":"bugs-links","check":"argv","input":{"fn":"editor","configured":null,"path":"/tmp/a\u0000b.md"},"expect":{"argv":["/usr/bin/open","-t","--","/tmp/a\u0000b.md"],"len":4}}
+{"id":"buglink-0005-034-default-33","family":"bugs-links","check":"argv","input":{"fn":"editor","configured":null,"path":"/tmp/--.md"},"expect":{"argv":["/usr/bin/open","-t","--","/tmp/--.md"],"len":4}}
+{"id":"buglink-0005-035-default-34","family":"bugs-links","check":"argv","input":{"fn":"editor","configured":null,"path":"/tmp/-R.md"},"expect":{"argv":["/usr/bin/open","-t","--","/tmp/-R.md"],"len":4}}
+{"id":"buglink-0005-036-default-35","family":"bugs-links","check":"argv","input":{"fn":"editor","configured":null,"path":"/tmp/a b/c d.md"},"expect":{"argv":["/usr/bin/open","-t","--","/tmp/a b/c d.md"],"len":4}}
+{"id":"buglink-0005-037-default-36","family":"bugs-links","check":"argv","input":{"fn":"editor","configured":null,"path":"/tmp/a'b\"c.md"},"expect":{"argv":["/usr/bin/open","-t","--","/tmp/a'b\"c.md"],"len":4}}
+{"id":"buglink-0005-038-default-37","family":"bugs-links","check":"argv","input":{"fn":"editor","configured":null,"path":"/tmp/a\bb.md"},"expect":{"argv":["/usr/bin/open","-t","--","/tmp/a\bb.md"],"len":4}}
+{"id":"buglink-0005-039-default-38","family":"bugs-links","check":"argv","input":{"fn":"editor","configured":null,"path":"/tmp/a\u001bb.md"},"expect":{"argv":["/usr/bin/open","-t","--","/tmp/a\u001bb.md"],"len":4}}
+{"id":"buglink-0005-040-default-39","family":"bugs-links","check":"argv","input":{"fn":"editor","configured":null,"path":"/tmp/ab.md"},"expect":{"argv":["/usr/bin/open","-t","--","/tmp/ab.md"],"len":4}}
+# 配置的编辑器名：空/全空白回落 open -t；应用名只作为一个 -a 的参数。
+{"id":"buglink-0005-041-configured-00","family":"bugs-links","check":"argv","input":{"fn":"editor","configured":"","path":"/tmp/x.md"},"expect":{"argv":["/usr/bin/open","-t","--","/tmp/x.md"],"len":4}}
+{"id":"buglink-0005-042-configured-01","family":"bugs-links","check":"argv","input":{"fn":"editor","configured":" ","path":"/tmp/x.md"},"expect":{"argv":["/usr/bin/open","-t","--","/tmp/x.md"],"len":4}}
+{"id":"buglink-0005-043-configured-02","family":"bugs-links","check":"argv","input":{"fn":"editor","configured":"\t\n","path":"/tmp/x.md"},"expect":{"argv":["/usr/bin/open","-t","--","/tmp/x.md"],"len":4}}
+{"id":"buglink-0005-044-configured-03","family":"bugs-links","check":"argv","input":{"fn":"editor","configured":" ","path":"/tmp/x.md"},"expect":{"argv":["/usr/bin/open","-t","--","/tmp/x.md"],"len":4}}
+{"id":"buglink-0005-045-configured-04","family":"bugs-links","check":"argv","input":{"fn":"editor","configured":"　","path":"/tmp/x.md"},"expect":{"argv":["/usr/bin/open","-t","--","/tmp/x.md"],"len":4}}
+{"id":"buglink-0005-046-configured-05","family":"bugs-links","check":"argv","input":{"fn":"editor","configured":"iTerm","path":"/tmp/x.md"},"expect":{"argv":["/usr/bin/open","-a","iTerm","--","/tmp/x.md"],"len":5}}
+{"id":"buglink-0005-047-configured-06","family":"bugs-links","check":"argv","input":{"fn":"editor","configured":" Visual Studio Code ","path":"/tmp/x.md"},"expect":{"argv":["/usr/bin/open","-a","Visual Studio Code","--","/tmp/x.md"],"len":5}}
+{"id":"buglink-0005-048-configured-07","family":"bugs-links","check":"argv","input":{"fn":"editor","configured":"Visual\tStudio Code","path":"/tmp/x.md"},"expect":{"argv":["/usr/bin/open","-a","Visual\tStudio Code","--","/tmp/x.md"],"len":5}}
+{"id":"buglink-0005-049-configured-08","family":"bugs-links","check":"argv","input":{"fn":"editor","configured":"Visual\nStudio Code","path":"/tmp/x.md"},"expect":{"argv":["/usr/bin/open","-a","Visual\nStudio Code","--","/tmp/x.md"],"len":5}}
+{"id":"buglink-0005-050-configured-09","family":"bugs-links","check":"argv","input":{"fn":"editor","configured":"/Applications/Zed.app","path":"/tmp/x.md"},"expect":{"argv":["/usr/bin/open","-a","/Applications/Zed.app","--","/tmp/x.md"],"len":5}}
+{"id":"buglink-0005-051-configured-10","family":"bugs-links","check":"argv","input":{"fn":"editor","configured":"Zed.app","path":"/tmp/x.md"},"expect":{"argv":["/usr/bin/open","-a","Zed.app","--","/tmp/x.md"],"len":5}}
+# ⚠️ 疑似缺陷：配置值 "-a"/"--" 会被当成 -a 的应用名参数；虽然不经 shell，但参数歧义没有拒绝。
+{"id":"buglink-0005-052-configured-11","family":"bugs-links","check":"argv","input":{"fn":"editor","configured":"-a","path":"/tmp/x.md"},"expect":{"argv":["/usr/bin/open","-a","-a","--","/tmp/x.md"],"len":5}}
+{"id":"buglink-0005-053-configured-12","family":"bugs-links","check":"argv","input":{"fn":"editor","configured":"--","path":"/tmp/x.md"},"expect":{"argv":["/usr/bin/open","-a","--","--","/tmp/x.md"],"len":5}}
+{"id":"buglink-0005-054-configured-13","family":"bugs-links","check":"argv","input":{"fn":"editor","configured":"-","path":"/tmp/x.md"},"expect":{"argv":["/usr/bin/open","-a","-","--","/tmp/x.md"],"len":5}}
+{"id":"buglink-0005-055-configured-14","family":"bugs-links","check":"argv","input":{"fn":"editor","configured":"open","path":"/tmp/x.md"},"expect":{"argv":["/usr/bin/open","-a","open","--","/tmp/x.md"],"len":5}}
+{"id":"buglink-0005-056-configured-15","family":"bugs-links","check":"argv","input":{"fn":"editor","configured":"中文编辑器","path":"/tmp/x.md"},"expect":{"argv":["/usr/bin/open","-a","中文编辑器","--","/tmp/x.md"],"len":5}}
+{"id":"buglink-0005-057-configured-16","family":"bugs-links","check":"argv","input":{"fn":"editor","configured":"🙂","path":"/tmp/x.md"},"expect":{"argv":["/usr/bin/open","-a","🙂","--","/tmp/x.md"],"len":5}}
+{"id":"buglink-0005-058-configured-17","family":"bugs-links","check":"argv","input":{"fn":"editor","configured":"iTerm ","path":"/tmp/a b.md"},"expect":{"argv":["/usr/bin/open","-a","iTerm","--","/tmp/a b.md"],"len":5}}
+{"id":"buglink-0005-059-configured-18","family":"bugs-links","check":"argv","input":{"fn":"editor","configured":" iTerm\t","path":"/tmp/a b.md"},"expect":{"argv":["/usr/bin/open","-a","iTerm","--","/tmp/a b.md"],"len":5}}
+{"id":"buglink-0005-060-configured-19","family":"bugs-links","check":"argv","input":{"fn":"editor","configured":"iTerm ","path":"/tmp/x.md"},"expect":{"argv":["/usr/bin/open","-a","iTerm","--","/tmp/x.md"],"len":5}}
+{"id":"buglink-0005-061-configured-20","family":"bugs-links","check":"argv","input":{"fn":"editor","configured":" iTerm","path":"/tmp/x.md"},"expect":{"argv":["/usr/bin/open","-a","iTerm","--","/tmp/x.md"],"len":5}}
+# ⚠️ 疑似缺陷：零宽字符不被 trim，配置里的编辑器名会带着不可见字符去找 LaunchServices。
+{"id":"buglink-0005-062-configured-21","family":"bugs-links","check":"argv","input":{"fn":"editor","configured":"iTerm​","path":"/tmp/x.md"},"expect":{"argv":["/usr/bin/open","-a","iTerm​","--","/tmp/x.md"],"len":5}}
+{"id":"buglink-0005-063-configured-22","family":"bugs-links","check":"argv","input":{"fn":"editor","configured":"a b c","path":"/tmp/x.md"},"expect":{"argv":["/usr/bin/open","-a","a b c","--","/tmp/x.md"],"len":5}}
+{"id":"buglink-0005-064-configured-23","family":"bugs-links","check":"argv","input":{"fn":"editor","configured":"a'b","path":"/tmp/x.md"},"expect":{"argv":["/usr/bin/open","-a","a'b","--","/tmp/x.md"],"len":5}}
+{"id":"buglink-0005-065-configured-24","family":"bugs-links","check":"argv","input":{"fn":"editor","configured":"a\"b","path":"/tmp/x.md"},"expect":{"argv":["/usr/bin/open","-a","a\"b","--","/tmp/x.md"],"len":5}}
+{"id":"buglink-0005-066-configured-25","family":"bugs-links","check":"argv","input":{"fn":"editor","configured":"a;b","path":"/tmp/x.md"},"expect":{"argv":["/usr/bin/open","-a","a;b","--","/tmp/x.md"],"len":5}}
+{"id":"buglink-0005-067-configured-26","family":"bugs-links","check":"argv","input":{"fn":"editor","configured":"a$(x)","path":"/tmp/x.md"},"expect":{"argv":["/usr/bin/open","-a","a$(x)","--","/tmp/x.md"],"len":5}}
+{"id":"buglink-0005-068-configured-27","family":"bugs-links","check":"argv","input":{"fn":"editor","configured":"/Applications/My App.app","path":"/tmp/x.md"},"expect":{"argv":["/usr/bin/open","-a","/Applications/My App.app","--","/tmp/x.md"],"len":5}}
+{"id":"buglink-0005-069-configured-28","family":"bugs-links","check":"argv","input":{"fn":"editor","configured":"Typora","path":"/tmp/中文.md"},"expect":{"argv":["/usr/bin/open","-a","Typora","--","/tmp/中文.md"],"len":5}}
+# 命令注入形态：shell 元字符只能待在同一个 argv 元素里，argv 里不能出现 sh -c。
+{"id":"buglink-0005-070-injection-00","family":"bugs-links","check":"argv","input":{"fn":"editor","configured":"a; rm -rf ~; .md","path":"/tmp/x.md"},"expect":{"argv":["/usr/bin/open","-a","a; rm -rf ~; .md","--","/tmp/x.md"],"len":5}}
+{"id":"buglink-0005-071-injection-01","family":"bugs-links","check":"argv","input":{"fn":"editor","configured":"a|cat /etc/passwd","path":"/tmp/x.md"},"expect":{"argv":["/usr/bin/open","-a","a|cat /etc/passwd","--","/tmp/x.md"],"len":5}}
+{"id":"buglink-0005-072-injection-02","family":"bugs-links","check":"argv","input":{"fn":"editor","configured":"a$(whoami)","path":"/tmp/x.md"},"expect":{"argv":["/usr/bin/open","-a","a$(whoami)","--","/tmp/x.md"],"len":5}}
+{"id":"buglink-0005-073-injection-03","family":"bugs-links","check":"argv","input":{"fn":"editor","configured":"a`id`","path":"/tmp/x.md"},"expect":{"argv":["/usr/bin/open","-a","a`id`","--","/tmp/x.md"],"len":5}}
+{"id":"buglink-0005-074-injection-04","family":"bugs-links","check":"argv","input":{"fn":"editor","configured":"a&&b","path":"/tmp/x.md"},"expect":{"argv":["/usr/bin/open","-a","a&&b","--","/tmp/x.md"],"len":5}}
+{"id":"buglink-0005-075-injection-05","family":"bugs-links","check":"argv","input":{"fn":"editor","configured":"a||b","path":"/tmp/x.md"},"expect":{"argv":["/usr/bin/open","-a","a||b","--","/tmp/x.md"],"len":5}}
+{"id":"buglink-0005-076-injection-06","family":"bugs-links","check":"argv","input":{"fn":"editor","configured":"a\nb","path":"/tmp/x.md"},"expect":{"argv":["/usr/bin/open","-a","a\nb","--","/tmp/x.md"],"len":5}}
+{"id":"buglink-0005-077-injection-07","family":"bugs-links","check":"argv","input":{"fn":"editor","configured":"--evil","path":"/tmp/x.md"},"expect":{"argv":["/usr/bin/open","-a","--evil","--","/tmp/x.md"],"len":5}}
+{"id":"buglink-0005-078-injection-08","family":"bugs-links","check":"argv","input":{"fn":"editor","configured":"-t","path":"/tmp/x.md"},"expect":{"argv":["/usr/bin/open","-a","-t","--","/tmp/x.md"],"len":5}}
+{"id":"buglink-0005-079-injection-09","family":"bugs-links","check":"argv","input":{"fn":"editor","configured":"-R","path":"/tmp/x.md"},"expect":{"argv":["/usr/bin/open","-a","-R","--","/tmp/x.md"],"len":5}}
+{"id":"buglink-0005-080-injection-10","family":"bugs-links","check":"argv","input":{"fn":"editor","configured":"/bin/sh","path":"/tmp/x.md"},"expect":{"argv":["/usr/bin/open","-a","/bin/sh","--","/tmp/x.md"],"len":5}}
+{"id":"buglink-0005-081-injection-11","family":"bugs-links","check":"argv","input":{"fn":"editor","configured":"a b","path":"/tmp/a b.md"},"expect":{"argv":["/usr/bin/open","-a","a b","--","/tmp/a b.md"],"len":5}}
+{"id":"buglink-0005-082-injection-12","family":"bugs-links","check":"argv","input":{"fn":"editor","configured":"中文；命令","path":"/tmp/中文 文件.md"},"expect":{"argv":["/usr/bin/open","-a","中文；命令","--","/tmp/中文 文件.md"],"len":5}}

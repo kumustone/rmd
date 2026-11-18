@@ -1,0 +1,282 @@
+{
+  "schema": "rmd-gui-manifest/1",
+  "_说明": [
+    "design/0064 P1：GUI 层的驱动清单。执行器（tests/auto/runner.py::run_gui_case）只读这里，",
+    "不复制任何判据。「exit」是驱动自己的退出码 → 结论映射；未登记的码一律记 harness 错。",
+    "「wired=false」= P1 暂不接入，⛔ 不是通过。",
+    "「est_s」为 null = 尚未实测（design/0064 §7.3 要求首次跑过后补数）。"
+  ],
+  "drivers": {
+    "i18n": {
+      "form": "offscreen",
+      "script": "tools/wkwebview-probe/i18n-probe.sh",
+      "target": "probe-i18n",
+      "exit": {
+        "0": "pass",
+        "1": "fail",
+        "2": "skip",
+        "3": "harness",
+        "4": "fail"
+      },
+      "json": true,
+      "est_s": 3.3,
+      "wired": true,
+      "notes": "0/1/2/3/4 = 通过/失败/跳过/跑不起来/变异没落盘"
+    },
+    "doclist": {
+      "form": "offscreen",
+      "script": "tools/wkwebview-probe/doclist-probe.sh",
+      "target": "probe-doclist",
+      "exit": {
+        "0": "pass",
+        "1": "fail",
+        "3": "harness"
+      },
+      "json": true,
+      "est_s": 4.4,
+      "wired": true,
+      "notes": "无 2：判据 A–E 全有结论，跳过不是允许态"
+    },
+    "sidebar-search": {
+      "form": "offscreen",
+      "script": "tools/wkwebview-probe/sidebar-search-probe.sh",
+      "target": "probe-sidebar-search",
+      "exit": {
+        "0": "pass",
+        "1": "fail",
+        "3": "harness"
+      },
+      "json": true,
+      "est_s": 1.9,
+      "wired": true,
+      "notes": "判据 A–I ＋ E 自证"
+    },
+    "link-nav": {
+      "form": "offscreen",
+      "script": "tools/wkwebview-probe/link-nav-probe.sh",
+      "target": "probe-link-nav",
+      "exit": {
+        "0": "pass",
+        "1": "fail",
+        "3": "harness"
+      },
+      "json": true,
+      "est_s": 3.2,
+      "wired": true,
+      "notes": "decidePolicyFor 两种答案都正常，判据只要求答得出来"
+    },
+    "tree-menu": {
+      "form": "offscreen",
+      "script": "tools/wkwebview-probe/tree-menu-probe.sh",
+      "target": "probe-tree-menu",
+      "exit": {
+        "0": "pass",
+        "1": "fail",
+        "2": "skip",
+        "3": "harness",
+        "4": "fail"
+      },
+      "json": true,
+      "est_s": 5.6,
+      "wired": true,
+      "notes": "含变异判据（4 = 变异没落盘，记失败）"
+    },
+    "dir-session": {
+      "form": "offscreen",
+      "script": "tools/wkwebview-probe/dir-session-probe.sh",
+      "target": "probe-dir-session",
+      "exit": {
+        "0": "pass",
+        "1": "fail",
+        "2": "skip",
+        "3": "harness",
+        "4": "fail"
+      },
+      "json": true,
+      "est_s": null,
+      "wired": false,
+      "notes": "P2 之后接入"
+    },
+    "favorites-rootheader": {
+      "form": "offscreen",
+      "script": "tools/wkwebview-probe/favorites-rootheader-probe.sh",
+      "target": "probe-favorites-rootheader",
+      "exit": {
+        "0": "pass",
+        "1": "fail",
+        "2": "skip",
+        "3": "harness",
+        "4": "fail"
+      },
+      "json": true,
+      "est_s": null,
+      "wired": false,
+      "notes": "P2 之后接入"
+    },
+    "image-viewer": {
+      "form": "offscreen",
+      "script": "tools/wkwebview-probe/image-viewer-probe.sh",
+      "target": "probe-image-viewer",
+      "exit": {
+        "0": "pass",
+        "1": "fail",
+        "2": "skip",
+        "3": "harness",
+        "4": "fail"
+      },
+      "json": true,
+      "est_s": null,
+      "wired": false,
+      "notes": "P2 之后接入"
+    },
+    "reading-progress": {
+      "form": "offscreen",
+      "script": "tools/wkwebview-probe/reading-progress-probe.sh",
+      "target": "probe-reading-progress",
+      "exit": {
+        "0": "pass",
+        "1": "fail",
+        "2": "skip",
+        "3": "harness",
+        "4": "fail"
+      },
+      "json": true,
+      "est_s": null,
+      "wired": false,
+      "notes": "P2 之后接入"
+    },
+    "scroll-sync": {
+      "form": "offscreen",
+      "script": "tools/wkwebview-probe/scroll-sync-probe.sh",
+      "target": "probe-scroll-sync",
+      "exit": {
+        "0": "pass",
+        "1": "fail",
+        "2": "skip",
+        "3": "harness",
+        "4": "fail"
+      },
+      "json": true,
+      "est_s": null,
+      "wired": false,
+      "notes": "P2 之后接入"
+    },
+    "vim-keys": {
+      "form": "offscreen",
+      "script": "tools/wkwebview-probe/vim-keys-probe.sh",
+      "target": "probe-vim-keys",
+      "exit": {
+        "0": "pass",
+        "1": "fail",
+        "2": "skip",
+        "3": "harness",
+        "4": "fail"
+      },
+      "json": true,
+      "est_s": null,
+      "wired": false,
+      "notes": "P2 之后接入"
+    },
+    "edit-chrome": {
+      "form": "offscreen",
+      "script": "tools/wkwebview-probe/edit-chrome-probe.sh",
+      "target": "probe-edit-chrome",
+      "exit": {
+        "0": "pass",
+        "1": "fail",
+        "2": "skip",
+        "3": "harness"
+      },
+      "json": true,
+      "est_s": null,
+      "wired": false,
+      "notes": "2 = 环境无效（⛔ 不是通过）"
+    },
+    "block": {
+      "form": "offscreen",
+      "script": "tools/live-probe/block-probe.sh",
+      "target": "probe-live-block",
+      "exit": {
+        "0": "pass",
+        "1": "fail",
+        "2": "skip",
+        "3": "harness",
+        "4": "fail"
+      },
+      "json": true,
+      "est_s": null,
+      "wired": false,
+      "notes": "跑真应用全部 src/**；耗时长，P2 单独排期"
+    },
+    "clickgrid": {
+      "form": "offscreen",
+      "script": "tools/live-probe/clickgrid-probe.sh",
+      "target": "probe-click-grid",
+      "exit": {
+        "0": "pass",
+        "1": "fail",
+        "3": "harness"
+      },
+      "json": false,
+      "est_s": null,
+      "wired": false,
+      "notes": "0 = 没有红点；1 = 有红点"
+    },
+    "cm6": {
+      "form": "offscreen",
+      "script": "tools/wkwebview-probe/cm6-probe.sh",
+      "target": "probe-cm6",
+      "exit": {
+        "0": "pass",
+        "1": "fail",
+        "3": "harness"
+      },
+      "json": false,
+      "est_s": null,
+      "wired": false,
+      "notes": "没有成文退出码契约，登记 not_wired（design/0064 P1）"
+    },
+    "editor-key": {
+      "form": "offscreen",
+      "script": "tools/wkwebview-probe/editor-keyprobe.sh",
+      "target": "probe-editor-key",
+      "exit": {
+        "0": "pass",
+        "1": "fail",
+        "3": "harness"
+      },
+      "json": false,
+      "est_s": null,
+      "wired": false,
+      "notes": "没有成文退出码契约，登记 not_wired"
+    },
+    "editor-latency": {
+      "form": "offscreen",
+      "script": "tools/wkwebview-probe/editor-latency-probe.sh",
+      "target": "probe-editor-latency",
+      "exit": {
+        "0": "pass",
+        "1": "fail",
+        "3": "harness"
+      },
+      "json": false,
+      "est_s": null,
+      "wired": false,
+      "notes": "没有成文退出码契约；P3 手感指标另排"
+    },
+    "find-key": {
+      "form": "offscreen",
+      "script": "tools/wkwebview-probe/find-keyprobe.sh",
+      "target": "probe-find-key",
+      "exit": {
+        "0": "pass",
+        "1": "fail",
+        "3": "harness"
+      },
+      "json": false,
+      "est_s": null,
+      "wired": false,
+      "notes": "没有成文退出码契约，登记 not_wired"
+    }
+  }
+}

@@ -1,0 +1,49 @@
+# 框架冒烟用例：每个检查器至少一条，用来证明执行器与期望值语义本身是通的。
+# ⚠️ 这不是覆盖面清单；各家族的正式用例在 cases/rust/<family>.jsonl。
+{"id":"smoke-html-heading","family":"smoke","check":"html","input":{"md":"# 标题\n"},"expect":{"contains":["<h1>标题</h1>"]}}
+{"id":"smoke-html-strong","family":"smoke","check":"html","input":{"md":"这是**加粗**。\n"},"expect":{"contains":["<strong>加粗</strong>"]}}
+{"id":"smoke-html-em","family":"smoke","check":"html","input":{"md":"这是*斜体*。\n"},"expect":{"contains":["<em>斜体</em>"]}}
+{"id":"smoke-html-raw-html-omitted","family":"smoke","check":"html","input":{"md":"<script>alert(1)</script>\n"},"expect":{"contains":["<!-- raw HTML omitted -->"],"not_contains":["<script>"]}}
+{"id":"smoke-html-js-link-neutralized","family":"smoke","check":"html","input":{"md":"[x](javascript:alert(1))\n"},"expect":{"contains":["<a href=\"rmd-unsupported:javascript\">x</a>"],"not_contains":["href=\"javascript:"]}}
+{"id":"smoke-html-code-fence-class","family":"smoke","check":"html","input":{"md":"```rust\nfn main() {}\n```\n"},"expect":{"contains":["<pre class=\"rmd-code\"><code class=\"language-rust\">"]}}
+{"id":"smoke-html-table","family":"smoke","check":"html","input":{"md":"| 甲 | 乙 |\n| --- | --- |\n| 1 | 2 |\n"},"expect":{"contains":["<table>","<th>甲</th>","<td>1</td>"]}}
+{"id":"smoke-html-tasklists","family":"smoke","check":"html","input":{"md":"- [x] 完成\n- [ ] 未完成\n"},"expect":{"contains":["class=\"contains-task-list\"","task-list-item","type=\"checkbox\"","checked"]}}
+{"id":"smoke-html-softbreak-default","family":"smoke","check":"html","input":{"md":"第一行\n第二行\n"},"expect":{"contains":["第一行<br />"]}}
+{"id":"smoke-html-softbreak-off","family":"smoke","check":"html","input":{"md":"第一行\n第二行\n","opts":{"hardbreaks":false}},"expect":{"not_contains":["<br />"]}}
+{"id":"smoke-html-math-default-on","family":"smoke","check":"html","input":{"md":"$x^2$\n"},"expect":{"contains":["<math"]}}
+{"id":"smoke-html-math-off","family":"smoke","check":"html","input":{"md":"$x^2$\n","opts":{"math_dollars":false}},"expect":{"not_contains":["<math"]}}
+{"id":"smoke-html-strikethrough","family":"smoke","check":"html","input":{"md":"~~删掉~~\n"},"expect":{"contains":["<del>删掉</del>"]}}
+{"id":"smoke-html-autolink","family":"smoke","check":"html","input":{"md":"https://example.com\n"},"expect":{"contains":["<a href=\"https://example.com\">https://example.com</a>"]}}
+{"id":"smoke-html-footnote","family":"smoke","check":"html","input":{"md":"正文[^1]\n\n[^1]: 脚注\n"},"expect":{"contains":["footnote","脚注"]}}
+{"id":"smoke-html-thematic-break","family":"smoke","check":"html","input":{"md":"---\n"},"expect":{"contains":["<hr />"]}}
+{"id":"smoke-html-blockquote","family":"smoke","check":"html","input":{"md":"> 引用\n"},"expect":{"contains":["<blockquote>","<p>引用</p>"]}}
+{"id":"smoke-toc-basic","family":"smoke","check":"toc","input":{"md":"# 一\n\n## 二\n\n# 一\n"},"expect":{"count":3,"items":[{"level":1,"text":"一","line":1},{"level":2,"text":"二","line":3},{"level":1,"text":"一","line":5}]}}
+{"id":"smoke-search-basic","family":"smoke","check":"search","input":{"md":"abc abc\nabc\n","needle":"abc"},"expect":{"count":3,"items":[{"line":1,"span":[0,3],"utf16":[0,3]},{"line":1,"span":[4,7],"utf16":[4,7]},{"line":2,"span":[8,11],"utf16":[0,3]}]}}
+{"id":"smoke-blocks-kinds","family":"smoke","check":"blocks","input":{"md":"# 标题\n\n段落\n\n- 列表\n"},"expect":{"count":3,"items":[{"index":0,"kind":"Heading","start_line":1,"end_line":1},{"index":1,"kind":"Paragraph","start_line":3,"end_line":3},{"index":2,"kind":"List","start_line":5,"end_line":5}]}}
+{"id":"smoke-cells-table","family":"smoke","check":"cells","input":{"md":"| A | B |\n| --- | --- |\n| 1 | 2 |\n"},"expect":{"count":1,"at":{"0":{"block":0,"cells":[{"text":"A"},{"text":"B"},{"text":"1"},{"text":"2"}]}}}}
+{"id":"smoke-tasks-basic","family":"smoke","check":"tasks","input":{"md":"- [x] 完成\n- [ ] 未完成\n"},"expect":{"count":1,"at":{"0":{"block":0,"items":[{"line":1,"from":3,"to":4,"checked":true,"writable":true,"symbol":"x"},{"line":2,"from":3,"to":4,"checked":false,"writable":true,"symbol":" "}]}}}}
+{"id":"smoke-offset-ascii","family":"smoke","check":"offset","input":{"md":"abc\ndef\n","line":2,"col":1},"expect":{"offset":4}}
+{"id":"smoke-lang-preference-wins","family":"smoke","check":"lang","input":{"preference":"zh","system":"en"},"expect":"zh"}
+{"id":"smoke-lang-system-follow","family":"smoke","check":"lang","input":{"preference":"system","system":"en"},"expect":"en"}
+{"id":"smoke-lang-apple-three-part","family":"smoke","check":"lang_apple","input":{"text":"( \"zh-Hans-CN\" )"},"expect":"zh"}
+{"id":"smoke-lang-apple-en","family":"smoke","check":"lang_apple","input":{"text":"( \"en-US\" )"},"expect":"en"}
+{"id":"smoke-link-external","family":"smoke","check":"link","input":{"href":"https://example.com/a?b=1"},"expect":{"kind":"external","url":"https://example.com/a?b=1"}}
+{"id":"smoke-link-anchor","family":"smoke","check":"link","input":{"href":"#标题"},"expect":{"kind":"anchor","fragment":"标题"}}
+{"id":"smoke-link-unsupported-scheme","family":"smoke","check":"link","input":{"href":"javascript:alert(1)"},"expect":{"kind":"unsupported","scheme":"javascript"}}
+{"id":"smoke-link-local-path","family":"smoke","check":"link","input":{"href":"docs/a.md"},"expect":{"kind":"local_path","path":"docs/a.md"}}
+{"id":"smoke-link-codec-encode","family":"smoke","check":"link_codec","input":{"fn":"encode","s":"a b/中"},"expect":{"value":"a%20b/%E4%B8%AD"}}
+{"id":"smoke-link-codec-decode","family":"smoke","check":"link_codec","input":{"fn":"decode","s":"a%20b/%E4%B8%AD"},"expect":{"value":"a b/中"}}
+{"id":"smoke-envelope-crlf-bom","family":"smoke","check":"envelope","input":{"raw":"﻿a\r\nb"},"expect":{"bom":true,"eol":"crlf","lossy":false,"normalized":"a\nb","restored":[239,187,191,97,13,10,98]}}
+{"id":"smoke-envelope-lf","family":"smoke","check":"envelope","input":{"raw":"a\nb"},"expect":{"bom":false,"eol":"lf","lossy":false,"normalized":"a\nb","restored":[97,10,98]}}
+{"id":"smoke-config-language-null","family":"smoke","check":"config","input":{"fn":"normalize_language","arg":null},"expect":{"value":"system"}}
+{"id":"smoke-config-language-unknown","family":"smoke","check":"config","input":{"fn":"normalize_language","arg":"fr"},"expect":{"value":"system"}}
+{"id":"smoke-config-clamp-inside","family":"smoke","check":"config","input":{"fn":"clamp_num","v":5,"lo":0,"hi":10,"fallback":3},"expect":{"value":5.0}}
+{"id":"smoke-config-clamp-above","family":"smoke","check":"config","input":{"fn":"clamp_num","v":99,"lo":0,"hi":10,"fallback":3},"expect":{"value":10.0}}
+{"id":"smoke-config-content-width-zero","family":"smoke","check":"config","input":{"fn":"clamp_content_width","v":0},"expect":{"value":0.0}}
+{"id":"smoke-config-ignore-dirs","family":"smoke","check":"config","input":{"fn":"normalize_ignore_dirs","raw":["node_modules"," node_modules ","a/b",".git",""]},"expect":{"value":["node_modules"]}}
+{"id":"smoke-diagram-flow","family":"smoke","check":"diagram","input":{"kind":"flow","src":"a=>start\nb=>end\na->b"},"expect":{"ok":true,"out_contains":["flowchart TD","n0([Start])","n1([End])"]}}
+{"id":"smoke-diagram-flow-reject-label","family":"smoke","check":"diagram","input":{"kind":"flow","src":"a=>operation: 有 ] 的标签\nb=>operation: x\na->b"},"expect":{"ok":false}}
+{"id":"smoke-mermaid-classify-flowchart","family":"smoke","check":"mermaid_class","input":{"src":"flowchart TD\n  A --> B\n"},"expect":{"ok":true,"kind":"flowchart"}}
+{"id":"smoke-mermaid-classify-unsupported","family":"smoke","check":"mermaid_class","input":{"src":"gantt\n  title x\n"},"expect":{"ok":false}}
+{"id":"smoke-argv-default-editor","family":"smoke","check":"argv","input":{"fn":"editor","configured":null,"path":"/tmp/a b.md"},"expect":{"argv":["/usr/bin/open","-t","--","/tmp/a b.md"],"len":4}}
+{"id":"smoke-argv-configured-editor","family":"smoke","check":"argv","input":{"fn":"editor","configured":"iTerm","path":"/tmp/a b.md"},"expect":{"argv":["/usr/bin/open","-a","iTerm","--","/tmp/a b.md"],"len":5}}

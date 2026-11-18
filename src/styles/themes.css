@@ -56,9 +56,21 @@
 
   /* ── 代码：⚠️ 行内与块级**必须分开**（R8）。
      ⚠️ 这一对最容易做成"深底上还写深字"——0004 §7 步骤 8 专门点名它。
-     行内 code 随正文行流：底色只比正文底**略**亮一点，粉字提亮到能在深底上读。 */
-  --reader-inline-code-bg:   #3a2b30;
-  --reader-inline-code-text: #ff9db2;
+     ⭐ **2026-11-13 用户裁定**：深色下行内 code **不再用粉字**（旧值 `#ff9db2` 压在
+     酒红底 `#3a2b30` 上，满屏读起来像一排错误标记）。改成**中性灰**那一套。
+     三家成熟主题的一手取值（深色下**都不给色相**，靠底色区分）：
+       · VS Code Dark Modern（本机 `Visual Studio Code.app/…/theme-defaults/themes/dark_modern.json`）：
+         `textPreformat.foreground` `#D0D0D0` / `textPreformat.background` `#3C3C3C`，
+         页面 `#1F1F1F`、正文 `#CCCCCC` ⇒ 字≈正文、底只比页面亮；块级底 `#2B2B2B` 更暗。
+       · Typora 自带 `night.css:328`（`code,tt,var { background: rgba(0,0,0,.05) }`）：
+         **只加底、不改字色**（继承 `--text-color`）。
+       · Obsidian（`research/products/0004` 采到的变量）：`--code-normal: var(--text-normal)`、
+         `--code-background: var(--background-primary-alt)` —— 同样是"中性底 ＋ 正文色"。
+     ⇒ 取 VS Code 那一对，但底压到 `#333333`：本仓页面底与块底都比 VS Code 暗，
+        且行内底要**比块底 `#23241f` 轻**，否则读起来像又一块代码块。
+        逐值：字/底 **8.69 : 1**、底/页面底 **1.32 : 1**（旧那一对是 6.83 / 1.24）。 */
+  --reader-inline-code-bg:   #333333;
+  --reader-inline-code-text: #d6d6d6;
 
   /* 块级 code：**深底浅字**。与页面底 `#1e1e1e` 的对比度 **1.067 : 1**——
      这是"一整块分区"的那种弱分区，刻意与 light 现在那套（1.062 : 1）对齐。
@@ -128,20 +140,45 @@
      这样"哪个形状是绿的"这件事在两套主题下读起来是同一个意思。 */
   --reader-diag-surface:     #1a1b21;
   --reader-diag-text:        #d4d4d4;
+  /* ⭐ `bugs/0073` §5 方案 1：强调填充在深色下被提亮 ⇒ 压在上面的**引擎深字**
+     必须留深，⛔ 不能跟着 `text` 一起变浅（那是 1.44–1.56 : 1）。
+     取值对八条强调线的最低对比度 6.06 : 1。 */
+  --reader-diag-on-accent:   #0f1115;
   --reader-diag-line:        #8b93b8;
   --reader-diag-line-soft:   #3a3f52;
   --reader-diag-green-bg:    #1e3327;
   --reader-diag-green-line:  #4fbf78;
+  /* ⭐ `bugs/0073` 同族：`-ink` 是「强调色当文字」。深色主题的强调色本来就亮，
+     所以这八条与 `-line` **同值**；⛔ 别为了"统一"把它们删掉——契约要求三套齐全。 */
+  --reader-diag-green-ink:   #4fbf78;
   --reader-diag-indigo-bg:   #1e2438;
   --reader-diag-indigo-line: #7c8ede;
   --reader-diag-amber-bg:    #33291a;
   --reader-diag-amber-line:  #e0a83c;
+  --reader-diag-teal-bg:     #16302e;
+  --reader-diag-violet-bg:   #251d38;
+  --reader-diag-steel-bg:    #1c2635;
+  --reader-diag-note-bg:     #332e18;
   --reader-diag-guide:       #454a63;
   --reader-diag-rose-line:   #d878a5;
   --reader-diag-teal-line:   #35b8a8;
   --reader-diag-violet-line: #a37fe6;
   --reader-diag-coral-line:  #e58379;
   --reader-diag-steel-line:  #6aa8d4;
+  --reader-diag-indigo-ink:  #7c8ede;
+  --reader-diag-amber-ink:   #e0a83c;
+  --reader-diag-rose-ink:    #d878a5;
+  --reader-diag-teal-ink:    #35b8a8;
+  --reader-diag-violet-ink:  #a37fe6;
+  --reader-diag-coral-ink:   #e58379;
+  --reader-diag-steel-ink:   #6aa8d4;
+  /* ⭐ 2026-11-03（评审 P0-5）：子图面板 / 次级墨 / journey 两块段落底。
+     面板比画布**亮一档**——子图靠"略亮的面"读出来，⛔ 不能与画布同色。 */
+  --reader-diag-panel:       #23242c;
+  --reader-diag-panel-line:  #3f4459;
+  --reader-diag-ink-soft:    #9aa1b8;
+  --reader-diag-rose-bg:     #33202a;
+  --reader-diag-coral-bg:    #33231e;
 }
 
 /* ════════════════════════════════════════════════════════════════════
@@ -236,18 +273,145 @@
      所以 keep 浅底、把线条的饱和度压低一点，免得在米黄纸上显得跳。 */
   --reader-diag-surface:     #fdfaf3;
   --reader-diag-text:        #43382c;
+  /* ⭐ `bugs/0073`：暖色主题的强调填充也是中浅色 ⇒ 上面的引擎深字保持深色。
+     字色 `#10100c` 对绿/黄两块底分别 4.51 / 4.81 : 1。 */
+  --reader-diag-on-accent:   #000000;
   --reader-diag-line:        #8a7a63;
   --reader-diag-line-soft:   #e1d6c1;
   --reader-diag-green-bg:    #e8f0e2;
-  --reader-diag-green-line:  #4e7a3f;
+  /* ⚠️ 2026-11-04（`bugs/0073`）：`#4e7a3f` 对强调底上的深字只有 3.79 : 1 ⇒ 提亮一档到
+     `#548043`（对 `#000000` 强调查色块 4.55 : 1）。它同时是**描边**色，
+     对页面底 `#fdfaf3` 仍 **4.43 : 1**（> 非文字线的 3 : 1）。 */
+  --reader-diag-green-line:  #548043;
   --reader-diag-indigo-bg:   #e6e9f2;
   --reader-diag-indigo-line: #5568a8;
   --reader-diag-amber-bg:    #f7ecd4;
   --reader-diag-amber-line:  #a9761e;
+  --reader-diag-teal-bg:     #e2efec;
+  --reader-diag-violet-bg:   #eee7f5;
+  --reader-diag-steel-bg:    #e4ecf2;
+  --reader-diag-note-bg:     #f8f0cc;
   --reader-diag-guide:       #d8cbb2;
   --reader-diag-rose-line:   #b05a80;
   --reader-diag-teal-line:   #2b8a80;
   --reader-diag-violet-line: #7a52a8;
   --reader-diag-coral-line:  #c25a4a;
   --reader-diag-steel-line:  #4a7fa0;
+  /* ⭐ `bugs/0073` 同族：`-ink` ＝ 强调色**当文字**，暖纸底上每族 ≥4.6 : 1。 */
+  --reader-diag-green-ink:   #527d41;
+  --reader-diag-indigo-ink:  #5568a8;
+  --reader-diag-amber-ink:   #97691b;
+  --reader-diag-rose-ink:    #aa577c;
+  --reader-diag-teal-ink:    #277f75;
+  --reader-diag-violet-ink:  #7a52a8;
+  --reader-diag-coral-ink:   #b65546;
+  --reader-diag-steel-ink:   #467796;
+  /* ⭐ 2026-11-03（评审 P0-5）：与 dark 同理、方向相反——纸感浅底上的面板
+     只比页面底**深一档**（`#fdfaf3` → `#f6f1e5`），⛔ 别用中性灰。 */
+  --reader-diag-panel:       #f6f1e5;
+  --reader-diag-panel-line:  #ded1b8;
+  --reader-diag-ink-soft:    #7a6a55;
+  --reader-diag-rose-bg:     #f3e3e2;
+  --reader-diag-coral-bg:    #f3e2dd;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+ * 纸张调色板（`design/0076` §2.1.7）
+ *
+ * ⚠️ 深色那套是「深底浅字」；浏览器**默认不打印背景色** ⇒ 直接打印深色主题
+ *    会把深底丢掉、只剩浅字 ⇒ 纸面等于白纸（`design/0076` §1.4 末条）。
+ *
+ * ⛔ 这不是第四套主题：只作用于 `@media print` 下的 `data-theme="dark"`，
+ *    ⛔ 不改运行时的 `data-theme`、⛔ 不走 `theme.js`、⛔ 不写 `config`。
+ *    ⭐ 特异性与上面的 dark 块相同（(0,2,0)）而位置在后 ⇒ 打印时稳赢。
+ *
+ * ⚠️ 覆盖范围**不是手写清单**：`tests/js/export.test.js` 拿上面 dark 块声明的
+ *    名字集合逐个对账，值必须与 `tokens.css` 的 `:root`（light）逐字相同（折叠空白后）。
+ *    漏一个名字 ⇒ 纸面会沿用深色值（在浅底上读不出来）。
+ * ════════════════════════════════════════════════════════════════════ */
+@media print {
+  :root[data-theme="dark"] {
+    --ui-bg: var(--p-gray-50);
+    --ui-bg-elevated: var(--p-gray-0);
+    --ui-text: var(--p-gray-900);
+    --ui-text-muted: var(--p-gray-500);
+    --ui-border: var(--p-gray-200);
+    --ui-hover-bg: var(--p-gray-100);
+    --ui-selected-bg: var(--p-blue-50);
+    --ui-accent: var(--p-blue-500);
+    --reader-text: var(--p-gray-800);
+    --reader-bg: var(--p-gray-0);
+    --reader-heading: var(--p-gray-900);
+    --reader-border: var(--p-gray-200);
+    --reader-link: var(--p-blue-600);
+    --reader-selection-bg: var(--p-blue-100);
+    --reader-inline-code-bg: #f9f2f4;
+    --reader-inline-code-text: #c7254e;
+    --reader-block-code-bg: #f8f8f8;
+    --reader-block-code-text: var(--p-gray-800);
+    --reader-quote-bar-color: #007569;
+    --reader-quote-bg: transparent;
+    --reader-table-border: var(--p-gray-300);
+    --reader-table-head-bg: #e1ebf0;
+    --reader-find-hit-bg: #ffe066;
+    --reader-find-hit-text: #1a1a1a;
+    --reader-find-current-bg: #ffab2e;
+    --reader-find-current-text: #1a1a1a;
+    --ui-indent-guide: var(--p-gray-200);
+    --ui-danger-bg: var(--p-red-50);
+    --ui-danger-text: var(--p-red-700);
+    --ui-danger-border: var(--p-red-200);
+    --ui-muted-bg: var(--p-gray-100);
+    --reader-hl-comment: #008000;
+    --reader-hl-keyword: #af00db;
+    --reader-hl-string: #a31515;
+    --reader-hl-number: #0b7a4b;
+    --reader-hl-function: #795e26;
+    --reader-hl-type: #1e6f85;
+    --reader-hl-variable: #001080;
+    --reader-hl-macro: #1e6f85;
+    --reader-hl-tag: #800000;
+    --reader-hl-attr: #e50000;
+    --reader-hl-operator: #333333;
+    --reader-hl-punctuation: #333333;
+    --reader-hl-invalid: #cd3131;
+    --reader-math-source-text: var(--p-gray-700);
+    --reader-math-source-bg: #f7f9fa;
+    --reader-math-source-border: var(--p-gray-200);
+    --reader-math-error-accent: #b3261e;
+    --reader-diag-surface: #ffffff;
+    --reader-diag-text: #232840;
+    --reader-diag-on-accent: #0b0d12;
+    --reader-diag-line: #44507a;
+    --reader-diag-line-soft: #d5d9ec;
+    --reader-diag-green-bg: #e5f5ea;
+    --reader-diag-green-line: #33a35c;
+    --reader-diag-green-ink: #2a854b;
+    --reader-diag-indigo-bg: #eef1fb;
+    --reader-diag-indigo-line: #5b6dc0;
+    --reader-diag-amber-bg: #fcf2da;
+    --reader-diag-amber-line: #d99114;
+    --reader-diag-teal-bg: #e4f5f4;
+    --reader-diag-violet-bg: #f2ecfa;
+    --reader-diag-steel-bg: #e7eef7;
+    --reader-diag-note-bg: #fff8c5;
+    --reader-diag-guide: #aeb6d8;
+    --reader-diag-rose-line: #c2588c;
+    --reader-diag-teal-line: #199a8e;
+    --reader-diag-violet-line: #8a5cd6;
+    --reader-diag-coral-line: #d96459;
+    --reader-diag-steel-line: #4d8fbf;
+    --reader-diag-indigo-ink: #5b6dc0;
+    --reader-diag-amber-ink: #9f6a0f;
+    --reader-diag-rose-ink: #b65384;
+    --reader-diag-teal-ink: #158379;
+    --reader-diag-violet-ink: #895cd5;
+    --reader-diag-coral-ink: #bb564d;
+    --reader-diag-steel-ink: #427aa3;
+    --reader-diag-panel: #f7f8fd;
+    --reader-diag-panel-line: #c9cfe8;
+    --reader-diag-ink-soft: #6a7086;
+    --reader-diag-rose-bg: #efd4e1;
+    --reader-diag-coral-bg: #f5d7d4;
+  }
 }

@@ -29,6 +29,17 @@
   /** comrak 给任务项方框的 class（`render.tasklist_classes = true`，`parser.rs:110`）。 */
   const BOX_CLASS = 'task-list-item-checkbox';
 
+  /**
+   * ⭐ **编辑态**那个方框的 class（CM6 widget，`live/decorations.js::TaskBoxWidget`）。
+   *
+   * ⚠️ 它和 `BOX_CLASS` 是**两个不同的东西**：阅读态是 comrak 的
+   * `<input class="task-list-item-checkbox" disabled>`，编辑态是 CM6 widget
+   * `<input class="cm-rmd-taskbox">`（`pointer-events: auto`，`bugs/0103`）。
+   * ⛔ 别把两者并成一个判据：`countOf(node)` 是**配对闸门**的一部分
+   * （`INV-TASK-03`，DOM 方框数 == 载荷条数），混进 widget 会让数量对不上。
+   */
+  const WIDGET_CLASS = 'cm-rmd-taskbox';
+
   /** 能不能翻转的两个符号（后端已经把它们挡成唯一可写的那两种）。 */
   const UNCHECKED = ' ';
   const CHECKED = 'x';
@@ -56,14 +67,56 @@
     return false;
   }
 
-  function walk(node, out) {
+  function walk(node, out, pred) {
     const kids = node && node.children;
     if (!kids || typeof kids.length !== 'number') return;
     for (let i = 0; i < kids.length; i++) {
       const kid = kids[i];
-      if (isTaskCheckbox(kid)) out.push(kid);
-      walk(kid, out);
+      if (pred(kid)) out.push(kid);
+      walk(kid, out, pred);
     }
+  }
+
+  /**
+   * ⭐ 是不是**编辑态**的方框（CM6 widget）。判据与 `isTaskCheckbox` 同形：
+   * tag ＋ `type` ＋ class 三件，⛔ 不看 `checked` / `disabled`。
+   */
+  function isWidgetBox(node) {
+    if (!node || node.nodeType !== ELEMENT_NODE) return false;
+    const tag = String(node.tagName || '').toUpperCase();
+    if (tag !== 'INPUT') return false;
+    const type = node.getAttribute ? node.getAttribute('type') : node.type;
+    if (String(type === undefined || type === null ? '' : type).toLowerCase() !== 'checkbox') return false;
+    const list = classListOf(node);
+    for (let i = 0; i < list.length; i++) if (list[i] === WIDGET_CLASS) return true;
+    return false;
+  }
+
+  /**
+   * 从 `target` 往上找**编辑态方框**（含自己）。探针/单测会塞只有 `parentNode`
+   * 的假节点 ⇒ ⛔ 不用 `Element.closest`（假节点上没有这个方法）。
+   */
+  function widgetBoxOf(target) {
+    let cur = target;
+    while (cur && cur.nodeType === ELEMENT_NODE) {
+      if (isWidgetBox(cur)) return cur;
+      cur = cur.parentNode;
+    }
+    return null;
+  }
+
+  /** 一个宿主（`.cm-rmd-liveHost`）底下的**全部编辑态方框**，**先序 = 文档顺序**。 */
+  function widgetsOf(root) {
+    const out = [];
+    walk(root, out, isWidgetBox);
+    return out;
+  }
+
+  /** 编辑态方框 → 宿主内**先序扁平下标**；不在这一块里 ⇒ `-1`。 */
+  function widgetIndexOf(root, el) {
+    const list = widgetsOf(root);
+    for (let i = 0; i < list.length; i++) if (list[i] === el) return i;
+    return -1;
   }
 
   /**
@@ -74,7 +127,7 @@
    */
   function checkboxesOf(root) {
     const out = [];
-    walk(root, out);
+    walk(root, out, isTaskCheckbox);
     return out;
   }
 
@@ -169,6 +222,11 @@
     arm: arm,
     toggleLine: toggleLine,
     isCheckedSymbol: isCheckedSymbol,
+    // ⭐ 编辑态（CM6 widget，`bugs/0103`）：与阅读态方框**分开的一套**判据（见 `WIDGET_CLASS` 注释）。
+    isWidgetBox: isWidgetBox,
+    widgetBoxOf: widgetBoxOf,
+    widgetsOf: widgetsOf,
+    widgetIndexOf: widgetIndexOf,
   };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

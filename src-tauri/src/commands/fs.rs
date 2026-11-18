@@ -20,7 +20,7 @@ use crate::fs::tree::{self, DocListResult, ListDirResult, SearchResult};
 /// [`Picked`](AuthSource::Picked) 是用户在系统面板里亲手确认的（`authorize_root`）；
 /// [`Recorded`](AuthSource::Recorded) 只是"后端记过的那个串"（`authorize_root_recorded`，
 /// 多一道"规范化结果必须逐字等于记录值"的约束）。
-enum AuthSource<'a> {
+pub(crate) enum AuthSource<'a> {
     /// 系统面板选中的：走 `authorize_root`（`design/0003` 以来的行为）。
     Picked(&'a Path),
     /// 启动页点行 / 侧边栏「上次的目录」：走 `authorize_root_recorded`。
@@ -54,9 +54,21 @@ fn enter_directory(s: &mut Session, auth: AuthSource<'_>) -> Result<PathBuf, Den
     // ⭐ 索引同理：丢旧 `Arc` **并且涨票号**（`design/0041` R2）——
     //    在途的旧构建回来时票号不符，⛔ 不许把旧根的清单复活
     s.invalidate_index();
-    // ⚠️ 只把**路径**记进配置，⛔ 不把授权记进去（INV-FS-03）
-    s.config.set_last_directory(&real);
-    if let Err(e) = s.config.save(&s.config_path) {
+    // ⚠️ 这里**不写配置**（`design/0071` §5）：配置的唯一真值是 `Shared` 里那一份，
+    //    写入口只有 `AppState::commit`，而它 ⛔ 不许在会话锁内发生
+    //    （L1 与 L2 不嵌套）。`last_directory` 由调用方在**锁外**落盘，
+    //    失败只打日志（它只是"下次对话框停在哪"，⛔ 不是授权）。
+    diag!("▶ 授权目录 {}（代次 → {}）", real.display(), s.grants.root_generation());
+    Ok(real)
+}
+
+/// ⭐ 把刚进入的目录记进 `last_directory`（**必须在会话锁外调用**）。
+///
+/// ⚠️ 写盘失败**只打日志**：`last_directory` 只是下次系统面板的起始位置，
+/// ⛔ 不因为它没存下来就回退一次已经成立的授权（`INV-FS-03`：它是路径不是授权）。
+fn commit_last_directory(state: &AppState, real: &Path) {
+    let (_, written) = state.commit(|c| c.set_last_directory(real));
+    if let Err(e) = written {
         diag_stderr!("⚠️ last_directory 存不下来：{e}");
         diag_file!(
             "⚠️ last_directory 存不下来 err_class={} err_len={}",
@@ -64,8 +76,27 @@ fn enter_directory(s: &mut Session, auth: AuthSource<'_>) -> Result<PathBuf, Den
             e.to_string().len()
         );
     }
-    diag!("▶ 授权目录 {}（代次 → {}）", real.display(), s.grants.root_generation());
-    Ok(real)
+}
+
+/// ⭐ **换根的后端唯一入口**（`design/0071` `INV-OPEN-02`/`INV-OPEN-03`）。
+///
+/// 「从窗口外拿一个目录进来」一共有三个来源，它们**必须给出同一个结果**：
+/// ① 应用内的选择器（`choose_directory`）、② 后端记过的目录（`open_recent_directory` /
+/// 收藏的目录分支）、③ **拖入窗口**与 **Apple Event**（`gui::open_root`）。
+/// ①②只是**授权来源**不同，收尾（代次 +1 / 树缓存作废）完全一样 ⇒ 全走 [`enter_directory`]
+/// 那一份实现，这里只多一个 `snapshot`。
+/// ⚠️ `last_directory` **不在锁内落盘**：调用方拿到快照之后在锁外走
+/// [`commit_last_directory`]（配置写入口只有 `AppState::commit`，它 ⛔ 不许进会话锁）。
+///
+/// ⚠️ 拖入窗口与 Apple Event 用 [`AuthSource::Picked`]（用户亲手交进来的路径，
+/// 与系统面板同一个强度），⛔ 不是 `Recorded`——那个白名单只属于"后端自己记过的串"。
+/// ⚠️ 锁内只做内存转换；`AppHandle` 与重挂监视仍在调用方的 `with` **之外**（`kb/0020`）。
+pub(crate) fn open_root_from_backend(
+    s: &mut Session,
+    auth: AuthSource<'_>,
+) -> Result<SessionSnapshot, Denied> {
+    enter_directory(s, auth)?;
+    Ok(snapshot(s))
 }
 
 /// **授权命令** · 用户在系统目录选择器里确认一个目录。
@@ -75,30 +106,34 @@ fn enter_directory(s: &mut Session, auth: AuthSource<'_>) -> Result<PathBuf, Den
 pub async fn choose_directory(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<SessionSnapshot, Denied> {
+    // ⚠️ 拷成 `String`：命令要跨 `.await`，别让 label 借着 `window` 进 future。
+    let label = window.label().to_string();
     // ⭐ 把**上次打开的目录**预置到系统对话框里（§2.1.1 第 4 条）。
     //    ⚠️ 这只是"对话框打开时停在哪"，⛔ **不是授权**——用户仍需按确认，
     //    授权仍然只由 `authorize_root` 产生（`INV-FS-04`）。
     //    ⚠️ 预置的是**配置里那个字符串**：它可能已经不存在了
     //    （用户删了目录、换机器），失败时对话框会自己退到默认位置。
-    let initial = state.with(|s| s.config.last_directory.clone());
+    let initial = state.with(&label, |s| s.config.last_directory.clone());
     let Some(dir) = pick(&app, true, initial.as_deref()).await else {
         // ⚠️ 用户取消**不是错误**：返回当前快照，界面什么都不变。
         //    ⚠️ 闭包写法（不是 `with(snapshot)`）的理由见 `super::get_session`。
-        return Ok(state.with(|s| snapshot(s)));
+        return Ok(state.with(&label, |s| snapshot(s)));
     };
 
-    state
-        .with(|s| {
-            enter_directory(s, AuthSource::Picked(&dir))?;
-            Ok(snapshot(s))
-        })
-        .inspect(|_| {
-            // ⭐ 换根 ⇒ 旧的目录监视作废、新的盯着新根（`design/0034` §2.1 A 的生命周期）。
-            // ⚠️ 放在 `with` **之外**：摘旧监视会起线程停 notify/去抖，
-            //    ⛔ 不把这件事放进会话锁的临界区（`kb/0020`）。
-            restart_tree_watch(&app, &state);
-        })
+    let result = state.with(&label, |s| open_root_from_backend(s, AuthSource::Picked(&dir)));
+    if let Ok(snap) = &result {
+        // ⚠️ 配置写盘在**锁外**（`design/0071` §5）；失败只打日志。
+        if let Some(root) = snap.roots.first() {
+            commit_last_directory(&state, Path::new(root));
+        }
+        // ⭐ 换根 ⇒ 旧的目录监视作废、新的盯着新根（`design/0034` §2.1 A 的生命周期）。
+        // ⚠️ 放在 `with` **之外**：摘旧监视会起线程停 notify/去抖，
+        //    ⛔ 不把这件事放进会话锁的临界区（`kb/0020`）。事件与监视都归本窗口。
+        restart_tree_watch(&app, &state, &label);
+    }
+    result
 }
 
 /// **授权命令** · 进入一个**后端自己记过的**目录（`design/0038`）。
@@ -120,9 +155,11 @@ pub async fn choose_directory(
 pub async fn open_recent_directory(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
+    window: tauri::WebviewWindow,
     root: String,
 ) -> Result<SessionSnapshot, Denied> {
-    let result = state.with(|s| enter_recorded_directory(s, &root));
+    let label = window.label().to_string();
+    let result = state.with(&label, |s| enter_recorded_directory(s, &root));
 
     match &result {
         Ok(snap) => diag!(
@@ -141,9 +178,12 @@ pub async fn open_recent_directory(
         }
     }
 
-    result.inspect(|_| {
-        // ⚠️ 同 `choose_directory`：重挂监视在 `with` 之外（`kb/0020`）
-        restart_tree_watch(&app, &state);
+    result.inspect(|snap| {
+        // ⚠️ 同 `choose_directory`：配置写盘与重挂监视都在 `with` 之外（`kb/0020`）。
+        if let Some(real) = snap.roots.first() {
+            commit_last_directory(&state, Path::new(real));
+        }
+        restart_tree_watch(&app, &state, &label);
     })
 }
 
@@ -169,8 +209,7 @@ fn enter_recorded_directory(s: &mut Session, root: &str) -> Result<SessionSnapsh
         return Err(Denied::not_authorized(Path::new(root)));
     }
     // 2–5. 校验全部在写 `roots` 之前；拒绝时一个字节不动
-    enter_directory(s, AuthSource::Recorded(Path::new(root)))?;
-    Ok(snapshot(s))
+    open_root_from_backend(s, AuthSource::Recorded(Path::new(root)))
 }
 
 /// **授权命令** · 用户在系统文件选择器里确认一个文件。
@@ -181,12 +220,14 @@ fn enter_recorded_directory(s: &mut Session, root: &str) -> Result<SessionSnapsh
 pub async fn choose_file(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
+    window: tauri::WebviewWindow,
 ) -> Result<SessionSnapshot, Denied> {
+    let label = window.label().to_string();
     let Some(file) = pick(&app, false, None).await else {
-        return Ok(state.with(|s| snapshot(s)));
+        return Ok(state.with(&label, |s| snapshot(s)));
     };
 
-    state.with(|s| {
+    state.with(&label, |s| {
         let real = s.grants.authorize_file(&file)?;
         // ⚠️ 这里**不**改 `mode`：要不要切成单文件模式由 `open_document`
         //    的 §2.1.4 时序决定（第 ③ 步），⛔ 不提前到这里。
@@ -219,9 +260,11 @@ pub async fn choose_file(
 pub async fn open_favorite(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
+    window: tauri::WebviewWindow,
     path: String,
 ) -> Result<SessionSnapshot, Denied> {
-    let result = state.with(|s| open_favorite_recorded(s, &path));
+    let label = window.label().to_string();
+    let result = state.with(&label, |s| open_favorite_recorded(s, &path));
 
     match &result {
         Ok(snap) => diag!(
@@ -240,8 +283,16 @@ pub async fn open_favorite(
 
     // ⚠️ 只有**进了目录**才需要重挂树监视（与 `open_recent_directory` 同形）；
     //    文件收藏不动 `roots`，与 `choose_file` 一样不碰监视。
-    if matches!(&result, Ok(snap) if snap.mode == "directory") {
-        restart_tree_watch(&app, &state);
+    // ⚠️ 判 `opened_favorite` 而⛔ 不判 `mode`（`bugs/0301`）：正开着目录时打开一条**文件**
+    //    收藏，`mode` 仍是 `"directory"`——照它判会把树监视白重挂一次。
+    if matches!(&result, Ok(snap) if snap.opened_favorite == Some("directory")) {
+        // ⚠️ 目录分支 = 一次换根 ⇒ 同 `choose_directory`：配置写盘与重挂都在锁外。
+        if let Ok(snap) = &result {
+            if let Some(real) = snap.roots.first() {
+                commit_last_directory(&state, Path::new(real));
+            }
+        }
+        restart_tree_watch(&app, &state, &label);
     }
     result
 }
@@ -274,8 +325,11 @@ fn open_favorite_recorded(s: &mut Session, path: &str) -> Result<SessionSnapshot
     if real.is_dir() {
         // ⚠️ 传 `recorded` 当请求：两者本来就是同一个字符串，
         //    `authorize_root_recorded` 会再做一次 canonicalize ＋ `real == recorded`。
-        enter_directory(s, AuthSource::Recorded(&recorded))?;
-        return Ok(snapshot(s));
+        let mut snap = open_root_from_backend(s, AuthSource::Recorded(&recorded))?;
+        // ⭐ `bugs/0301`：**这一次**是目录收藏。⛔ 不能让前端看 `mode` 反推——
+        //    文件收藏在"已开目录"的会话里 `mode` 仍是 `directory`（`mode()` 判 roots 优先）。
+        snap.opened_favorite = Some("directory");
+        return Ok(snap);
     }
     if real.is_file() {
         // ⚠️ 后缀判据是全项目唯一那份（`link::is_markdown`，⛔ 不复用只认 `.md` 的 tree 版）
@@ -287,7 +341,12 @@ fn open_favorite_recorded(s: &mut Session, path: &str) -> Result<SessionSnapshot
         //    （模式由 `open_document` 的 §2.1.4 时序决定）。
         s.startup_document = Some(authorized.clone());
         diag!("▶ 授权收藏文件 {}", authorized.display());
-        return Ok(snapshot(s));
+        // ⭐ `bugs/0301`：这一栏才是"点的是文件收藏"的权威信号。
+        //    ⚠️ 正开着目录时 `mode` 仍是 `"directory"`，前端若照旧判 `mode`
+        //    就会走空态分支、把这份 `startup_document` 丢掉（点了没反应）。
+        let mut snap = snapshot(s);
+        snap.opened_favorite = Some("file");
+        return Ok(snap);
     }
     Err(Denied::not_found(&recorded))
 }
@@ -304,8 +363,13 @@ fn open_favorite_recorded(s: &mut Session, path: &str) -> Result<SessionSnapshot
 /// ⚠️ `files` **不动**：收回目录不该把用户正在读的那份文档也变成不可读
 /// （§6 失败模型的最后一行）。
 #[tauri::command]
-pub fn close_directory(app: tauri::AppHandle, state: tauri::State<'_, AppState>) -> SessionSnapshot {
-    let snap = state.with(|s| {
+pub fn close_directory(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    window: tauri::WebviewWindow,
+) -> SessionSnapshot {
+    let label = window.label();
+    let snap = state.with(label, |s| {
         s.grants.revoke_roots();
         s.tree.retain_gen(s.grants.root_generation());
         // ⭐ `design/0050`：没有根 ⇒ 没有"盘上的观测"这回事（epoch/forced/健康一起归零）。
@@ -319,7 +383,7 @@ pub fn close_directory(app: tauri::AppHandle, state: tauri::State<'_, AppState>)
     });
     // ⭐ 没有根就没有目录监视（`design/0034` §2.1 A）。⚠️ 在 `with` 之外做：
     //    摘监视要起线程停 notify/去抖，⛔ 不放进去会话锁的临界区。
-    restart_tree_watch(&app, &state);
+    restart_tree_watch(&app, &state, label);
     snap
 }
 
@@ -334,16 +398,18 @@ pub fn close_directory(app: tauri::AppHandle, state: tauri::State<'_, AppState>)
 ///
 /// ⚠️ 失败**不是致命**：`tree_watch = None` 只意味着"这一轮没有自动刷新"，
 /// 右键「刷新」仍然在（§2.1 D）。
-pub(crate) fn restart_tree_watch(app: &tauri::AppHandle, state: &AppState) {
+/// ⚠️ `label` = **属主窗口**：监视与它发出的三类事件都只属于那个窗口
+/// （`design/0071` §5；多窗口下广播会让别的窗口去刷新它没有的树）。
+pub(crate) fn restart_tree_watch(app: &tauri::AppHandle, state: &AppState, label: &str) {
     // ① 摘旧的。⚠️ **先在锁里 `take`，再在锁外 drop**：
     //    `DirWatch::drop` 会起线程 + 叫醒去抖线程，虽然不阻塞，但没必要压在临界区里。
-    let old = state.with(|s| s.tree_watch.take());
+    let old = state.with(label, |s| s.tree_watch.take());
     drop(old);
 
     // ② 取当前**唯一**的授权根与代次，并**发一个新的监视实例号**（最终约束 3）。
     //    ⚠️ 发号必须在**建立之前**：回调里每条信号都要带上它做 fencing，
     //    而"先建后发"的窗口里发生的事件会带着 0 号进来（谁都不认）。
-    let (root, generation, watch_id) = state.with(|s| {
+    let (root, generation, watch_id) = state.with(label, |s| {
         let root = s.grants.roots().first().cloned();
         if root.is_some() {
             let id = s.disk.next_watch_id();
@@ -357,12 +423,12 @@ pub(crate) fn restart_tree_watch(app: &tauri::AppHandle, state: &AppState) {
         return;
     };
 
-    match crate::external::watch::start_tree_watch(app, &root, generation, watch_id) {
+    match crate::external::watch::start_tree_watch(app, &root, generation, watch_id, label) {
         Ok(w) => {
             // ⚠️ 建立期间代次可能又变了（并发换根）⇒ 这份监视盯着一个**已经不授权**的根。
             //    代次核对放在存进去的那一刻，⛔ 不假设"上面两次 `with` 之间什么都没发生"。
             let mut slot = Some(w);
-            let stored = state.with(|s| {
+            let stored = state.with(label, |s| {
                 if s.grants.root_generation() == generation && s.disk.watch_id == watch_id {
                     s.tree_watch = slot.take();
                     true
@@ -377,13 +443,13 @@ pub(crate) fn restart_tree_watch(app: &tauri::AppHandle, state: &AppState) {
                 //    ⚠️ 顺序固定：先推纪元（`Reattach` 会 `forced = epoch`），
                 //    再把"要等哪个目标"记在 `awaiting` 上——反了就会记一个
                 //    **已经完成过的**目标，`watcher` 当场被洗白。
-                state.with(|s| {
+                state.with(label, |s| {
                     s.disk.request(crate::disk::ReconcileCause::Reattach);
                     let target = s.disk.forced;
                     s.disk.note_rewatch_ok(watch_id, target);
                 });
-                kick_reconcile(app, state);
-                emit_disk_view(app, state);
+                kick_reconcile(app, state, label);
+                emit_disk_view(app, state, label);
             } else {
                 diag!("⚠️ 目录监视：建立期间代次变了 ⇒ 丢弃这份（换根的那次会自己重建）");
             }
@@ -393,7 +459,7 @@ pub(crate) fn restart_tree_watch(app: &tauri::AppHandle, state: &AppState) {
             //    与"目录里什么都没发生"在界面上完全一样。
             // ⭐ `design/0050` 起它还**必须**进健康状态：用户要能看到"重试"入口，
             //    而不是等到某天发现树不刷新。
-            state.with(|s| {
+            state.with(label, |s| {
                 if s.grants.root_generation() == generation && s.disk.watch_id == watch_id {
                     s.disk.note_rewatch_failed();
                 }
@@ -404,7 +470,7 @@ pub(crate) fn restart_tree_watch(app: &tauri::AppHandle, state: &AppState) {
                 e.label(),
                 e.to_string().len()
             );
-            emit_disk_view(app, state);
+            emit_disk_view(app, state, label);
         }
     }
 }
@@ -417,9 +483,10 @@ pub(crate) fn restart_tree_watch(app: &tauri::AppHandle, state: &AppState) {
 /// ⚠️ 去重键是 [`Session::last_disk_rev`]——**同一个派生状态不重复发**。
 /// 调用方可以是 notify 回调线程 / 去抖线程 / 命令线程，所以这段必须短：
 /// 它只在会话锁里读一份快照。
-pub(crate) fn emit_disk_view(app: &tauri::AppHandle, state: &AppState) {
+/// ⚠️ `label` = **属主窗口**：这条事件只投给那个窗口（`design/0071` §5）。
+pub(crate) fn emit_disk_view(app: &tauri::AppHandle, state: &AppState, label: &str) {
     use tauri::Emitter;
-    let view = state.with(|s| {
+    let view = state.with(label, |s| {
         let v = s.disk.view();
         if v.revision == s.last_disk_rev {
             return None;
@@ -428,7 +495,7 @@ pub(crate) fn emit_disk_view(app: &tauri::AppHandle, state: &AppState) {
         Some(v)
     });
     let Some(view) = view else { return };
-    if let Err(e) = app.emit(crate::external::watch::DIR_WATCH_EVENT, view) {
+    if let Err(e) = app.emit_to(label, crate::external::watch::DIR_WATCH_EVENT, view) {
         // ⚠️ 发不出去**不致命**，但⛔ 不许静默：它坏了的表现是"监视坏了但界面不吭声"，
         //    而那正是 `design/0050` 要消灭的那一类静默。
         diag_stderr!("⚠️ 磁盘状态事件发不出去：{e}");
@@ -453,8 +520,9 @@ pub(crate) fn emit_disk_view(app: &tauri::AppHandle, state: &AppState) {
 ///
 /// ⚠️ 它的调用点全在**锁外**（notify 回调 / 去抖线程 / 命令线程）：
 /// 起线程本身很快，但核对要读整棵树，⛔ 绝不能占用 FSEvents 的回调线程。
-pub(crate) fn kick_reconcile(app: &tauri::AppHandle, state: &AppState) {
-    let start = state.with(|s| {
+/// ⚠️ `label` = **属主窗口**：核对期间的每一次会话访问与事件都落在那个窗口上。
+pub(crate) fn kick_reconcile(app: &tauri::AppHandle, state: &AppState, label: &str) {
+    let start = state.with(label, |s| {
         if s.reconcile_inflight || !s.disk.pending() {
             return false;
         }
@@ -465,6 +533,7 @@ pub(crate) fn kick_reconcile(app: &tauri::AppHandle, state: &AppState) {
         return;
     }
     let app = app.clone();
+    let thread_label = label.to_string();
     let spawned = std::thread::Builder::new().name("rmd-disk-reconcile".into()).spawn(move || {
         use tauri::Manager;
         // ⚠️ `try_state` 拿不到 AppState 时我们**连那个位子都碰不到**（状态已被丢弃），
@@ -472,15 +541,15 @@ pub(crate) fn kick_reconcile(app: &tauri::AppHandle, state: &AppState) {
         let Some(state) = app.try_state::<AppState>() else { return };
         // ⚠️ 兜底：`reconcile_once` panic 时也要把单飞位还回去（否则此后这台机器
         //    再也不核对，而且没有任何外部症状）。见 `InflightGuard`。
-        let mut guard = InflightGuard::new(&state);
+        let mut guard = InflightGuard::new(&state, &thread_label);
         let mut rounds = 0usize;
         loop {
-            reconcile_once(&app, &state);
+            reconcile_once(&app, &state, &thread_label);
             rounds += 1;
             // ⚠️ "还要不要跑"与"归还单飞位"必须在**同一个锁内**判完（与 `start` 同口径）：
             //    分开做的话，两步之间来的请求会看到 `inflight == true` 被挡掉，
             //    而我们已经决定不再起 —— 那个请求就再也没人跑了（丢唤醒）。
-            let again = state.with(|s| {
+            let again = state.with(&thread_label, |s| {
                 if crate::disk::DiskState::wants_trailing_round(
                     s.disk.pending(),
                     rounds,
@@ -501,7 +570,7 @@ pub(crate) fn kick_reconcile(app: &tauri::AppHandle, state: &AppState) {
     });
     if let Err(e) = spawned {
         // ⚠️ 起不来 ⇒ 必须**把单飞位放回去**，否则此后永远不再核对（静默）
-        state.with(|s| s.reconcile_inflight = false);
+        state.with(label, |s| s.reconcile_inflight = false);
         diag_stderr!("⚠️ 核对线程起不来：{e}");
         diag_file!("⚠️ 核对线程起不来 err_len={}", e.to_string().len());
     }
@@ -526,13 +595,15 @@ const MAX_TRAILING_ROUNDS: usize = 4;
 /// "最坏的静默"），而它没有任何外部症状——"树不刷新"与"目录里什么都没发生"长得一样。
 struct InflightGuard<'a> {
     state: &'a AppState,
+    /// 属主窗口 label（归还单飞位时要按它取会话）。
+    label: &'a str,
     /// 正常收尾时置 `true`（循环里已经**在锁内**还过位子了）。
     finished: bool,
 }
 
 impl<'a> InflightGuard<'a> {
-    fn new(state: &'a AppState) -> Self {
-        Self { state, finished: false }
+    fn new(state: &'a AppState, label: &'a str) -> Self {
+        Self { state, label, finished: false }
     }
 }
 
@@ -544,7 +615,7 @@ impl Drop for InflightGuard<'_> {
         // ⚠️ 走到这里 = 展开（panic）。⛔ 不静默：这是我们代码的缺陷，不是用户的目录。
         diag_stderr!("⚠️ 核对线程异常退出（panic）⇒ 归还单飞位，下一次请求会重新起一趟");
         diag_file!("⚠️ 核对线程异常退出（panic）⇒ 归还单飞位");
-        self.state.with(|s| s.reconcile_inflight = false);
+        self.state.with(self.label, |s| s.reconcile_inflight = false);
     }
 }
 
@@ -563,8 +634,8 @@ impl Drop for InflightGuard<'_> {
 /// **再也不核对**（最坏的静默）。⭐ `bugs/0039` 起 `pending()` 用的是**已尝试**的目标，
 /// 所以"失败"本身也会让调度结束；`stale` / `stale_revision` 那一支**故意不记账**
 /// （它不是故障，而是"这一轮没观测到盘"），由尾随重跑（有上限）接住。
-fn reconcile_once(app: &tauri::AppHandle, state: &AppState) {
-    let Some((generation, epoch, watch_id, target)) = state.with(|s| {
+fn reconcile_once(app: &tauri::AppHandle, state: &AppState, label: &str) {
+    let Some((generation, epoch, watch_id, target)) = state.with(label, |s| {
         let target = s.disk.target()?;
         Some((s.grants.root_generation(), s.disk.epoch, s.disk.watch_id, target))
     }) else {
@@ -576,7 +647,7 @@ fn reconcile_once(app: &tauri::AppHandle, state: &AppState) {
 
     // ⭐ **旧纪元的缓存层与在途票先摘掉**（最终约束 7 的"锁内 `take`、锁外 drop"）：
     //    摘下来的是**整层条目**（10 万条的那种），⛔ 不能让它落在会话锁的临界区里。
-    let swept = state.with(|s| s.tree.sweep(generation, epoch));
+    let swept = state.with(label, |s| s.tree.sweep(generation, epoch));
     diag!("▶ 核对：清掉旧纪元的树缓存 {} 层", swept.len());
     drop(swept);
 
@@ -587,7 +658,7 @@ fn reconcile_once(app: &tauri::AppHandle, state: &AppState) {
     //    两边单独看都对（`design/0050` §2.1 ⑤）。
     //    ⭐ 它同时兑现最终约束 6 的"同一纪元最多建一次"：纪元刚被推高时缓存不新鲜 ⇒ 真扫一遍；
     //    而尾随重跑时若已有同纪元的新鲜索引 ⇒ 直接复用，⛔ 不重复扫盘。
-    let built = obtain_index(state, true);
+    let built = obtain_index(state, label, true);
     let (ok, complete, entries, dirs, skipped) = match &built {
         Ok(ix) => (true, ix.complete, ix.len(), ix.stats.dirs, ix.stats.skipped_denied),
         Err(_) => (false, false, 0, 0, 0),
@@ -612,9 +683,9 @@ fn reconcile_once(app: &tauri::AppHandle, state: &AppState) {
         //    对排错是两件事。
         //    ⭐ 最终约束 2 第 3 条：**发布成功 ≠ 核对完整**——`complete=false` 一律不算成功，
         //    否则一次"只走了一半"的扫描会把监视健康洗白成"没问题"。
-        let changed = state.with(|s| s.disk.complete(target, watch_id, succeeded));
+        let changed = state.with(label, |s| s.disk.complete(target, watch_id, succeeded));
         if changed {
-            emit_disk_view(app, state);
+            emit_disk_view(app, state, label);
         }
     }
     diag!(
@@ -635,7 +706,7 @@ fn reconcile_once(app: &tauri::AppHandle, state: &AppState) {
     );
 
     // ── ⑤ 当前文档也拉进同一条通道（最终约束 5 末三句）──
-    reconcile_current_document(app, state);
+    reconcile_current_document(app, state, label);
 }
 
 /// ⭐ **核对时顺带看一眼当前文档**（`design/0050` 最终约束 5）。
@@ -645,16 +716,16 @@ fn reconcile_once(app: &tauri::AppHandle, state: &AppState) {
 /// 变了就发**同一条** [`CHANGED_EVENT`](crate::external::watch::CHANGED_EVENT)——
 /// 前端照旧走 `services/reload.js` 的闸门：**脏缓冲不覆盖、提示不重复**。
 /// ⛔ 这里**不读正文、不比内容**：那是 `reload_document` 的事，而它会自己过 `check_readable`。
-fn reconcile_current_document(app: &tauri::AppHandle, state: &AppState) {
+fn reconcile_current_document(app: &tauri::AppHandle, state: &AppState, label: &str) {
     use tauri::Emitter;
-    let Some((path, seq)) = state.with(|s| {
+    let Some((path, seq)) = state.with(label, |s| {
         let w = s.watch.as_ref()?;
         Some((w.real.clone(), w.seq))
     }) else {
         return;
     };
     let now = crate::fs::finger(&path);
-    let stale = state.with(|s| {
+    let stale = state.with(label, |s| {
         let w = s.watch.as_mut()?;
         if w.seq != seq || w.real != path {
             return None;
@@ -672,7 +743,7 @@ fn reconcile_current_document(app: &tauri::AppHandle, state: &AppState) {
         path: path.display().to_string(),
         seq,
     };
-    if let Err(e) = app.emit(crate::external::watch::CHANGED_EVENT, payload) {
+    if let Err(e) = app.emit_to(label, crate::external::watch::CHANGED_EVENT, payload) {
         diag_stderr!("⚠️ 核对：当前文档变化事件发不出去：{e}");
         diag_file!(
             "⚠️ 核对：当前文档变化事件发不出去 err_class={} err_len={}",
@@ -693,16 +764,21 @@ fn reconcile_current_document(app: &tauri::AppHandle, state: &AppState) {
 /// 那个说"**监视坏了，重接一条**"（它对盘上有没有变一无所知）。
 /// 前者是刷新，后者是修管道。⚠️ 两者内部都汇到同一个状态机（`DiskState`）。
 #[tauri::command]
-pub fn reconcile_disk(app: tauri::AppHandle, state: tauri::State<'_, AppState>) -> crate::disk::DiskView {
-    let view = state.with(|s| {
+pub fn reconcile_disk(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    window: tauri::WebviewWindow,
+) -> crate::disk::DiskView {
+    let label = window.label();
+    let view = state.with(label, |s| {
         s.disk.request(crate::disk::ReconcileCause::Manual);
         s.disk.view()
     });
     diag!("▶ 手动刷新：内容修订 → {}（目标 {}）", view.epoch, view.epoch);
     // ⚠️ 锁外起线程（它要读整棵树）
-    kick_reconcile(&app, &state);
+    kick_reconcile(&app, &state, label);
     // ⚠️ 立刻回一份视图：前端据此**马上**显示"正在核对"，⛔ 不等扫描结束
-    let _ = emit_disk_view(&app, &state);
+    let _ = emit_disk_view(&app, &state, label);
     view
 }
 
@@ -720,10 +796,15 @@ pub fn reconcile_disk(app: tauri::AppHandle, state: tauri::State<'_, AppState>) 
 /// ⚠️ 幂等：没有授权根时它就是一条无操作（返回 `null` 状态），⛔ 不报错——
 /// 界面上"重试"按钮不该因为"还没打开目录"而变成一次失败提示。
 #[tauri::command]
-pub fn retry_tree_watch(app: tauri::AppHandle, state: tauri::State<'_, AppState>) -> crate::disk::DiskView {
+pub fn retry_tree_watch(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    window: tauri::WebviewWindow,
+) -> crate::disk::DiskView {
+    let label = window.label();
     diag!("▶ 重试目录监视");
-    restart_tree_watch(&app, &state);
-    state.with(|s| s.disk.view())
+    restart_tree_watch(&app, &state, label);
+    state.with(label, |s| s.disk.view())
 }
 
 
@@ -752,12 +833,14 @@ pub fn retry_tree_watch(app: tauri::AppHandle, state: tauri::State<'_, AppState>
 #[tauri::command]
 pub async fn list_dir(
     state: tauri::State<'_, AppState>,
+    window: tauri::WebviewWindow,
     path: String,
     generation: u64,
     req: u64,
     fresh: bool,
 ) -> Result<ListDirResult, Denied> {
-    let result = list_dir_three_stage(&state, &path, generation, req, fresh).await;
+    let label = window.label().to_string();
+    let result = list_dir_three_stage(&state, &label, &path, generation, req, fresh).await;
 
     match &result {
         Ok((r, cached, cache_layers)) => {
@@ -795,6 +878,7 @@ pub async fn list_dir(
 /// 后两项只给日志用，⛔ 不进 IPC 契约。
 async fn list_dir_three_stage(
     state: &AppState,
+    label: &str,
     path: &str,
     generation: u64,
     req: u64,
@@ -823,7 +907,7 @@ async fn list_dir_three_stage(
     let mut cache_layers = 0usize;
 
     // ── ① 持锁：授权 + 命中 / 作废 / 领票 ────────────────────────────
-    let first = state.with(|s| -> Result<First, Denied> {
+    let first = state.with(label, |s| -> Result<First, Denied> {
         // ⚠️ 缓存键用**规范化后**的路径（§2.1.3：裸 path 会在切根回到同一目录时
         //    命中上一代的结果）。这一跳 `canonicalize` 是 §2.1 ① 允许的唯一 IO。
         let real = s.grants.check_readable(Path::new(path))?;
@@ -880,7 +964,7 @@ async fn list_dir_three_stage(
             match scanned {
                 Ok(r) => {
                     // ── ③ 再进锁：复核**当刻**代次与纪元 → 凭票提交 ──
-                    let submitted = state.with(|s| -> Result<bool, Denied> {
+                    let submitted = state.with(label, |s| -> Result<bool, Denied> {
                         let current = s.grants.root_generation();
                         let current_epoch = s.disk.epoch;
                         // ⚠️ 这里的 `generation` / `start_epoch` 是**请求 / 起步**侧的，
@@ -944,10 +1028,11 @@ async fn list_dir_three_stage(
 /// 代价是可能的重复读盘；收益是不需要跨线程取消机制（`walk` 里也只能在下一层看到取消）。
 fn obtain_index(
     state: &AppState,
+    label: &str,
     rebuild: bool,
 ) -> Result<std::sync::Arc<tree::FileIndex>, Denied> {
     // ① 持锁：能用的旧索引 / 领票
-    let (grants, generation, epoch, cached, ignore, ticket) = state.with(|s| {
+    let (grants, generation, epoch, cached, ignore, ticket) = state.with(label, |s| {
         let generation = s.grants.root_generation();
         let epoch = s.disk.epoch;
         // ⭐ `design/0050` 最终约束 6：**同一纪元最多建一次**。
@@ -979,7 +1064,7 @@ fn obtain_index(
     let built = tree::build_index(&grants, &ignore, epoch)?;
 
     // ③ 再持锁：代次／纪元未变 **且** 票号仍是自己那张，才发布
-    state.with(|s| publish_index(s, generation, epoch, ticket, built))
+    state.with(label, |s| publish_index(s, generation, epoch, ticket, built))
 }
 
 /// ⭐ **`obtain_index` 的阻塞池版本**（2026-10-29 代码评审第 12 条）。
@@ -997,16 +1082,18 @@ fn obtain_index(
 /// （`kick_reconcile`），在那里阻塞正是设计。
 async fn obtain_index_async(
     app: &tauri::AppHandle,
+    label: &str,
     rebuild: bool,
 ) -> Result<std::sync::Arc<tree::FileIndex>, Denied> {
     use tauri::Manager;
     let app = app.clone();
+    let label = label.to_string();
     let join = tauri::async_runtime::spawn_blocking(move || {
         // ⚠️ 在**阻塞池**里现取状态：`State<'_>` 借的是命令的生命周期，搬不进 'static 闭包。
         let Some(state) = app.try_state::<AppState>() else {
             return Err(Denied::worker_lost("", "索引构建线程拿不到会话状态", "应用正在退出"));
         };
-        obtain_index(&state, rebuild)
+        obtain_index(&state, &label, rebuild)
     })
     .await;
     match join {
@@ -1107,12 +1194,15 @@ fn publish_index(
 #[tauri::command]
 pub async fn search_files(
     app: tauri::AppHandle,
+    window: tauri::WebviewWindow,
     pattern: String,
     req: u64,
     rebuild: bool,
 ) -> Result<SearchResult, Denied> {
     // ⚠️ 走**阻塞池**那一版（评审第 12 条）：整趟递归读盘不许压在异步工作线程上。
-    let index = obtain_index_async(&app, rebuild).await?;
+    //    ⭐ 索引也是**窗口私有**的（它按会话的代次/纪元/根判定新鲜度）。
+    let label = window.label().to_string();
+    let index = obtain_index_async(&app, &label, rebuild).await?;
     let generation = index.roots_gen;
 
     // ② 匹配在锁外做（5 万条约 2 ms；放进临界区等于每次按键都堵住 FSEvents 回调）
@@ -1171,17 +1261,19 @@ pub async fn search_files(
 pub async fn list_documents(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
+    window: tauri::WebviewWindow,
     generation: u64,
     req: u64,
     rebuild: bool,
 ) -> Result<DocListResult, Denied> {
-    let current = state.with(|s| s.grants.root_generation());
+    let label = window.label().to_string();
+    let current = state.with(&label, |s| s.grants.root_generation());
     if generation != current {
         return Err(Denied::stale(generation, current));
     }
 
     // ⚠️ 同 [`search_files`]：走阻塞池那一版（评审第 12 条）。
-    let index = obtain_index_async(&app, rebuild).await?;
+    let index = obtain_index_async(&app, &label, rebuild).await?;
     let result = DocListResult::from_index(&index, req);
 
     diag_stderr!(
@@ -1309,11 +1401,12 @@ pub fn authorize_startup(grants: &mut SessionGrants, path: &Path) -> Result<(Mod
 #[tauri::command]
 pub fn create_entry(
     state: tauri::State<'_, AppState>,
+    window: tauri::WebviewWindow,
     parent: String,
     name: String,
     kind: crate::fs::create::CreateKind,
 ) -> Result<crate::fs::create::CreatedEntry, Denied> {
-    let result = state.with(|s| {
+    let result = state.with(window.label(), |s| {
         let real_parent = s.grants.check_creatable(Path::new(&parent), &s.config.ignore_dirs)?;
         let final_name = crate::fs::create::validate_name(&name, kind, &s.config.ignore_dirs)?;
         crate::fs::create::create_in(&s.grants, &real_parent, &final_name, kind)
@@ -1363,10 +1456,14 @@ pub fn create_entry(
 pub fn rename_entry(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
+    window: tauri::WebviewWindow,
     from: String,
     name: String,
 ) -> Result<crate::fs::rename::RenamedEntry, Denied> {
-    let result: Result<crate::fs::rename::RenamedEntry, Denied> = state.with(|s| {
+    let label = window.label();
+    // ⭐ 目录会话的 `last_file` 迁移清单：在锁内**只算**，锁外统一写（见下方 `commit`）。
+    let mut dir_session_updates: Vec<(String, String)> = Vec::new();
+    let result: Result<crate::fs::rename::RenamedEntry, Denied> = state.with(label, |s| {
         let requested = Path::new(&from);
         let real = s.grants.check_renamable(requested, &s.config.ignore_dirs)?;
         // ⭐ 两道状态拦截（编辑态 / 保存在途）**必须在碰磁盘之前**
@@ -1409,10 +1506,11 @@ pub fn rename_entry(
         // ⚠️ 这整段在 `Session::commit_rename` 里——「起监视」以闭包注入，
         //    ⇒ 迁移矩阵（B6/B7）能在 `--features gui` 下用真 `Session` 单测。
         // ⚠️ 这会是 `current_document` 的**第三个**写入点。
-        let (current_moved, watch_seq, mut migrate_degraded) =
+        let (current_moved, watch_seq, mut migrate_degraded, updates) =
             s.commit_rename(&real, &to, |path, seq| {
                 // ⚠️ 与 `watch_document` 同款：起新失败 ⇒ 没有监视（降级）。
-                match crate::external::watch::start(&app, path, seq, generation) {
+                //    ⭐ 监视的属主是本窗口（`design/0071` §5）。
+                match crate::external::watch::start(&app, path, seq, generation, label) {
                     Ok(w) => crate::commands::WatchRestart::Started(w),
                     Err(e) => {
                         diag_stderr!("⚠️ 改名后重启监视失败（{seq}）：{e}");
@@ -1421,6 +1519,7 @@ pub fn rename_entry(
                 }
             });
         degraded.append(&mut migrate_degraded);
+        dir_session_updates = updates;
 
         Ok(crate::fs::rename::RenamedEntry {
             path: to.display().to_string(),
@@ -1431,6 +1530,25 @@ pub fn rename_entry(
             degraded,
         })
     });
+
+    // ⭐ 目录会话的 `last_file` 迁移在**锁外**写（`design/0035` §3.5 / `design/0071` §5）：
+    //    「改哪几条」已经在锁内算好，这里只落盘。⚠️ 失败**只打日志**——
+    //    盘上的改名已经成立，⛔ 不因为一份历史记录没迁成就报"改名失败"。
+    if !dir_session_updates.is_empty() {
+        let (_, written) = state.commit(|c| {
+            for (root, last) in &dir_session_updates {
+                c.set_dir_session_last_file(root, last);
+            }
+        });
+        if let Err(e) = written {
+            diag_stderr!("⚠️ 改名后目录会话没存下来：{e}");
+            diag_file!(
+                "⚠️ 改名后目录会话没存下来 err_class={} err_len={}",
+                crate::logging::err_class(&e),
+                e.to_string().len()
+            );
+        }
+    }
 
     match &result {
         // ⚠️ 日志只打**路径与结果**，⛔ 不打正文（`INV-LOG-01`）
@@ -1474,9 +1592,10 @@ pub struct RevealOutcome {
 #[tauri::command]
 pub fn reveal_entry(
     state: tauri::State<'_, AppState>,
+    window: tauri::WebviewWindow,
     path: String,
 ) -> Result<RevealOutcome, Denied> {
-    let result = state.with(|s| {
+    let result = state.with(window.label(), |s| {
         reveal_entry_in(s, Path::new(&path), &mut crate::link::spawn_detached)
     });
     match &result {
@@ -1526,6 +1645,28 @@ mod tests {
     use crate::commands::Session;
     use crate::config::{Config, DirSession};
     use crate::fs::tree::TreeEntry;
+
+    /// ⭐ `design/0071` `INV-OPEN-03`：**换根只有一个后端入口**。
+    ///
+    /// 判据是源码级的（这一条管的是"别复制第二份"，不是行为——行为由上面那一族用例盯着）：
+    /// 生产代码里 `enter_directory(` 只许出现**两次**——定义一处、[`open_root_from_backend`]
+    /// 里那一处。命令（`⌘O` / 最近 / 收藏）与拖放 / Apple Event 都从
+    /// [`open_root_from_backend`] 进来 ⇒ 谁都不许再自己走一遍授权 + 收尾。
+    /// ⚠️ 测试模块自己可以调 `enter_directory`（那是**被测的那个原语**），所以先切掉。
+    #[test]
+    fn 换根只有一个后端入口() {
+        let src = include_str!("fs.rs");
+        let prod = src.split("#[cfg(test)]").next().expect("文件总有测试模块之前的部分");
+        assert_eq!(
+            prod.matches("enter_directory(").count(),
+            2,
+            "只许：定义 1 处 + open_root_from_backend 里 1 处调用"
+        );
+        assert!(
+            prod.contains("pub(crate) fn open_root_from_backend("),
+            "共用入口必须是 pub(crate)（拖放在 gui 侧调它）"
+        );
+    }
     use std::collections::VecDeque;
 
     /// 一次性测试目录。⚠️ **`canonicalize` 之后返回**：`/var` 与 `/private/var`
@@ -1568,9 +1709,15 @@ mod tests {
             doc_dir: None,
             startup_document: None,
             pending_opens: VecDeque::new(),
+            // ⭐ `design/0068` §2.5：新窗口的"待导航"请求，本文件这批用例不涉及。
+            pending_navigation: None,
             last_render_stats: Default::default(),
             current_document: None,
             doc_seq: 0,
+            // ⭐ `design/0082`：本文件这批用例不涉及未命名文档。
+            draft: None,
+            edit_draft: None,
+            draft_seq: 0,
             edit_target: None,
             self_write: None,
             save_inflight: None,
@@ -1640,8 +1787,10 @@ mod tests {
         let snap = enter_recorded_directory(&mut s, &real).expect("记过的路径必须放行");
         assert_eq!(snap.roots, vec![real.clone()]);
         assert_eq!(s.grants.root_generation(), 1, "换根要 +1");
-        assert_eq!(s.config.last_directory.as_deref(), Some(real.as_str()), "要记进 last_directory");
-        assert!(t.p().join("config.json").exists(), "收尾要真的落盘");
+        // ⭐ `design/0071` §5：`last_directory` **不在锁内写**——
+        //    配置唯一真值在 `Shared`，调用方拿到快照之后在锁外 `commit`（`commit_last_directory`）。
+        assert!(s.config.last_directory.is_none(), "锁内⛔ 不写配置");
+        assert!(!t.p().join("config.json").exists(), "锁内⛔ 不落盘");
     }
 
     #[test]
@@ -2007,33 +2156,33 @@ mod tests {
         s.grants.authorize_root(&root).unwrap();
         let state = AppState::new(s);
 
-        let first = obtain_index(&state, false).unwrap();
-        let ticket_after_first = state.with(|s| s.index_ticket);
-        let second = obtain_index(&state, false).unwrap();
+        let first = obtain_index(&state, "main", false).unwrap();
+        let ticket_after_first = state.with("main", |s| s.index_ticket);
+        let second = obtain_index(&state, "main", false).unwrap();
         assert!(std::sync::Arc::ptr_eq(&first, &second), "第二次必须复用同一份");
-        assert_eq!(state.with(|s| s.index_ticket), ticket_after_first, "缓存命中⛔ 不领票");
+        assert_eq!(state.with("main", |s| s.index_ticket), ticket_after_first, "缓存命中⛔ 不领票");
         assert_eq!(first.rev, 1);
 
         // ⭐ `design/0050` 最终约束 6 **改了 `rebuild` 的语义**：同一纪元最多建一次。
         //    ⇒ 纪元没变时 `rebuild = true` 也复用（⛔ 不重复扫盘）；真正"从盘上重来一次"
         //    现在是 `reconcile_disk`（它推内容修订），见 `design/0050` §10 的偏离记录。
-        let third = obtain_index(&state, true).unwrap();
+        let third = obtain_index(&state, "main", true).unwrap();
         assert!(
             std::sync::Arc::ptr_eq(&first, &third),
             "同一纪元下 `rebuild` 也必须复用"
         );
-        assert_eq!(state.with(|s| s.index_ticket), ticket_after_first, "复用⛔ 不领票");
+        assert_eq!(state.with("main", |s| s.index_ticket), ticket_after_first, "复用⛔ 不领票");
         assert_eq!(third.rev, 1);
 
         // 纪元被推高之后 `rebuild = true` 才真扫一遍 ⇒ 领新票、版本 +1
-        state.with(|s| {
+        state.with("main", |s| {
             s.disk.request(crate::disk::ReconcileCause::Signal(crate::disk::reaction(
                 crate::disk::DiskSignal::Event,
             )))
         });
-        let fourth = obtain_index(&state, true).unwrap();
+        let fourth = obtain_index(&state, "main", true).unwrap();
         assert_eq!(fourth.rev, 2, "纪元变了 ⇒ 旧索引不再是当刻的盘");
-        assert!(state.with(|s| s.index_ticket) > ticket_after_first, "重建必须领新票");
+        assert!(state.with("main", |s| s.index_ticket) > ticket_after_first, "重建必须领新票");
         let _ = s;
     }
 
@@ -2078,7 +2227,7 @@ mod tests {
     }
 
     #[test]
-    fn 收藏打开_目录走既有收尾_记进roots并落盘() {
+    fn 收藏打开_目录走既有收尾_记进roots() {
         let t = TestDir::new("open-fav-dir");
         let real = fav_case(&t, "notes");
         let mut s = session(t.p().join("config.json"));
@@ -2086,11 +2235,13 @@ mod tests {
 
         let snap = open_favorite_recorded(&mut s, &real).expect("收藏过的目录必须能开");
         assert_eq!(snap.mode, "directory");
+        assert_eq!(snap.opened_favorite, Some("directory"), "这一次打开的是目录收藏");
         assert_eq!(snap.roots, vec![real.clone()], "复用 enter_directory 的记账");
         assert_eq!(s.grants.root_generation(), 1, "换根要 +1");
-        assert_eq!(s.config.last_directory.as_deref(), Some(real.as_str()), "与 ⌘O 同一条收尾");
+        // ⚠️ 同 `最近目录`：配置写盘已移出锁内（`design/0071` §5），由命令层在锁外 `commit`。
+        assert!(s.config.last_directory.is_none(), "锁内⛔ 不写配置");
         assert_eq!(snap.favorites, vec![real.clone()], "快照要带回收藏表");
-        assert!(t.p().join("config.json").exists(), "收尾要真的落盘");
+        assert!(!t.p().join("config.json").exists(), "锁内⛔ 不落盘");
     }
 
     #[test]
@@ -2105,10 +2256,42 @@ mod tests {
 
         let snap = open_favorite_recorded(&mut s, &recorded).expect("收藏过的 markdown 必须能开");
         assert_eq!(snap.mode, "single-file");
+        assert_eq!(snap.opened_favorite, Some("file"), "这一次打开的是文件收藏");
         assert_eq!(s.startup_document.as_deref(), Some(Path::new(&recorded)), "交给既有提交流程");
+        assert_eq!(snap.startup_document.as_deref(), Some(recorded.as_str()), "快照要带上待开的那份");
         assert_eq!(s.grants.files(), &[PathBuf::from(&recorded)], "只授权这一份文件");
         assert!(s.grants.roots().is_empty(), "⛔ 不许顺手把父目录加进 roots");
         assert_eq!(s.grants.root_generation(), 0, "文件授权不动树的代次");
+    }
+
+    /// ⭐⭐ `bugs/0301` 的原始症状：**已经开着一个目录**时点一条**文件**收藏。
+    ///
+    /// `Session::mode()` 判 `roots` 优先 ⇒ 快照的 `mode` 仍是 `"directory"`；
+    /// 前端若照 `mode` 分派就会走"空态 + 树"那一支，把 `startup_document` 丢掉
+    /// （表现："点了没反应"）。⇒ 这一格必须由 `opened_favorite` 说清。
+    #[test]
+    fn 收藏打开_已开着目录时打开文件收藏_快照仍标file() {
+        let t = TestDir::new("open-fav-file-with-root");
+        let root = fav_case(&t, "root");
+        let notes = t.dir("notes");
+        let md = notes.join("a.md");
+        std::fs::write(&md, "# x").unwrap();
+        let recorded = std::fs::canonicalize(&md).unwrap().display().to_string();
+
+        let mut s = session(t.p().join("config.json"));
+        enter_directory(&mut s, AuthSource::Picked(Path::new(&root))).expect("先开一个目录");
+        s.config.favorites = vec![recorded.clone()];
+        assert_eq!(s.mode().as_str(), "directory", "前提：会话现在是目录模式");
+
+        let snap = open_favorite_recorded(&mut s, &recorded).expect("文件收藏必须能开");
+        assert_eq!(snap.mode, "directory", "⚠️ `mode` 判 roots 优先 ⇒ 这里是本条要绕开的陷阱");
+        assert_eq!(snap.opened_favorite, Some("file"), "⛔ 前端只能靠这一栏分派");
+        assert_eq!(snap.startup_document.as_deref(), Some(recorded.as_str()), "待开的那份必须随快照回去");
+        assert_eq!(snap.roots, vec![root], "文件收藏不动 roots");
+        assert_eq!(s.grants.files(), &[PathBuf::from(&recorded)], "只加这一份文件授权");
+
+        // ⚠️ 它不是"粘住的状态"：下一次普通快照必须回到 `None`，否则别的命令会被误判。
+        assert_eq!(snapshot(&s).opened_favorite, None, "⛔ `opened_favorite` 只描述这一次操作");
     }
 
     #[test]

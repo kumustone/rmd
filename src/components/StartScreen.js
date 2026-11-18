@@ -1,4 +1,5 @@
-// 启动页 —— `#doc` 空态里那两张表：「最近的目录」与「收藏」（`design/0038` §2.1 ／ `design/0043` §2.6）。
+// 启动页 —— `#doc` 空态里的三段：「开始」「收藏」「最近的目录」
+// （`design/0038` §2.1 ／ `design/0043` §2.6 ／ `design/0081` §2.1 ③）。
 //
 // # 它是什么 / 不是什么
 //
@@ -23,6 +24,19 @@
 // ⚠️ 版式顺序与 `allEls()` 的焦点顺序**必须同源**——两处各写一份，
 // 表现是"↓ 从最后一行跳到看不见的地方"。
 //
+// # ⭐ 「开始」段（`design/0081` §2.1 ③，2026-11-15 用户点题）
+//
+// 用户原话：「导航页新增 打开的功能，有点类似 Vscode 的导航页。」
+// ⇒ 导航页最上面多一段**可点的入口**：打开… / 打开文件… / 快速打开…（目录模式下才有）。
+// · ⚠️ 动作名与键位**都不在本文件**：`opts.labelText(id)` / `opts.keyText(id)` 由
+//   `main.js` 从后端 `SHORTCUTS` 表现取（`INV-SET-01` / `INV-START-08`）。
+//   ⛔ 别在这儿写"打开…"/"⌘O"——那是第二个真值，菜单一改名导航页就静默说错话。
+// · ⚠️ 点击走 `opts.runAction(id, 'menu')`（`main.js` 里就是 `keymap.dispatch`），
+//   ⛔ 不在这里直接调 `onOpen` 之类：动作只能有一份实现（`INV-SET-02`）。
+// · ⭐ 顺序：**开始 → 收藏 → 最近**，`allEls()` 同源（`INV-START-09`）。
+// · ⚠️ 它让"全空"的导航页也有东西可看——这正是"新窗口默认打开导航页"要的效果；
+//   数字键**仍然只映射最近段**（`INV-FAV-05` 的原意不变）。
+//
 // # ⭐ 收藏段（`design/0043`）
 //
 // · **数字键只映射最近表**（`INV-FAV-05`）：两段编号会随收藏条数漂移。
@@ -40,6 +54,15 @@
 // · ⚠️ 两件事都**只改 `config.json` 的 `dir_sessions` ＋ `last_directory`**
 //   （后端 `recent_apply`）：⛔ 不删文件、⛔ 不动授权、⛔ 不动收藏。
 
+//
+// # ⭐ 打开失败的归因（`design/0070` §2.4）
+//
+// 打开一行是**三段**：① 授权/打开（收藏那条走 `open_favorite`）、② 打开文档、③ 刷新侧边栏。
+// ⚠️ 对整条链一个 `catch` 会把"刷新列表失败"说成"这条收藏打不开"（`bugs/0319`）。
+// ⇒ `onOpen` / `onOpenFavorite` **总是 resolve** `{ok, failedAt, note, err}`，
+//   由本文件按段落容器：`favorite` ⇒ 行标灰 ＋ 段内联；`document` ⇒ 只段内联；
+//   `refresh` ⇒ 什么都不改（中性状态条由界面层写）。段内联就是列表之后那条 `.start-note`。
+// ⚠️ `data-busy` 在**成功与失败**两条路上都要清（今天失败后一直不清，那一行从此点不动）。
 //
 // # 焦点纪律
 //
@@ -71,22 +94,43 @@
    * @param {object} opts
    *   · `onOpen(root)` —— 必填，返回 Promise（拒绝 ⇒ 这一行标成"打不开"）
    *   · `onOpenFavorite(path)` —— 可选，打开一条收藏（缺省 = 收藏行不响应点击）
+   *   · ⭐ `onOpenInNewWindow(kind, value)` —— 可选，两张行菜单的「在新窗口中打开」
+   *     （`design/0071` §5）。`kind ∈ {favorite, recent}`；`value` 是**后端记录的原串**。
+   *     ⚠️ 本文件**不碰 IPC**（与 `onUnfavorite` 等同一条纪律）：命令落在 `main.js`。
+   *     ⛔ 这里不拼路径、⛔ 不判可达性（授权在新窗口自己的命令里做）。
    *   · `onUnfavorite(path)` —— 可选，收藏行菜单「取消收藏」
    *   · `onMoveFavorite(path, delta)` —— 可选，收藏行菜单「上移 / 下移」（`delta` = ∓1）
    *   · ⭐ `onForgetRecent(root)` —— 可选，最近行菜单「从列表移除」（`design/0045`）
    *   · ⭐ `onClearRecent()` —— 可选，「清空」第二下确认之后（`design/0045`）
-   *   · `onError(err, target)` —— 可选，界面层通报（状态栏一句，`INV-START-07`）
+   *   · `onError(err, target, info)` —— 可选，**兜底**通报（段内联落不下去时）；`info = {section, kind}`。
+   *     ⭐ `design/0070` §2.4：失败**不再**用 Promise 拒绝来表达——拒绝只剩"意外"。<br>
+   *     ⚠️ `onOpen` / `onOpenFavorite` 必须**总是 resolve** `{ok, failedAt, note, err}`：
+   *     `failedAt ∈ {favorite, document, refresh}`；`note = {key, vars, detail, retry}` 是段内联那句，
+   *     `note === null` 表示**已由别处报告**（例如 `openDocument` 的全局条）。
    *   · `overlayOpen()` —— 必填，任一覆盖层开着吗（`Settings`/`QuickOpen`/`FindBar`/`ImageViewer`）
+   *   · ⭐ `labelText(id)` —— 可选，「开始」段某一行的**动作名**（`design/0081`）。
+   *     缺省 = `main.js` 没接表 ⇒ **该行不画**（宁缺不错：⛔ 不拿 id 当文案）。
+   *   · ⭐ `keyText(id)` —— 可选，同一个动作的键位显示串（空串 ⇒ 不画那个胶囊）。
+   *   · ⭐ `runAction(id, source)` —— 可选，「开始」段某一行被点/回车时执行。
+   *     ⚠️ `main.js` 传的是 `keymap.dispatch(id, 'menu')`——⛔ 本文件不另写实现。
+   *   · ⭐ `canQuickOpen()` —— 可选，「快速打开…」此刻可用吗（缺省 `false` ⇒ 不画那一行）。
    */
   function createStartScreen(opts) {
     const onOpen = opts.onOpen;
     const onOpenFavorite = opts.onOpenFavorite || function () { return null; };
+    const onOpenInNewWindow = opts.onOpenInNewWindow || function () {};
     const onUnfavorite = opts.onUnfavorite || function () {};
     const onMoveFavorite = opts.onMoveFavorite || function () {};
     const onForgetRecent = opts.onForgetRecent || function () {};
     const onClearRecent = opts.onClearRecent || function () {};
     const onError = opts.onError || function () {};
     const overlayOpen = opts.overlayOpen || function () { return false; };
+    // ⭐ `design/0081` §2.1 ③：「开始」段的三个注入点。⚠️ 缺省都是"画不出来就不画"，
+    //    ⛔ 不回落成硬编码文案（`INV-START-08`）。
+    const labelText = opts.labelText || function () { return ''; };
+    const keyText = opts.keyText || function () { return ''; };
+    const runAction = opts.runAction || function () { return false; };
+    const canQuickOpen = opts.canQuickOpen || function () { return false; };
 
     /** 当前挂载的容器（`null` = 没显示）。 */
     let box = null;
@@ -96,6 +140,17 @@
     /** 收藏段的数据与行（`services/start.js::favoriteRows` 的产物）。 */
     let favData = [];
     let favEls = [];
+    /** ⭐ 「开始」段（`design/0081`）：`services/start.js::actionRows` 的产物（动作 id）与行。 */
+    let actData = [];
+    let actEls = [];
+    /**
+     * 两段的列表节点（`design/0070` §2.3.2：段内联提示挂在**列表之后**）。
+     * ⚠️ 重画时随 `box` 一起换 ⇒ `clearDom()` 必须把它们清成 `null`。
+     */
+    let favListEl = null;
+    let recentListEl = null;
+    /** 两段各自的提示节点（`null` = 没显示）。 */
+    let noteEls = { favorite: null, recent: null };
     /**
      * 行菜单（两张表共用，`design/0043` §2.3 ／ `design/0045`）。
      * ⚠️ 网页里的一层，⛔ 不是原生菜单——探针要能读到它。
@@ -112,10 +167,11 @@
     let bound = false;
 
     /**
-     * 两张表共用的焦点顺序：**收藏在前、最近在后**（`design/0045`，与版式同源）。
+     * 三段共用的焦点顺序：**开始 → 收藏 → 最近**（与版式同源，`INV-START-09`）。
      * ⚠️ ⛔ 别写 `rowEls.concat(favEls)`——那是上一版的顺序，用户明确要求收藏在上。
+     * ⚠️ `design/0081` 起「开始」段在最上面 ⇒ 它排第一；改这里必须同批改 `render`。
      */
-    function allEls() { return favEls.concat(rowEls); }
+    function allEls() { return actEls.concat(favEls, rowEls); }
 
     // ── 键盘模型（§2.1 第 4 条）─────────────────────────────────────────
 
@@ -189,7 +245,7 @@
       const r = data[i];
       if (!el || !r || el.dataset.busy === '1') return;
       el.dataset.busy = '1';
-      runOpen(el, r.root, function () { return onOpen(r.root); });
+      runOpen(el, r.root, 'recent', function () { return onOpen(r.root); });
     }
 
     /** 打开收藏表第 `i` 行（同一条双触发保护与失败可见，`INV-START-07`）。 */
@@ -198,30 +254,147 @@
       const r = favData[i];
       if (!el || !r || el.dataset.busy === '1') return;
       el.dataset.busy = '1';
-      runOpen(el, r.path, function () { return onOpenFavorite(r.path); });
+      runOpen(el, r.path, 'favorite', function () { return onOpenFavorite(r.path); });
     }
 
-    function runOpen(el, target, call) {
+    /**
+     * 打开一行，把结果**按段归因**（`design/0070` §2.4）。
+     *
+     * ⚠️ `call()` 必须**总是 resolve** `{ok, failedAt}`——⛔ 别改回"对整条链一个 `catch`"：
+     *    那正是 `bugs/0319` 的成因（收藏授权、文档打开、列表刷新三步共用一句
+     *    "这条收藏打不开"），用户看到的是一句**断言了错误成因**的话。
+     * ⚠️ 只有 `favorite` 才标灰那一行；`document` / `refresh` **不改变行**
+     *    （行变灰说的是"这个目标够不着了"，而刷新失败与目标无关）。
+     *
+     * @param {HTMLElement} el 被点的那一行（它是 `data-busy` 的唯一持有者）
+     * @param {string} target 原始路径（只用于兜底通报，⛔ 不进 DOM 属性）
+     * @param {('favorite'|'recent')} section 它在哪一段（段内联提示落在这里）
+     * @param {function(): (Promise<{ok:boolean, failedAt?:string, note?:object|null}>|object)} call
+     */
+    function runOpen(el, target, section, call) {
+      const finish = function (res) {
+        try {
+          if (!res || res.ok !== false) {
+            // ⭐ §2.3.2：打开成功 ⇒ 这一段之前的提示收起（用户要的东西已经出来了）。
+            if (res && res.ok) clearNote(section);
+            return;
+          }
+          const kind = (res.failedAt === 'favorite' || res.failedAt === 'refresh')
+            ? res.failedAt : 'document';
+          if (kind === 'favorite') {
+            // ⭐ `INV-START-07`：这一行**可操作性**变了，所以标灰 ＋ 一句提示；
+            //    ⛔ 不再由它承担"说原因"的职责（那句话是段内联的）。
+            el.dataset.missing = '1';
+            el.title = t('start.fav-missing');
+          }
+          // ⚠️ `note === null` = **已由别处报告**（例如 `openDocument` 的全局条）——
+          //    ⛔ 不再补一句，否则同一次失败会有两个锚点同时说话。
+          if (res.note === null) return;
+          if (res.note && res.note.key && showNote(section, res.note)) return;
+          // ⚠️ 段内联落不下去（这一段被重画掉了 / 没有挂载点）⇒ 退回中性状态条，
+          //    ⛔ 不假装行内说过。
+          onError(res.err || res, target, { section: section, kind: kind });
+        } finally {
+          // ⭐ §2.4：`data-busy` **无条件**清掉。今天失败之后它一直留着 ⇒
+          //    那一行从此点不动，而屏幕上没有任何解释。
+          delete el.dataset.busy;
+        }
+      };
+
       let p;
       try {
         p = call();
       } catch (err) {
-        fail(el, err, target);
+        // 同步抛 = 调用方违约（它本该 resolve）。按"文档打不开"处理：不标灰。
+        finish({ ok: false, err: err });
         return;
       }
-      Promise.resolve(p).catch(function (err) { fail(el, err, target); });
+      Promise.resolve(p).then(finish, function (err) {
+        // 拒绝 = 意外（不是产品路径）。同样不标灰，交给兜底通报。
+        finish({ ok: false, err: err });
+      });
+    }
+
+    // ── 段内联提示（`design/0070` §2.3.2）─────────────────────────────
+
+    /**
+     * 在 `section` 那张表**之后**挂一条提示：一句话 ＋ `重试` ＋ `关闭`。
+     *
+     * ⚠️ 为什么是段级、不是行级：行是 `<button role="listitem">`，往里塞第二段文字
+     *    会破坏 `role=list` 的子项结构；段级提示就在被点的那一行下面，
+     *    视觉上仍在"动作发生地"。
+     *
+     * @returns {boolean} `false` = 这一段没有挂载点（调用方退回状态条）
+     */
+    function showNote(section, note) {
+      const listEl = section === 'favorite' ? favListEl : recentListEl;
+      if (!box || !listEl || !listEl.parentNode) return false;
+      clearNote(section);
+
+      const el = document.createElement('div');
+      el.className = 'start-note';
+      // ⚠️ `P1`：`role=status` ＋ `polite`——⛔ 不是 `alert`（`INV-FAIL-06`）。
+      el.setAttribute('role', 'status');
+      el.setAttribute('aria-live', 'polite');
+
+      const text = document.createElement('span');
+      text.className = 'start-note-text';
+      text.textContent = t(note.key, note.vars || {});
+      // 后端给的成因（io kind / Denied label）只做悬停补全，⛔ 不进 `data-*`。
+      if (note.detail) text.title = String(note.detail);
+      el.appendChild(text);
+
+      if (typeof note.retry === 'function') {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'start-note-btn';
+        btn.textContent = t('fail.retry');
+        btn.addEventListener('click', function () {
+          if (btn.disabled) return;
+          btn.disabled = true;
+          Promise.resolve().then(note.retry).then(function (ok) {
+            if (ok !== false) { clearNote(section); return; }
+            btn.disabled = false;
+          }, function () {
+            // 重试又失败 ⇒ 同一条留着、按钮恢复（§6「不出现两条」）。
+            btn.disabled = false;
+          });
+        });
+        el.appendChild(btn);
+      }
+
+      const closeBtn = document.createElement('button');
+      closeBtn.type = 'button';
+      closeBtn.className = 'start-note-btn';
+      closeBtn.textContent = t('fail.close');
+      closeBtn.title = t('fail.close-hint');
+      closeBtn.addEventListener('click', function () { clearNote(section); });
+      el.appendChild(closeBtn);
+
+      listEl.parentNode.insertBefore(el, listEl.nextSibling);
+      noteEls[section] = el;
+      return true;
+    }
+
+    /** 收起 `section` 那一条提示（没显示时是空操作）。 */
+    function clearNote(section) {
+      const el = noteEls[section];
+      noteEls[section] = null;
+      if (el && el.parentNode) el.parentNode.removeChild(el);
     }
 
     /**
-     * ⭐ `INV-START-07`：打不开必须**可见**——行标 `data-missing`（变灰 ＋ 一句提示），
-     * 外加交给界面层的那一句（状态栏）。
-     * ⚠️ 不清 `data-busy`：这一行点过一次就维持"不可用"直到下一次重画——
-     * 目标可能只是**暂时**不可达（外置盘没插），重画（换语言/刷新）会再来一次。
+     * 界面层挂一条段内联失败（`main.js::noteStartFailure` 的唯一入口——
+     * 打开收藏之外的那几条：移出 / 清空最近目录）。
+     *
+     * @param {('favorite'|'recent')} section
+     * @param {{key:string, vars?:object, detail?:string, retry?:Function}} opts
+     * @returns {boolean} `false` = 启动页不在屏上 / 这一段没有挂载点
      */
-    function fail(el, err, target) {
-      el.dataset.missing = '1';
-      el.title = favEls.indexOf(el) >= 0 ? t('start.fav-missing') : t('start.row-missing');
-      onError(err, target);
+    function note(section, opts) {
+      if (section !== 'favorite' && section !== 'recent') return false;
+      if (!opts || !opts.key) return false;
+      return showNote(section, opts);
     }
 
     // ── 行菜单（`design/0043` §2.3 收藏行 ／ `design/0045` 最近行）───────────
@@ -307,7 +480,7 @@
     }
 
     /**
-     * 收藏行的菜单：取消收藏 / 上移 / 下移。
+     * 收藏行的菜单：在新窗口中打开 / 取消收藏 / 上移 / 下移。
      * @param {number} i 收藏行下标
      */
     function openFavMenu(i, x, y) {
@@ -315,6 +488,8 @@
       const r = favData[i];
       if (!el || !r) return;
       openRowMenu(el, [
+        // ⭐ `design/0071` §5：**主操作**排第一。⚠️ 菜单项不放加速键、⛔ 不出现键位字面量。
+        { key: 'start.menu.new-window', run: function () { onOpenInNewWindow('favorite', r.path); } },
         { key: 'start.menu.unfavorite', run: function () { onUnfavorite(r.path); } },
         // ⚠️ 「上移 / 下移」的**目标下标**由 `session.js` 在队首执行时现算，
         //    这里只表达"往哪个方向"——两处各算一份就会分叉。
@@ -332,7 +507,7 @@
     }
 
     /**
-     * 最近行的菜单（`design/0045`）：只有「从列表移除」。
+     * 最近行的菜单（`design/0045`）：在新窗口中打开 / 从列表移除。
      * ⚠️ 传的是**后端给的原串** `r.root`（⛔ 不是屏幕上那个 `~` 缩写）。
      */
     function openRecentMenu(i, x, y) {
@@ -340,6 +515,8 @@
       const r = data[i];
       if (!el || !r) return;
       openRowMenu(el, [
+        // ⭐ `design/0071` §5：**主操作**排第一；⛔ 不放加速键、⛔ 不出现键位字面量。
+        { key: 'start.menu.new-window', run: function () { onOpenInNewWindow('recent', r.root); } },
         { key: 'start.menu.forget', run: function () { onForgetRecent(r.root); } },
       ], x, y);
     }
@@ -358,22 +535,70 @@
 
     /**
      * 把启动页画进 `host`（`main.js` 建的 `.doc-empty`）。
-     * ⚠️ 两张表都为空 ⇒ **什么都不画**（与今天逐字节相同，§2.1 第 2 条）——
+     * ⚠️ ⭐ `design/0081` 起：只要 `host` 在就**总能画出「开始」段**（除非动作名取不到）。
+     * ⛔ 别再写"两张表都空就什么都不画"——那会让空会话的新窗口看起来是**一张白页**
+     * （用户 2026-11-15 第 2 条要的正是"一眼看出这是导航页"）。
      * `host` 里那句提示语是 `main.js` 写的，本文件⛔ 不动它。
      */
     function render(host, recent, favorites) {
       data = Start.rows(recent);
       favData = Start.favoriteRows(favorites);
+      actData = Start.actionRows(canQuickOpen());
       clearDom();
-      if (!host || (data.length === 0 && favData.length === 0)) {
+      if (!host) {
         box = null;
         rowEls = [];
         favEls = [];
+        actEls = [];
         unbind();
         return;
       }
       box = document.createElement('div');
       box.className = 'start';
+      actEls = [];
+
+      // ⭐ `design/0081` §2.1 ③：「开始」段在最上面（VS Code 欢迎页那种"这里能做什么"）。
+      //    ⚠️ 取不到动作名就**整段不画**（`INV-START-08`：宁缺不错，⛔ 不拿 id 当文案）。
+      const actRows = actData.filter(function (id) { return labelText(id) !== ''; });
+      if (actRows.length) {
+        const title = document.createElement('p');
+        title.className = 'start-title start-act-title';
+        title.textContent = t('start.act-title');
+        box.appendChild(title);
+
+        const list = document.createElement('div');
+        list.className = 'start-list start-act-list';
+        list.setAttribute('role', 'list');
+        actEls = [];
+        for (let i = 0; i < actRows.length; i++) {
+          const id = actRows[i];
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'start-row start-act-row';
+          btn.setAttribute('role', 'listitem');
+          // ⚠️ 机器读的标记（探针 / 测试认行用），⛔ 不往这里写文案（`INV-I18N-04`）。
+          btn.dataset.action = id;
+          // ⭐ 键位胶囊：表里没给（IPC 失败 / ACL 少一条）就不画——宁可少说，不能说错。
+          const key = keyText(id);
+          if (key) {
+            const k = document.createElement('span');
+            k.className = 'start-key';
+            k.textContent = key;
+            btn.appendChild(k);
+          }
+          const name = document.createElement('span');
+          name.className = 'start-name';
+          name.textContent = labelText(id);
+          btn.appendChild(name);
+          btn.addEventListener('click', (function (aid) {
+            return function () { runAction(aid, 'menu'); };
+          })(id));
+
+          list.appendChild(btn);
+          actEls.push(btn);
+        }
+        box.appendChild(list);
+      }
 
       // ⭐ `design/0045`（用户 2026-10-25 点题）：「收藏」在**上面**、「最近的目录」在下面。
       //    ⚠️ 视觉顺序与 `allEls()` 必须同源，⛔ 别只改这里（`B7` 判据就是这一条）。
@@ -422,6 +647,7 @@
           favEls.push(btn);
         }
         box.appendChild(list);
+        favListEl = list;
       }
 
       if (data.length) {
@@ -447,14 +673,16 @@
         box.appendChild(head);
 
         const list = document.createElement('div');
-        list.className = 'start-list';
+        // ⚠️ `start-recent-list` 是**显式段名**（`design/0081` 起有三段，
+        //    "第一个不是收藏表的列表"这种选法会把「开始」段选进来）。
+        list.className = 'start-list start-recent-list';
         list.setAttribute('role', 'list');
         rowEls = [];
         for (let i = 0; i < data.length; i++) {
           const r = data[i];
           const btn = document.createElement('button');
           btn.type = 'button';
-          btn.className = 'start-row';
+          btn.className = 'start-row start-recent-row';
           btn.setAttribute('role', 'listitem');
           // ⭐ 原生 `title` 给全路径：行里显示的是 `~` 缩写，悬停能看全
           btn.title = r.root;
@@ -511,6 +739,18 @@
           rowEls.push(btn);
         }
         box.appendChild(list);
+        recentListEl = list;
+      }
+
+      // ⚠️ 三段全空（表还没到 / 动作名取不到 / 两份数据都空）⇒ 与旧空态一致：
+      //    ⛔ 不挂一个空的 `.start` 壳，⛔ 不挂 document 监听（挂上去也一个键都不接）。
+      if (!actRows.length && !favData.length && !data.length) {
+        box = null;
+        rowEls = [];
+        favEls = [];
+        actEls = [];
+        unbind();
+        return;
       }
 
       host.appendChild(box);
@@ -570,6 +810,10 @@
       disarmClear();
       if (box && box.parentNode) box.parentNode.removeChild(box);
       box = null;
+      // ⚠️ 段内联提示随 `box` 一起消失（§2.3.2：段重画 ⇒ 收起），引用必须同批清空。
+      favListEl = null;
+      recentListEl = null;
+      noteEls = { favorite: null, recent: null };
     }
 
     function bind() {
@@ -591,6 +835,8 @@
       rowEls = [];
       favData = [];
       favEls = [];
+      actData = [];
+      actEls = [];
       unbind();
     }
 
@@ -600,6 +846,9 @@
     /** 现在有几行收藏（同上）。 */
     function favoriteCount() { return favData.length; }
 
+    /** ⭐ 现在有几行「开始」（`design/0081`；同上）。 */
+    function actionCount() { return actEls.length; }
+
     /** 现在是不是正挂着（空态重画前要判它，⛔ 别拿 `count()` 顶替：只收藏时它也是 0）。 */
     function visible() { return !!box; }
 
@@ -608,7 +857,10 @@
       clear: clear,
       count: count,
       favoriteCount: favoriteCount,
+      actionCount: actionCount,
       visible: visible,
+      // ⭐ `design/0070` §2.3.2：界面层（移出/清空最近目录失败）挂段内联提示的入口。
+      note: note,
     };
   }
 

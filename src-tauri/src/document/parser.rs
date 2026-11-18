@@ -506,6 +506,56 @@ mod tests {
         assert!(html.contains("type=\"checkbox\""), "复选框不见了\n{html}");
     }
 
+    /// ⭐ **松散**任务列表：方框必须写进**首段内部**（`bugs/0302`，2026-11-09 用户报告）。
+    ///
+    /// 症状：用户原话「如果输出超过一行，所有的内容都到第二行去了」。
+    /// comrak 0.56 的 `render_task_item` 把 `<input>` 直接写在 `<li>` 下，而**松散**列表
+    /// 的正文被包进 `<p>`（块级）⇒ 方框独占第一行，正文整段从第二行开始——
+    /// **与"词太长"无关**，任何一个松散任务项都是这样（离屏实测方框顶 280.52 /
+    /// 首字顶 300.77，行高 23.80）。
+    ///
+    /// ⚠️ 反面同样重要：**紧凑**列表的输出必须**逐字节不变**（方框仍在 `<li>` 下）。
+    ///    两者只差一个空行，改坏了没有任何报错，只有图上能看出来 ⇒ 两条一起钉。
+    #[test]
+    fn 松散任务列表把方框写进首段() {
+        let opts = ParseOpts::default();
+
+        // 项与项之间有空行 ⇒ 整张列表变 loose，正文被包进 `<p>`
+        let loose = "- [ ] 甲\n\n- [x] 乙\n";
+        let html = with_parsed(loose, &opts, |r| crate::document::render::to_html(r, &opts));
+        assert!(
+            html.contains(
+                "<p><input type=\"checkbox\" class=\"task-list-item-checkbox\" disabled=\"\" /> 甲</p>"
+            ),
+            "松散任务项的方框没有写进首段 ⇒ 方框会独占第一行、正文整段掉到第二行\n{html}"
+        );
+        assert!(
+            html.contains(
+                "<p><input type=\"checkbox\" class=\"task-list-item-checkbox\" checked=\"\" disabled=\"\" /> 乙</p>"
+            ),
+            "已勾选的松散任务项同样要把方框写进首段（`checked` 顺序照 comrak）\n{html}"
+        );
+        // ⚠️ 方框**不许**同时留在 `<li>` 下（那会画两个方框）
+        assert!(
+            !html.contains("<li class=\"task-list-item\"><input"),
+            "松散任务项的方框被写了两遍\n{html}"
+        );
+
+        // 反面：紧凑列表（没有空行）⇒ 输出照旧，方框在 `<li>` 下
+        let tight = "- [ ] 甲\n- [x] 乙\n";
+        let tight_html = with_parsed(tight, &opts, |r| crate::document::render::to_html(r, &opts));
+        assert!(
+            tight_html.contains(
+                "<li class=\"task-list-item\"><input type=\"checkbox\" class=\"task-list-item-checkbox\" disabled=\"\" /> 甲</li>"
+            ),
+            "紧凑任务项的输出被改动了（`bugs/0302` 只该动松散列表）\n{tight_html}"
+        );
+        assert!(
+            !tight_html.contains("<p><input"),
+            "紧凑列表不该多出 `<p>` 包裹\n{tight_html}"
+        );
+    }
+
     /// ⭐ `$` 的**边界 13 例**（`design/0007` §7.2 第 3 条）。
     ///
     /// ⚠️ 逐例的**一手依据**是 `docs/research/notes/0009` §2.1 那张表

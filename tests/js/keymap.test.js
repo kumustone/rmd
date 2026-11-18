@@ -51,15 +51,27 @@ const K = require('../../src/services/keymap.js');
 const TABLE = [
   { id: 'settings.open', label: '设置…', accel: 'Cmd+,', display: '⌘,', owner: 'menu', aliases: [] },
   { id: 'view.toggle-sidebar', label: '显示/隐藏侧边栏', accel: 'Cmd+B', display: '⌘B', owner: 'menu', aliases: [] },
+  // ⭐ `design/0071` §5（阶段 4）：`⇧⌘N` = 新建窗口。
+  //    ⚠️ `owner: 'menu'` —— 键由 AppKit 菜单加速键收，**整个动作在 Rust 里建窗**
+  //    （`handle_menu_event` 先认 `window.new`，⛔ 不转发前端）。
+  //    ⇒ `buildBindings` **不产出**它；前端再加一份就是"按一次开两个窗口"（`INV-SET-04`）。
+  { id: 'window.new', label: '新建窗口', accel: 'Cmd+Shift+N', display: '⇧⌘N', owner: 'menu', aliases: [] },
   // ⭐ `design/0037`：`⇧⌘B` 折叠顶栏（`owner: 'web'`、⛔ 不进菜单，与 `⌘E` 同形）。
   { id: 'view.toggle-chrome', label: '显示/隐藏顶栏', accel: 'Shift+Cmd+B', display: '⇧⌘B', owner: 'web', aliases: [] },
   {
-    id: 'file.open-directory', label: '打开目录…', accel: 'Cmd+O', display: '⌘O', owner: 'web',
+    id: 'file.open', label: '打开…', accel: 'Cmd+O', display: '⌘O', owner: 'web',
     aliases: ['Ctrl+O'],
   },
   {
     id: 'file.open-file', label: '打开文件…', accel: 'Shift+Cmd+O', display: '⇧⌘O', owner: 'web',
     aliases: ['Shift+Ctrl+O'],
+  },
+  // ⭐ `design/0071` §4.2（阶段 3）：`⌘N` = 在当前目录新建一份空 `.md`。
+  //    ⚠️ `owner: 'web'` —— 动作全在前端（展开侧边栏、定位目录、复用既有输入行），
+  //    Rust 侧一个字节都不参与；⛔ 别因为"菜单里有一项"就把它改成 `menu`（那样会两面都响应）。
+  {
+    id: 'file.new', label: '新建文件…', accel: 'Cmd+N', display: '⌘N', owner: 'web',
+    aliases: ['Ctrl+N'],
   },
   {
     id: 'reader.font-inc', label: '放大字号', accel: 'Cmd+=', display: '⌘=', owner: 'web',
@@ -73,6 +85,15 @@ const TABLE = [
     id: 'reader.font-reset', label: '复位字号', accel: 'Cmd+0', display: '⌘0', owner: 'web',
     aliases: ['Ctrl+0'],
   },
+  // ⭐ `design/0056`（2026-11-16 由 `⇧⌘H` 改来、同日定为 `⌘L`）：回导航页；与 `⌘0` 是**不同**的两条。
+  { id: 'view.start', label: '回到导航页', accel: 'Cmd+L', display: '⌘L', owner: 'web', aliases: [] },
+  // ⭐ `design/0077`：多格式复制的五条（全 `owner: 'web'`，菜单项无原生加速键，
+  //    由前端 `dispatch` 收；⚠️ 它们的菜单来源要在编辑焦点下**放行**）。
+  { id: 'edit.copy-markdown', label: '复制为 Markdown', accel: 'Shift+Cmd+M', display: '⇧⌘M', owner: 'web', aliases: [] },
+  { id: 'edit.copy-html', label: '复制为 HTML 源码', accel: 'Shift+Cmd+K', display: '⇧⌘K', owner: 'web', aliases: [] },
+  { id: 'edit.copy-plain', label: '复制为纯文本', accel: 'Alt+Cmd+P', display: '⌥⌘P', owner: 'web', aliases: [] },
+  { id: 'edit.copy-rich', label: '复制为富文本', accel: 'Shift+Cmd+R', display: '⇧⌘R', owner: 'web', aliases: [] },
+  { id: 'edit.paste-literal', label: '粘贴为字面 Markdown 源码', accel: 'Shift+Cmd+L', display: '⇧⌘L', owner: 'web', aliases: [] },
   // ⭐ `design/0006`（⛔ 夹具里**漏了这两条很久**，2026-10-15 补上）：
   //    它们是 §2.3-4 转发白名单上**最要紧**的两项（`⌘S` 与 `⌘E`），
   //    夹具少两条 ⇒ 上面那些"整表"断言其实一直在**少测两条**，而且**全绿**。
@@ -165,20 +186,22 @@ test('裸的减号与等号不命中任何动作', function () {
 });
 
 test('规范形式本身就命中_不是只靠别名', function () {
-  assert.strictEqual(K.matchEvent(BINDINGS, key({ metaKey: true, key: 'o' })), 'file.open-directory');
+  assert.strictEqual(K.matchEvent(BINDINGS, key({ metaKey: true, key: 'o' })), 'file.open');
   assert.strictEqual(K.matchEvent(BINDINGS, key({ metaKey: true, key: '-' })), 'reader.font-dec');
   assert.strictEqual(K.matchEvent(BINDINGS, key({ metaKey: true, key: '=' })), 'reader.font-inc');
+  // ⚠️ 2026-11-16：`⌘L` 归 `view.start`（回导航页）；`⌘0` 仍是复位字号。
   assert.strictEqual(K.matchEvent(BINDINGS, key({ metaKey: true, key: '0' })), 'reader.font-reset');
+  assert.strictEqual(K.matchEvent(BINDINGS, key({ metaKey: true, key: 'l' })), 'view.start');
 });
 
 test('Shift 是精确的_不大于也不小于', function () {
-  // ⭐ `⇧⌘O` 归 `file.open-file`，⛔ **不许**顺带触发 `file.open-directory`
+  // ⭐ `⇧⌘O` 归 `file.open-file`，⛔ **不许**顺带触发 `file.open`
   //    ——一个键两个动作正是 `INV-SET-04` 要守的东西（表现是"开两次对话框"）。
   assert.strictEqual(K.matchEvent(BINDINGS, key({ metaKey: true, shiftKey: true, key: 'O' })), 'file.open-file');
-  assert.strictEqual(K.matchEvent(BINDINGS, key({ metaKey: true, key: 'O' })), 'file.open-directory');
+  assert.strictEqual(K.matchEvent(BINDINGS, key({ metaKey: true, key: 'O' })), 'file.open');
   // ⚠️ 大写 `O` 与小写 `o` **是同一个键**（macOS 上 `⌘⇧O` 才给大写，
   //    所以"大写 ⇒ 要 Shift"那种推法是错的，这里靠 `normalizeKey` 折平）。
-  assert.strictEqual(K.matchEvent(BINDINGS, key({ metaKey: true, key: 'O' })), 'file.open-directory');
+  assert.strictEqual(K.matchEvent(BINDINGS, key({ metaKey: true, key: 'O' })), 'file.open');
 });
 
 test('多按一个修饰键就不命中', function () {
@@ -192,24 +215,36 @@ test('菜单自己的键不在绑定表里', function () {
   //    ⛔ 若这里命中了，两面都会响应同一个键（`INV-SET-04` 的"重叠"）。
   assert.strictEqual(K.matchEvent(BINDINGS, key({ metaKey: true, key: 'b' })), null);
   assert.strictEqual(K.matchEvent(BINDINGS, key({ metaKey: true, key: ',' })), null);
+  // ⭐ `design/0071` §5（阶段 4）：`⇧⌘N` 归菜单（`window.new`）——Rust 建窗，⛔ 前端不接。
+  //    前端再接一份 = 按一次开两个窗口（`INV-SET-04` 的"重叠"）。
+  assert.strictEqual(K.matchEvent(BINDINGS, key({ metaKey: true, shiftKey: true, key: 'n' })), null);
 });
 
 test('绑定表只含_web_的项_条数对得上', function () {
   const owners = BINDINGS.map(function (b) { return b.id; });
   assert.ok(owners.indexOf('settings.open') < 0);
   assert.ok(owners.indexOf('view.toggle-sidebar') < 0);
-  // ⭐ 逐项数：`file.open-directory` 2（accel+1 别名）、`file.open-file` 2、
+  // ⭐ `design/0071` §5（阶段 4）：`window.new` 也是 `owner: 'menu'` ⇒ 不进绑定表。
+  assert.ok(owners.indexOf('window.new') < 0);
+  // ⭐ 逐项数：`file.open` 2（accel+1 别名）、`file.open-file` 2、
   //    `reader.font-inc` 4、`reader.font-dec` 4、`reader.font-reset` 2、
   //    ⭐ `file.save` 1（**刻意没有** Ctrl 别名）、
   //    ⭐ `edit.toggle` 2（`accel` ＋ `Ctrl+E` 别名，`design/0012`）、
   //    `file.open-external-editor` 2（`accel` ＋ `Shift+Ctrl+E` 别名）、
   //    ⭐ `file.quick-open` 1、`file.refresh-index` 1（`design/0009`，都无别名）、
   //    ⭐ `edit.find` 1、`edit.find-next` 1、`edit.find-prev` 1（`design/0011`，都无别名）、
-  //    ⭐ `view.toggle-chrome` 1（`design/0037`，无别名）⇒ 25。
+  //    ⭐ `view.toggle-chrome` 1（`design/0037`，无别名）、
+  //    ⭐ `file.new` 2（`accel` ＋ `Ctrl+N` 别名，`design/0071` 阶段 3）、
+  //    ⭐ `file.export-html` 1、`file.export-pdf` 1（`design/0076`，都无别名）、
+  //    ⭐ `edit.replace` 1（`design/0075`，无别名）、
+  //    ⭐ `design/0077` 的五条复制/粘贴各 1（都无别名）⇒ 32；
+  //    ⭐ `design/0056` 的 `view.start` 1（无别名，2026-11-16 由 `⇧⌘H` 改 `⌘L`）⇒ 33。
+  //    ⭐ `design/0071` §5（阶段 4）新增的 `window.new` 是 `owner: 'menu'`
+  //       ⇒ **不进** `BINDINGS`（`SHORTCUTS` 表本身 +1，但绑定表只数 `web` 项）。
   //    ⚠️ 别名**不是**等价写法（`Cmd++` 是另一个物理按键），所以它们**必须**各占一条。
   //    ⚠️ 这个数是**算出来的**，不是抄来的：`⌘E`/`⇧⌘E` 那两条 2026-10-16 换过键，
   //       但两者**都带一个别名**，所以总数只因为多了 `edit.toggle` 这一项 **+2**。
-  assert.strictEqual(BINDINGS.length, 25);
+  assert.strictEqual(BINDINGS.length, 33);
 });
 
 test('每条 accel 与别名都能切出非空的键名', function () {
@@ -247,7 +282,7 @@ test('web_项缺_accel_要响亮报错_不许静默只剩别名', function () {
   let b;
   try {
     b = K.buildBindings([
-      { id: 'file.open-directory', owner: 'web', aliases: ['Ctrl+O'] },        // ⛔ 没有 accel
+      { id: 'file.open', owner: 'web', aliases: ['Ctrl+O'] },        // ⛔ 没有 accel
       { id: 'reader.font-inc', owner: 'web', accel: 'Cmd+=', aliases: [] },     // ✅ 正常
       { id: 'settings.open', owner: 'menu', aliases: [] },                      // ⛔ menu 不管它
     ]);
@@ -255,7 +290,7 @@ test('web_项缺_accel_要响亮报错_不许静默只剩别名', function () {
     console.error = orig;
   }
   assert.strictEqual(shouted.length, 1);
-  assert.ok(shouted[0].indexOf('file.open-directory') >= 0);
+  assert.ok(shouted[0].indexOf('file.open') >= 0);
   assert.ok(shouted[0].indexOf('accel') >= 0);
   // ⚠️ 剩下的那条**照常**挂上——一个坏项不该把整张表废掉。
   assert.deepStrictEqual(b, [{ id: 'reader.font-inc', accel: 'Cmd+=' }]);
@@ -359,6 +394,49 @@ test('可编辑焦点_菜单路径_不执行', function () {
   assert.strictEqual(w.calls.length, 0);
 });
 
+test('design/0077：声明的菜单动作在编辑焦点下**放行**，其余照旧挡住', function () {
+  // ⭐ 就地/分栏编辑时焦点在 `contenteditable` 里，而菜单里的「复制为 Markdown」
+  //    本来就应该可用；不放行的话从菜单点下去**没有任何反应**（静默）。
+  const ctx = muteCtx({ editable: true });
+  ctx.allowEditable = function (id, source) {
+    return source === 'menu' && id === 'edit.copy-markdown';
+  };
+  const w = wired(TABLE, ctx);
+  assert.strictEqual(w.km.dispatch('edit.copy-markdown', 'menu'), true);
+  assert.deepStrictEqual(w.calls, [{ id: 'edit.copy-markdown', arg: { id: 'edit.copy-markdown', source: 'menu' } }]);
+  // ⚠️ 只放行**点名的那一条**：别的菜单动作照旧被可编辑焦点挡住。
+  assert.strictEqual(w.km.dispatch('reader.font-inc', 'menu'), false);
+  assert.strictEqual(w.calls.length, 1);
+  // ⚠️ 键盘来源**不经过**这个钩子（`handleKeydown` 自己先挡），
+  //    否则编辑区里的 ⇧⌘M 会被应用抢走。
+  assert.strictEqual(w.km.dispatch('edit.copy-markdown', 'key'), false);
+  assert.strictEqual(w.calls.length, 1);
+});
+
+test('design/0077：allowEditable 必须**严格**返回 true；组合态仍然优先挡住', function () {
+  const ctx = muteCtx({ editable: true });
+  ctx.allowEditable = function () { return 'true'; };   // ⛔ 字符串不算
+  const w = wired(TABLE, ctx);
+  assert.strictEqual(w.km.dispatch('edit.copy-html', 'menu'), false);
+  assert.strictEqual(w.calls.length, 0);
+
+  const ctx2 = muteCtx({ editable: true, composing: true });
+  ctx2.allowEditable = function () { return true; };
+  const w2 = wired(TABLE, ctx2);
+  assert.strictEqual(w2.km.dispatch('edit.copy-html', 'menu'), false,
+    '⚠️ 输入法组合中从菜单复制仍要挡住（INV-SET-05 照旧）');
+  assert.strictEqual(w2.calls.length, 0);
+});
+
+test('design/0077：键盘路径对声明的复制 id 仍然挡住（放行只限菜单来源）', function () {
+  const ctx = muteCtx({ editable: true });
+  ctx.allowEditable = function () { return true; };
+  const w = wired(TABLE, ctx);
+  // ⇧⌘K 的形状（`edit.copy-html` 的规范键）
+  assert.strictEqual(w.km.handleKeydown(key({ metaKey: true, shiftKey: true, key: 'K' })), false);
+  assert.strictEqual(w.calls.length, 0);
+});
+
 test('可编辑元素的判据是标签与_contentEditable', function () {
   assert.strictEqual(K.isEditableElement({ tagName: 'INPUT' }), true);
   assert.strictEqual(K.isEditableElement({ tagName: 'TEXTAREA' }), true);
@@ -386,6 +464,29 @@ test('hasModifier_认三个修饰键_不含_Shift_且只认严格_true', functio
   //    本来就只会是布尔，但夹具/旧 WebKit 给 `1` 之类时**不许**被读成"按了 ⌘"。
   assert.strictEqual(K.hasModifier({ metaKey: 1 }), false);
   assert.strictEqual(K.hasModifier({ ctrlKey: 'true' }), false);
+});
+
+test('isOpenGesture_⌘_⇧_⌥_都算打开_只有_⌃_不算（bugs/0058）', function () {
+  // ⭐ 它是 `main.js::owns` 的判据：正文里的一次点击/回车**算不算"打开这条链接"**。
+  //    ⚠️ 与上一条是**两个问题**：`hasModifier` 问"带不带修饰键"（图像预览模态要用），
+  //    这条问"是不是打开的意思"。用错那一个 = `bugs/0058`（⌘+点击什么也不发生）。
+  //
+  // ⭐⭐ 口径 = 「系统把这个手势派给的动作，本程序有没有」：
+  //    没有 ⇒ 落点退化为"就在这儿打开"；有且有用 ⇒ ⛔ 不抢。
+  assert.strictEqual(K.isOpenGesture({ metaKey: true }), true, '⌘-点击必须能打开（bugs/0058）');
+  assert.strictEqual(K.isOpenGesture({ shiftKey: true }), true, '⇧-点击按普通点击处理（没有多窗口）');
+  // ⭐ `⌥`-点击在浏览器里是"下载"——本程序没有下载 ⇒ 落点同样是"就在这儿打开"。
+  //    ⚠️ 第一版把它判成"不接管"，与 `bugs/0058` 是**同一条错误的第二次**。
+  assert.strictEqual(K.isOpenGesture({ altKey: true }), true, '⌥-点击也要打开（没有下载功能）');
+  assert.strictEqual(K.isOpenGesture({ metaKey: true, shiftKey: true }), true);
+  assert.strictEqual(K.isOpenGesture({}), true, '普通点击');
+  // ⛔ `⌃`-点击在 AppKit 里就是右键：上下文菜单**是**本程序用得上的动作，抢过来会把它弄没。
+  assert.strictEqual(K.isOpenGesture({ ctrlKey: true }), false);
+  assert.strictEqual(K.isOpenGesture({ metaKey: true, ctrlKey: true }), false);
+  assert.strictEqual(K.isOpenGesture(null), false);
+  // ⚠️ 严格比较（与 `hasModifier` 同口径）：夹具给 `1`/`'true'` 不许被读成"按了修饰键"。
+  assert.strictEqual(K.isOpenGesture({ ctrlKey: 1 }), true, '`ctrlKey: 1` 不是按了 ⌃');
+  assert.strictEqual(K.isOpenGesture({ altKey: 'true' }), true);
 });
 
 // ────────────────────────────────────────────────────────────────
@@ -423,6 +524,86 @@ test('自检_多余的_handler_也要报出来', function () {
   assert.strictEqual(r.ok, false);
   assert.deepStrictEqual(r.extra, ['reader.some-removed-action']);
   assert.ok(r.note.indexOf('reader.some-removed-action') >= 0);
+});
+
+// ────────────────────────────────────────────────────────────────
+// ④b `SHORTCUTS` ↔ `main.js` 的**静态**一一对应（`INV-SET-02`② 的静态那一半）
+// ────────────────────────────────────────────────────────────────
+
+/**
+ * 解析 `src-tauri/src/gui/mod.rs` 里 `SHORTCUTS` 的 **id 集合**。
+ *
+ * ⚠️ **为什么运行时自检不够**（2026-11-15 实测，`docs/bugs/0325`）：
+ *    `checkActions` 只在**真应用启动**时跑，而 `tests/js` 里的 `wired()` 是**自己**给
+ *    每个 id 补 handler 的 ⇒ 产品漏注册一条时**测试全绿、启动日志却是红的**。
+ *    `window.new` 就是这么漏的（它由 Rust 建窗，前端确实不接键，但表里
+ *    **仍然**要有一个 handler，否则 `动作=全` 永远红）。
+ *
+ * ⚠️ `id:` 有三种写法：字面量、`MENU_*` 常量、`WINDOW_NEW_ID` ⇒ 常量必须**解析回值**，
+ *    ⛔ 别只认字面量（那会把真实存在的三项当成不存在）。
+ */
+function 解析表项id(rust源码) {
+  const src = stripComments(rust源码, false);
+  const 常量 = Object.create(null);
+  const 常量re = /const\s+([A-Z][A-Z0-9_]*)\s*:\s*&(?:\'static\s+)?str\s*=\s*"([^"]+)"\s*;/g;
+  let m;
+  while ((m = 常量re.exec(src))) 常量[m[1]] = m[2];
+  const 表 = /const\s+SHORTCUTS\s*:[^=]*=\s*&\[([\s\S]*?)\n\];/.exec(src);
+  if (!表) return null;
+  const out = [];
+  const idre = /id\s*:\s*(?:"([^"]+)"|([A-Z][A-Z0-9_]*))/g;
+  while ((m = idre.exec(表[1]))) {
+    const v = m[1] || 常量[m[2]];
+    if (v) out.push(v);
+  }
+  return out;
+}
+
+/** 解析 `src/main.js` 里 `keymap.register('…')` 的 id 集合（注释已被挖空）。 */
+function 解析注册id(main源码) {
+  const src = stripComments(main源码, false);
+  const out = [];
+  const re = /keymap\.register\(\s*'([^']+)'/g;
+  let m;
+  while ((m = re.exec(src))) out.push(m[1]);
+  return out;
+}
+
+test('④b 闸门：`SHORTCUTS` 的每一项在 `main.js` 都有 `keymap.register`，且没有表外的注册', function () {
+  const ROOT = path.join(__dirname, '..', '..');
+  const rust = 解析表项id(fs.readFileSync(path.join(ROOT, 'src-tauri', 'src', 'gui', 'mod.rs'), 'utf8'));
+  const 注册 = 解析注册id(fs.readFileSync(path.join(ROOT, 'src', 'main.js'), 'utf8'));
+  // ⚠️ 解析器退化成空集时下面两条会"同时通过"——所以先钉住规模。
+  assert.ok(rust && rust.length >= 30, '⛔ `SHORTCUTS` 没解析出来（解析器被改窄了？）');
+  assert.ok(注册.length >= 30, '⛔ `main.js` 的 `keymap.register` 没解析出来（解析器被改窄了？）');
+  const 缺 = rust.filter(function (id) { return 注册.indexOf(id) < 0; });
+  const 多 = 注册.filter(function (id) { return rust.indexOf(id) < 0; });
+  assert.deepStrictEqual(缺, [], '⛔ 表里有、`main.js` 没有 handler（启动自检会报，`动作=全` 会红）');
+  assert.deepStrictEqual(多, [], '⛔ 代码里接了、表里没有（迁移漏删）');
+});
+
+test('④b 解析器自测：常量 id 要解析回值，注释里的 register 不算数', function () {
+  const rust = [
+    'const WINDOW_NEW_ID: &str = "window.new";',
+    'const SHORTCUTS: &[Shortcut] = &[',
+    '    Shortcut { id: MENU_SETTINGS_ID, accel: "Cmd+," },',
+    '    Shortcut { id: WINDOW_NEW_ID, accel: "Cmd+Shift+N" },',
+    '    Shortcut { id: "file.save", accel: "Cmd+S" },',
+    '    // Shortcut { id: "commented.out" },',
+    '];',
+    'const MENU_SETTINGS_ID: &str = "settings.open";',
+  ].join('\n');
+  assert.deepStrictEqual(解析表项id(rust), ['settings.open', 'window.new', 'file.save']);
+  assert.strictEqual(解析表项id('// 没有表\nconst X: u8 = 1;'), null);
+
+  const main = [
+    "keymap.register('file.save', function () {});",
+    "// keymap.register('old.migration-leftover', function () {});",
+    "const 说明 = \"keymap.register('字面量里不算')\";",
+  ].join('\n');
+  // ⚠️ 字符串字面量里那一处我**不断言**（策略同 `stripComments` 的边界），只钉注释。
+  assert.deepStrictEqual(解析注册id(main).filter(function (id) { return id === 'file.save'; }), ['file.save']);
+  assert.ok(解析注册id(main).indexOf('old.migration-leftover') < 0);
 });
 
 test('表外的_id_不执行且响亮', function () {
@@ -463,9 +644,9 @@ test('dispatch 会带上来源_两条路径都到同一个 handler', function ()
   // ⭐ `INV-SET-02`：菜单点击**不走**键绑定，但要走**同一个** `dispatch`。
   const w = wired();
   w.km.handleKeydown(key({ metaKey: true, key: 'o' }));
-  w.km.dispatch('file.open-directory', 'menu');
+  w.km.dispatch('file.open', 'menu');
   assert.deepStrictEqual(w.calls.map(function (c) { return c.arg.source; }), ['key', 'menu']);
-  assert.deepStrictEqual(w.calls.map(function (c) { return c.arg.id; }), ['file.open-directory', 'file.open-directory']);
+  assert.deepStrictEqual(w.calls.map(function (c) { return c.arg.id; }), ['file.open', 'file.open']);
 });
 
 test('命中才_preventDefault_没命中不动', function () {
@@ -666,7 +847,7 @@ test('本地按键处理是白名单_新增文件必须说明理由', function (
   //      与 `FileTree.js` 的 `Enter` **同族**（"激活当前元素"），只在焦点落在
   //      `<a href>` 上时生效，⛔ 不是全局快捷键。⚠️ 三处纪律都守住了：
   //      组合态先挡（`isComposing`/`keyCode 229`，否则中文上屏的空格会变成"打开链接"）、
-  //      修饰键**转调** `K.hasModifier(e)`（上面那条闸门照旧成立）、
+  //      手势判据**转调** `K.isOpenGesture(e)`（`bugs/0058` 起；上面那条闸门照旧成立）、
   //      而且它是 `#doc` 上的**委托**（正文被整棵替换后不需要重挂）。
   //    ⭐ `services/treerefresh.js`（`design/0034`）：文件树**就地输入行**的
   //      `Enter` 提交 / `Esc` 取消。⚠️ 它是**纯函数**（`inputAction`），不是事件绑定——
@@ -694,10 +875,22 @@ test('本地按键处理是白名单_新增文件必须说明理由', function (
   //      ⚠️ 它挂在 `#tree-root-header` 上（⛔ 不是 `document`），只有焦点真走到根头才生效；
   //      组合态与修饰键**一律转调** `K.isComposingEvent` / `K.hasModifier` ⇒
   //      上面那条「修饰键标识符只在 keymap.js」照旧成立。
+  //    ⭐ `design/0071` §3：`components/OpenPanel.js` 是**打开面板自己的**键盘模型
+  //      （`↑`/`↓` 在最近行间移选中、`Enter` 打开、`Esc` 关、`Tab` 收回面板）。
+  //      ⚠️ 与 `QuickOpen` 同族：`document` capture，但**只在面板开着时生效**
+  //      （`if (!opened) return` 是第一句）；它认的是 `e.key` 而非应用快捷键，
+  //      组合态**转调** `K.isComposingEvent` ⇒ 「修饰键标识符只在 keymap.js」照旧成立。
+  //    ⭐ `services/openpanel.js`（`design/0071` §3.1）：面板键盘的**纯函数**那半
+  //      （`actionForKey`：`Esc`→关、`↑`/`↓`→移选中、`Enter`→打开、`Tab`→收回面板）。
+  //      ⚠️ 与 `services/treerefresh.js::inputAction` 同一条理由——抽出来才进得了
+  //      `node --test`（那里没有 DOM），而它的错法**全是静默的**（`Esc` 没拦下 ⇒
+  //      用户以为关了、字全落进黑洞）。⛔ 它**不判修饰键**：带修饰键的事件由
+  //      `components/OpenPanel.js` 转调 `K.hasModifier` 挡在外面。
   const ALLOWED = ['components/FileTree.js', 'components/Settings.js', 'components/QuickOpen.js',
+    'components/OpenPanel.js',
     'components/FindBar.js', 'components/ImageViewer.js', 'components/StartScreen.js',
     'components/SidebarSearch.js', 'components/Sidebar.js',
-    'services/treerefresh.js', 'main.js'];
+    'services/treerefresh.js', 'services/openpanel.js', 'main.js'];
   const hits = [];
   FILES.forEach(function (f) {
     if (ALLOWED.indexOf(f.rel) >= 0) return;
@@ -1105,11 +1298,17 @@ test('显示串由_accel_派生_形状与_Rust_侧一致', function () {
   const ACCEL = {
     'settings.open': 'Cmd+,',
     'view.toggle-sidebar': 'Cmd+B',
-    'file.open-directory': 'Cmd+O',
+    // ⭐ `design/0071` §5（阶段 4）：`⇧⌘N` = 新建窗口（`Owner::Menu`，AppKit 收键）
+    'window.new': 'Cmd+Shift+N',
+    // ⭐ `design/0071` §4.2（阶段 3）：`⌘N` = 在当前目录新建一份空 `.md`
+    'file.new': 'Cmd+N',
+    'file.open': 'Cmd+O',
     'file.open-file': 'Shift+Cmd+O',
     'reader.font-inc': 'Cmd+=',
     'reader.font-dec': 'Cmd+-',
     'reader.font-reset': 'Cmd+0',
+    // ⭐ `design/0056`（2026-11-16 改键）：`⌘L` = 回导航页
+    'view.start': 'Cmd+L',
     // `design/0006` ＋ `0012`（⚠️ 这两条的键 2026-10-16 **换过**：`⌘E` 现归 `edit.toggle`）
     'file.save': 'Cmd+S',
     'edit.toggle': 'Cmd+E',
@@ -1123,6 +1322,12 @@ test('显示串由_accel_派生_形状与_Rust_侧一致', function () {
     'edit.find-prev': 'Shift+Cmd+G',
     // `design/0037`（顶栏折叠，⛔ 不进菜单）
     'view.toggle-chrome': 'Shift+Cmd+B',
+    // `design/0077`（多格式复制/字面粘贴，五条都 ⛔ 不进菜单加速键）
+    'edit.copy-markdown': 'Shift+Cmd+M',
+    'edit.copy-html': 'Shift+Cmd+K',
+    'edit.copy-plain': 'Alt+Cmd+P',
+    'edit.copy-rich': 'Shift+Cmd+R',
+    'edit.paste-literal': 'Shift+Cmd+L',
   };
 
   // ⭐ 夹具**必须与真表同号同量**：少一条就是"整表断言在少测一条，而且全绿"。

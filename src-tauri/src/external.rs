@@ -324,6 +324,12 @@ pub mod watch {
         pub seq: u64,
         /// 建立时的 `root_generation`。
         pub generation: u64,
+        /// ⭐ **属主窗口的 label**（`design/0071` §5 / `design/0068` §2.6）。
+        ///
+        /// ⚠️ 监视建立在某个窗口的会话里 ⇒ [`CHANGED_EVENT`] 只许投给那个窗口
+        /// （`app.emit_to(owner, …)`）；多窗口下广播会让另一个窗口去重载一份
+        /// 它根本没在看的文档。
+        pub owner: String,
         /// ⭐ **我们最后已知的盘上指纹**（`design/0050` 最终约束 5）。
         ///
         /// ⚠️ 它的唯一用途是让**主动核对**（手动刷新 / 根级重扫）能把当前文档
@@ -363,6 +369,7 @@ pub mod watch {
                 .field("real", &self.real)
                 .field("seq", &self.seq)
                 .field("generation", &self.generation)
+                .field("owner", &self.owner)
                 .finish_non_exhaustive()
         }
     }
@@ -387,6 +394,9 @@ pub mod watch {
     /// 建立监视。⚠️ **调用方必须先过 `check_readable`**（`INV-EXT-03`）——
     /// 本函数不再查一次授权，它只负责"盯着这个路径"。
     ///
+    /// ⭐ `owner` = **属主窗口 label**（`design/0071` §5）：这条监视属于建立它的那个会话，
+    /// 所有事件只投给那个窗口（`emit_to`）。
+    ///
     /// ⚠️ `watch()` 对一个不存在的路径**立刻 `Err`**（`fsevent.rs:390`），
     /// ⛔ 不会"等它出现"。这与 §2.1 ② 的规则一致：监视只在一次**成功的读取**之后建立。
     pub fn start(
@@ -394,10 +404,12 @@ pub mod watch {
         real: &Path,
         seq: u64,
         generation: u64,
+        owner: &str,
     ) -> Result<Watch, Denied> {
         let target = real.to_path_buf();
         let cb_target = target.clone();
         let cb_app = app.clone();
+        let cb_owner = owner.to_string();
         let mut watcher = notify::recommended_watcher(
             move |res: Result<notify::Event, notify::Error>| {
                 let ev = match res {
@@ -420,12 +432,19 @@ pub mod watch {
                 if !ev.paths.iter().any(|p| p == &cb_target) {
                     return;
                 }
-                on_change(&cb_app, &cb_target, seq, generation);
+                on_change(&cb_app, &cb_target, seq, generation, &cb_owner);
             },
         )
         .map_err(|e| Denied::io(real, e))?;
         watcher.watch(real, RecursiveMode::NonRecursive).map_err(|e| Denied::io(real, e))?;
-        Ok(Watch { real: target.clone(), seq, generation, seen: crate::fs::finger(&target), watcher: Some(watcher) })
+        Ok(Watch {
+            real: target.clone(),
+            seq,
+            generation,
+            owner: owner.to_string(),
+            seen: crate::fs::finger(&target),
+            watcher: Some(watcher),
+        })
     }
 
     /// 收到一条**归到目标文件**的事件之后。
@@ -441,13 +460,14 @@ pub mod watch {
     /// 「不自杀」判据要挡的东西（表现是"每按一次 `⌘S`，预览闪一下、滚动位置跳一下"）。
     /// ⚠️ 但它的口径是**代价优化**，⛔ 不是正确性前提：漏判的后果只是"多一次无谓重载"，
     /// 而"写盘会不会覆盖别人的改动"由 [`crate::commands::edit`] 的**内容级基线**判定。
-    fn on_change(app: &AppHandle, target: &Path, seq: u64, generation: u64) {
+    fn on_change(app: &AppHandle, target: &Path, seq: u64, generation: u64, owner: &str) {
         // ⚠️ 这里**阻塞地**取会话锁是安全的：临界区里只有内存操作 + 一次
         //    `canonicalize`（三段式锁保证渲染不在锁里，`design/0006` §2.1 ⑤）。
         //    ⛔ 但绝不许在本线程 drop 掉 `Watch`——`Watch::drop` 把这件事
         //    交给了别的线程，所以这里可以放心地 `take()`。
         let state = app.state::<AppState>();
-        let taken = state.with(|s| {
+        // ⭐ 会话一律按**属主窗口**取（`design/0071` §5）：监视属于建立它的那个窗口。
+        let taken = state.with(owner, |s| {
             if s.grants.root_generation() == generation {
                 None
             } else {
@@ -462,7 +482,7 @@ pub mod watch {
 
         // —— ⭐ 自写识别（`design/0012` §2.1 ④a）——
         let first = crate::fs::finger(target);
-        let verdict = state.with(|s| {
+        let verdict = state.with(owner, |s| {
             if first.is_some() && first == s.self_write {
                 // ⭐ 指纹对上 = 自己写的。⛔ 一条事件都不发。
                 Verdict::SelfWrite { delay: false }
@@ -503,7 +523,7 @@ pub mod watch {
                     //    ⚠️ **但只在监视还是这一步的时候登记**：这 150 ms 里用户可能已经
                     //    切走文档（`drop_watch` 会清 `self_write`，见 `Session::end_edit`），
                     //    那时再写进去就是给一个**别的文档**留一个陈旧指纹。
-                    state.with(|s| {
+                    state.with(owner, |s| {
                         let same = s
                             .watch
                             .as_ref()
@@ -529,8 +549,10 @@ pub mod watch {
             }
         }
 
+        // ⭐ 只投给**属主窗口**（`design/0071` §5）：广播会让另一个窗口去重载
+        //    一份它根本没在看的文档。载荷形状一个字节不改。
         let payload = ChangeEvent { path: target.display().to_string(), seq };
-        if let Err(e) = app.emit(CHANGED_EVENT, payload) {
+        if let Err(e) = app.emit_to(owner, CHANGED_EVENT, payload) {
             diag_stderr!("⚠️ 变化事件发不出去（seq={seq}）：{e}");
             diag_file!(
                 "⚠️ 变化事件发不出去 seq={seq} err_class={} err_len={}",
@@ -630,6 +652,11 @@ pub mod watch {
         /// ⚠️ 存着是为了**日志/排障时对得上账**：真正决定"这份监视还算不算数"的是
         /// `restart_tree_watch` 的复核与 `reset()`，⛔ 不是这个字段本身。
         pub generation: u64,
+        /// ⭐ **属主窗口的 label**（`design/0071` §5 / `design/0068` §2.6）。
+        ///
+        /// ⚠️ 树事件只投给建立这条监视的那个窗口（`emit_to`）：多窗口下广播会让
+        /// 另一个窗口去刷新一份它根本没有的树。
+        pub owner: String,
         /// ⭐ **监视实例号**（`design/0050` 最终约束 3）：`DiskState::next_watch_id()` 发的号。
         ///
         /// ⚠️ 回调里的每一条信号都带着它 ⇒ 旧实例的迟到信号／迟到核对结果
@@ -645,6 +672,7 @@ pub mod watch {
             f.debug_struct("DirWatch")
                 .field("root", &self.root)
                 .field("generation", &self.generation)
+                .field("owner", &self.owner)
                 .finish_non_exhaustive()
         }
     }
@@ -683,6 +711,10 @@ pub mod watch {
     ///
     /// ⭐ `on_emit` 是**注入的回调**（⛔ 不是 `AppHandle`）：这样单测能直接数
     /// "发了几次"，而不用为了一个计时逻辑去造一个 Tauri 应用。
+    ///
+    /// ⚠️ **只给单测**：产品侧的目录监视走 [`watch_dir_signals_with`]（带过滤清单），
+    /// 这一层"无信号、无过滤"的包装只为让测试少写两个闭包。
+    #[cfg(test)]
     pub fn watch_dir(
         root: &Path,
         on_emit: impl Fn(crate::disk::Reaction) + Send + 'static,
@@ -700,6 +732,9 @@ pub mod watch {
     /// ⚠️ `on_signal` **不是**"事件通知"：它拿的是归一化后的 [`DiskSignal`]（三档），
     /// 而"收到什么信号做什么"的唯一判据是 [`crate::disk::reaction`]。
     /// ⛔ 别在这里再写一份 `if ev.need_rescan()`。
+    /// ⚠️ **只给单测**：产品侧一律走 [`watch_dir_signals_with`]（带过滤清单）。
+    /// 这一层只补"空过滤清单"的默认值，免得测试里传一个用不上的 `&[]`。
+    #[cfg(test)]
     pub fn watch_dir_signals(
         root: &Path,
         on_signal: impl Fn(DiskSignal) + Send + 'static,
@@ -845,6 +880,8 @@ pub mod watch {
         Ok(DirWatch {
             root: root.to_path_buf(),
             generation: 0,
+            // ⚠️ 这一层是"无主"的底层构造：产品侧的属主由 [`start_tree_watch`] 填。
+            owner: String::new(),
             watch_id: 0,
             watcher: Some(watcher),
             shared,
@@ -865,16 +902,20 @@ pub mod watch {
         root: &Path,
         generation: u64,
         watch_id: u64,
+        owner: &str,
     ) -> Result<DirWatch, Denied> {
         let sig_app = app.clone();
         let emit_app = app.clone();
+        let sig_owner = owner.to_string();
+        let emit_owner = owner.to_string();
         // ⭐ 过滤清单在**建立时**取一份快照（评审第 10 条）：回调线程上⛔ 不取会话锁。
         //    ⚠️ 沿用 `try_state`：冷启动的 Apple Event 路径上它可能还没 `manage`；
         //    取不到 ⇒ 空清单 ⇒ **不滤**（与改动前行为一致，⛔ 不是"漏事件"）。
         //    ⚠️ 用户改了清单 ⇒ `0040` 的落盘路径本来就会重建监视，不需要额外的失效逻辑。
+        //    ⚠️ `config()` 只是读 L1（克隆），⛔ 不是 `with(label, …)`——这里没有会话。
         let ignore = app
             .try_state::<AppState>()
-            .map(|s| s.with(|s| s.config.ignore_dirs.clone()))
+            .map(|s| s.config().ignore_dirs.clone())
             .unwrap_or_default();
         let mut w = watch_dir_signals_with(
             root,
@@ -886,7 +927,7 @@ pub mod watch {
                     return;
                 };
                 // ⭐ **身份复核**（最终约束 3）：代次变了或有更新的实例 ⇒ 这条信号作废。
-                let (same, degraded_now) = state.with(|s| {
+                let (same, degraded_now) = state.with(&sig_owner, |s| {
                     if s.grants.root_generation() != generation || s.disk.watch_id != watch_id {
                         return (false, false);
                     }
@@ -902,18 +943,18 @@ pub mod watch {
                 }
                 // ⭐ 强制核对：**收到就起**（单飞＋尾随重跑在 `kick_reconcile` 里）。
                 //    ⚠️ 它在锁外起线程，所以这里不会把 FSEvents 的回调线程占住。
-                if state.with(|s| s.disk.pending()) {
-                    crate::commands::fs::kick_reconcile(&sig_app, &state);
+                if state.with(&sig_owner, |s| s.disk.pending()) {
+                    crate::commands::fs::kick_reconcile(&sig_app, &state, &sig_owner);
                 }
                 if degraded_now {
-                    crate::commands::fs::emit_disk_view(&sig_app, &state);
+                    crate::commands::fs::emit_disk_view(&sig_app, &state, &sig_owner);
                 }
             },
             move |window| {
                 let Some(state) = emit_app.try_state::<AppState>() else {
                     return;
                 };
-                let same = state.with(|s| {
+                let same = state.with(&emit_owner, |s| {
                     s.grants.root_generation() == generation && s.disk.watch_id == watch_id
                 });
                 if !same {
@@ -925,7 +966,7 @@ pub mod watch {
                 //    一直攒到下一次强制核对。放在去抖窗口里：**一窗一次**（⛔ 不逐事件）。
                 //    ⚠️ 锁内 `take`、锁外 drop（同 `reconcile_once` 的口径：10 万条那种
                 //    整层条目不许在临界区里释放）。
-                let swept = state.with(|s| s.tree.sweep(generation, s.disk.epoch));
+                let swept = state.with(&emit_owner, |s| s.tree.sweep(generation, s.disk.epoch));
                 let swept_layers = swept.len();
                 drop(swept);
                 if swept_layers > 0 {
@@ -935,10 +976,10 @@ pub mod watch {
                 //    kick 都被单飞挡掉了（第一个已经在跑、且它跑得比窗口还快），
                 //    这里补一次。⚠️ `pending()` 会告诉我们"其实还没做完"，
                 //    所以这一句在绝大多数窗口里就是一次内存读。
-                if window.force || state.with(|s| s.disk.pending()) {
-                    crate::commands::fs::kick_reconcile(&emit_app, &state);
+                if window.force || state.with(&emit_owner, |s| s.disk.pending()) {
+                    crate::commands::fs::kick_reconcile(&emit_app, &state, &emit_owner);
                 }
-                if let Err(e) = emit_app.emit(TREE_CHANGED_EVENT, ()) {
+                if let Err(e) = emit_app.emit_to(&emit_owner, TREE_CHANGED_EVENT, ()) {
                     // ⚠️ 发不出去**不致命**（下一次变化还会再试），但⛔ 不许静默：
                     //    它坏了的表现是"树再也不自动刷新"，与"目录什么都没变"长得一样。
                     diag_stderr!("⚠️ 目录变化事件发不出去：{e}");
@@ -948,11 +989,12 @@ pub mod watch {
                         e.to_string().len()
                     );
                 }
-                crate::commands::fs::emit_disk_view(&emit_app, &state);
+                crate::commands::fs::emit_disk_view(&emit_app, &state, &emit_owner);
             },
         )?;
         w.generation = generation;
         w.watch_id = watch_id;
+        w.owner = owner.to_string();
         Ok(w)
     }
 
@@ -982,6 +1024,7 @@ pub mod watch {
                 real: real.clone(),
                 seq: 1,
                 generation: 0,
+                owner: "main".to_string(),
                 seen: Some((1, 1)),
                 watcher: None,
             };

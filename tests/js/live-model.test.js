@@ -204,6 +204,69 @@ test('会话：栈空时撤销 ⇒ null（⛔ 不臆造一条空编辑）', func
   assert.strictEqual(s.undo(), null);
 });
 
+// ── 重做（`bugs/0020` §8，2026-11-02）────────────────────────────────────
+
+test('⭐ 重做：撤销 → 重做 ⇒ 文本回到提交后那份，条数回 1', function () {
+  const src = '# 标题\n\n正文\n';
+  const s = M.createSession({ text: src, realPath: '/r/a.md', generation: 1, docSeq: 1 });
+  const committed = s.commit({ from: 2, to: 3 }, ['改过的正文']);
+  const back = s.undoEdit();
+  assert.strictEqual(back.fullText, src);
+  assert.strictEqual(s.stack().size(), 0);
+  assert.strictEqual(s.stack().redoSize(), 1, '用户撤销的那一条必须进重做栈');
+
+  const again = s.redo();
+  assert.strictEqual(again.fullText, committed.fullText);
+  assert.strictEqual(s.stack().size(), 1, '重做之后条目回到提交栈');
+  assert.strictEqual(s.stack().redoSize(), 0);
+  // ⚠️ 重做也是文本变化 ⇒ `commitSeq` 继续往前走（在途回包必须作废）。
+  assert.strictEqual(again.identity.commitSeq, 3);
+  // ⚠️ 再来一次撤销 / 重做仍可逆（栈不是一次性的）。
+  assert.strictEqual(s.undoEdit().fullText, src);
+  assert.strictEqual(s.redo().fullText, committed.fullText);
+});
+
+test('⭐ 重做：撤销之后**新提交** ⇒ 重做栈清空（内容分叉，旧目标不成立）', function () {
+  const s = M.createSession({ text: 'a\nb\n', realPath: '/r/a.md', generation: 1, docSeq: 1 });
+  s.commit({ from: 0, to: 1 }, ['A']);
+  s.undoEdit();
+  assert.strictEqual(s.stack().redoSize(), 1);
+  s.commit({ from: 0, to: 1 }, ['X']);
+  assert.strictEqual(s.stack().redoSize(), 0, '新提交必须让重做栈作废');
+  assert.strictEqual(s.redo(), null, '⛔ 不许把旧内容重做到已分叉的文本上');
+});
+
+test('⭐ 重做：内部回滚走 `undo()`（⛔ 不进重做栈）', function () {
+  const s = M.createSession({ text: 'a\n', realPath: '/r/a.md', generation: 1, docSeq: 1 });
+  s.commit({ from: 0, to: 1 }, ['A']);
+  // 提交失败回退 / 丢空段落 / 退出回退走的是这一条，⛔ 不是用户的 `⌘Z`。
+  assert.ok(s.undo());
+  assert.strictEqual(s.stack().redoSize(), 0, '内部回滚不该让 ⇧⌘Z 有东西可重做');
+  assert.strictEqual(s.redo(), null);
+});
+
+test('⭐ 重做：连撤两条 ⇒ 重做按**相反顺序**还回去', function () {
+  const s = M.createSession({ text: 'a\n', realPath: '/r/a.md', generation: 1, docSeq: 1 });
+  s.commit({ from: 0, to: 1 }, ['A']);
+  s.commit({ from: 0, to: 1 }, ['B']);
+  assert.strictEqual(s.undoEdit().fullText, 'A\n');
+  assert.strictEqual(s.undoEdit().fullText, 'a\n');
+  assert.strictEqual(s.stack().redoSize(), 2);
+  assert.strictEqual(s.redo().fullText, 'A\n', '先还最近撤的那一条');
+  assert.strictEqual(s.redo().fullText, 'B\n');
+  assert.strictEqual(s.stack().size(), 2);
+});
+
+test('⭐ 重做：换文档清空两侧（重做说的是**同一份文本**）', function () {
+  const st = M.createCommitStack(10);
+  st.push({ from: 0, to: 1, before: ['a'], after: ['A'] });
+  st.undoEdit();
+  assert.strictEqual(st.redoSize(), 1);
+  st.clear();
+  assert.strictEqual(st.size(), 0);
+  assert.strictEqual(st.redoSize(), 0, '换文档 / 外部重载之后 ⇧⌘Z ⛔ 不许还能重做');
+});
+
 test('会话：换文档 / 重载 ⇒ 文本与身份换新、栈清空（§2.5 的表）', function () {
   const s = M.createSession({ text: 'a\n', realPath: '/r/a.md', generation: 1, docSeq: 1 });
   s.commit({ from: 0, to: 1 }, ['A']);
@@ -233,4 +296,84 @@ test('会话：提交之后的身份能让**旧**回包被拒（陈旧行号的�
   // 同一条回包在提交**之前**是合法的 ⇒ 说明拒它不是"恒假"。
   assert.strictEqual(M.acceptReply(before, { doc_seq: 1, line_count: 3 }).ok, true);
   assert.strictEqual(M.acceptReply(after, { doc_seq: 1, line_count: 4 }).ok, true);
+});
+
+// ── ⭐ `design/0058` §2.2：整份快照 ＋ 回滚句柄（所有权 / 修订 / 幂等）──────────
+
+test('⭐⭐ 快照覆盖**全文 ＋ 身份 ＋ 两侧栈**：还原之后连"撤销过的条目"也在', function () {
+  const s = M.createSession({ text: 'a\n', realPath: '/r/a.md', generation: 1, docSeq: 1 });
+  s.commit({ from: 0, to: 1 }, ['A']);
+  s.undoEdit(); // 条目挪进重做栈
+  assert.strictEqual(s.stack().size(), 0);
+  assert.strictEqual(s.stack().redoSize(), 1);
+
+  const snap = s.snapshot();
+  const identBefore = s.identity();
+  s.commit({ from: 0, to: 1 }, ['B']); // 新提交：重做栈被清空、身份前进
+  assert.strictEqual(s.stack().redoSize(), 0);
+
+  assert.strictEqual(s.restore(snap), true);
+  assert.strictEqual(s.fullText(), 'a\n', '全文要回到快照那一份（快照点在撤销之后）');
+  assert.deepStrictEqual(s.identity(), identBefore, '身份也要回去');
+  assert.strictEqual(s.stack().size(), 0);
+  assert.strictEqual(s.stack().redoSize(), 1, '⛔ 只退 entries：用户撤销过的条目会被吞掉');
+});
+
+test('⭐⭐ `commit().revert()`：带所有权与修订校验，且幂等', function () {
+  const s = M.createSession({ text: 'a\nb\n', realPath: '/r/a.md', generation: 1, docSeq: 1 });
+  const c = s.commit({ from: 0, to: 1 }, ['A']);
+
+  // ① 冒充别的 txId ⇒ not-owner，什么都不退
+  assert.deepStrictEqual(c.revert({ txId: c.txId + 99, revision: c.revision }),
+    { ok: false, already: false, why: 'not-owner' });
+  assert.strictEqual(s.fullText(), 'A\nb\n');
+
+  // ② 期间有更新的提交 ⇒ newer，⛔ 不许把新状态退回去
+  const later = s.commit({ from: 1, to: 2 }, ['B']);
+  assert.strictEqual(c.revert({ txId: c.txId, revision: c.revision }).why, 'newer');
+  assert.strictEqual(s.fullText(), 'A\nB\n');
+
+  // ③ 对的那一笔：退回去，且再调一次是 `already`
+  const back = later.revert({ txId: later.txId, revision: later.revision });
+  assert.strictEqual(back.ok, true);
+  assert.strictEqual(s.fullText(), 'A\nb\n');
+  const again = later.revert({ txId: later.txId, revision: later.revision });
+  assert.strictEqual(again.already, true);
+  assert.strictEqual(s.fullText(), 'A\nb\n');
+});
+
+test('⭐ 换文档之后旧句柄也⛔ 不许生效（`docSeq` 一起比：`rebind` 会把 commitSeq 归零）', function () {
+  const s = M.createSession({ text: 'a\n', realPath: '/r/a.md', generation: 1, docSeq: 1 });
+  const c = s.commit({ from: 0, to: 1 }, ['A']);
+  s.rebind({ text: 'x\n', realPath: '/r/b.md', docSeq: 2 });
+  assert.strictEqual(c.revert({ txId: c.txId, revision: c.revision }).why, 'newer',
+    '只比 commitSeq 的话这里会"对上"，把新文档退成旧全文');
+  assert.strictEqual(s.fullText(), 'x\n');
+});
+
+test('⭐⭐ `peekUndo` / `peekRedo` 只看不动；`undo()` ⛔ 不推进重做栈', function () {
+  const s = M.createSession({ text: 'a\n', realPath: '/r/a.md', generation: 1, docSeq: 1 });
+  s.commit({ from: 0, to: 1 }, ['A', 'A2']);
+  const before = s.fullText();
+  const peek = s.peekUndo();
+  assert.deepStrictEqual(peek, { range: { from: 0, to: 2 }, next: ['a'] });
+  assert.strictEqual(s.fullText(), before, 'peek ⛔ 改真值');
+  assert.strictEqual(s.stack().size(), 1, 'peek ⛔ 动栈');
+
+  const u = s.undo(); // 内部回滚那条
+  assert.strictEqual(u.fullText, 'a\n');
+  assert.strictEqual(s.stack().redoSize(), 0, '`undo()` ⛔ 给用户撤销用：它不许让 ⇧⌘Z 有东西可重做');
+  assert.strictEqual(s.peekRedo(), null);
+});
+
+test('⭐ `undoEdit` ⇒ `peekRedo` 给出**方向相反**的候选，落地后条目回到撤销栈', function () {
+  const s = M.createSession({ text: 'a\n', realPath: '/r/a.md', generation: 1, docSeq: 1 });
+  s.commit({ from: 0, to: 1 }, ['A']);
+  const u = s.undoEdit();
+  assert.strictEqual(u.fullText, 'a\n');
+  assert.deepStrictEqual(s.peekRedo(), { range: { from: 0, to: 1 }, next: ['A'] });
+  const r = s.redo();
+  assert.strictEqual(r.fullText, 'A\n');
+  assert.strictEqual(s.stack().redoSize(), 0);
+  assert.strictEqual(s.stack().size(), 1);
 });

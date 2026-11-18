@@ -1,0 +1,295 @@
+# md-block 家族：Markdown 块级语法与 rmd 的块级行为。
+# 期望值按产品**当前行为**实测（2026-11-08 隔离 rust 矩阵探针），不是按 GFM 常识猜的。
+# ⚠️ 与常识不同处（表后无空行会被吞成表格行、`- ---` 只剩 hr 等）按实测记录。
+# ⭐ `design/0066`（2026-11-11）：列表内空行占版面 ⇒ 松散列表的期望 HTML 带
+# `data-blanks` 属性（2026-11-11 重算）；紧凑列表输出逐字节未变。
+# ----------------------------------------------------------------------
+# ATX 标题：1-6 级、结尾 #、空标题、# 后无空格、缩进
+{"id": "mdblock-ATX一级标题", "family": "md-block", "check": "html", "input": {"md": "# 一级\n"}, "expect": {"equals": "<h1>一级</h1>\n"}}
+{"id": "mdblock-ATX二级标题", "family": "md-block", "check": "html", "input": {"md": "## 二级\n"}, "expect": {"equals": "<h2>二级</h2>\n"}}
+{"id": "mdblock-ATX三四五级标题", "family": "md-block", "check": "html", "input": {"md": "### 三\n\n#### 四\n\n##### 五\n"}, "expect": {"equals": "<h3>三</h3>\n<h4>四</h4>\n<h5>五</h5>\n"}}
+{"id": "mdblock-ATX六级标题", "family": "md-block", "check": "html", "input": {"md": "###### 六级\n"}, "expect": {"equals": "<h6>六级</h6>\n"}}
+{"id": "mdblock-七个井号不是标题", "family": "md-block", "check": "html", "input": {"md": "####### 七级\n"}, "expect": {"equals": "<p>####### 七级</p>\n"}}
+{"id": "mdblock-标题结尾单井号被去除", "family": "md-block", "check": "html", "input": {"md": "# 标题 #\n"}, "expect": {"equals": "<h1>标题</h1>\n"}}
+{"id": "mdblock-标题结尾四井号被去除", "family": "md-block", "check": "html", "input": {"md": "# 标题 ####\n"}, "expect": {"equals": "<h1>标题</h1>\n"}}
+{"id": "mdblock-结尾井号后有文字不裁剪", "family": "md-block", "check": "html", "input": {"md": "# 标题 ## extra\n"}, "expect": {"equals": "<h1>标题 ## extra</h1>\n"}}
+{"id": "mdblock-井号紧贴文字不算结尾", "family": "md-block", "check": "html", "input": {"md": "## 标题#\n"}, "expect": {"equals": "<h2>标题#</h2>\n"}}
+{"id": "mdblock-空标题", "family": "md-block", "check": "html", "input": {"md": "#\n"}, "expect": {"equals": "<h1></h1>\n"}}
+{"id": "mdblock-空标题仅空格", "family": "md-block", "check": "html", "input": {"md": "#  \n"}, "expect": {"equals": "<h1></h1>\n"}}
+{"id": "mdblock-井号后无空格是段落", "family": "md-block", "check": "html", "input": {"md": "#无空格\n"}, "expect": {"equals": "<p>#无空格</p>\n"}}
+{"id": "mdblock-三格缩进仍是标题", "family": "md-block", "check": "html", "input": {"md": "   # 缩进三格\n"}, "expect": {"equals": "<h1>缩进三格</h1>\n"}}
+{"id": "mdblock-四格缩进标题变代码", "family": "md-block", "check": "html", "input": {"md": "    # 缩进四格\n"}, "expect": {"contains": ["<pre class=\"rmd-code\">", "# 缩进四格"], "not_contains": ["<h1>"]}}
+{"id": "mdblock-井号后制表符仍是标题", "family": "md-block", "check": "html", "input": {"md": "#\t标题\n"}, "expect": {"equals": "<h1>标题</h1>\n"}}
+{"id": "mdblock-转义井号作为标题文字", "family": "md-block", "check": "html", "input": {"md": "# \\#\n"}, "expect": {"equals": "<h1>#</h1>\n"}}
+{"id": "mdblock-标题末尾反斜杠保留", "family": "md-block", "check": "html", "input": {"md": "# 标题\\\n"}, "expect": {"equals": "<h1>标题\\</h1>\n"}}
+{"id": "mdblock-标题末尾空格被去除", "family": "md-block", "check": "html", "input": {"md": "# 标题  \n"}, "expect": {"equals": "<h1>标题</h1>\n"}}
+# ----------------------------------------------------------------------
+# Setext 标题与 thematic break 的歧义
+{"id": "mdblock-Setext等号一级标题", "family": "md-block", "check": "html", "input": {"md": "标题\n===\n"}, "expect": {"equals": "<h1>标题</h1>\n"}}
+{"id": "mdblock-Setext减号二级标题", "family": "md-block", "check": "html", "input": {"md": "标题\n---\n"}, "expect": {"equals": "<h2>标题</h2>\n"}}
+{"id": "mdblock-Setext下划线尾随空格", "family": "md-block", "check": "html", "input": {"md": "标题\n---  \n"}, "expect": {"equals": "<h2>标题</h2>\n"}}
+{"id": "mdblock-多行Setext合并标题", "family": "md-block", "check": "html", "input": {"md": "a\nb\n---\n"}, "expect": {"equals": "<h2>a<br />\nb</h2>\n"}}
+{"id": "mdblock-缩进Setext等号", "family": "md-block", "check": "html", "input": {"md": "标题\n   ===\n"}, "expect": {"equals": "<h1>标题</h1>\n"}}
+{"id": "mdblock-缩进Setext减号", "family": "md-block", "check": "html", "input": {"md": "标题\n   ---\n"}, "expect": {"equals": "<h2>标题</h2>\n"}}
+{"id": "mdblock-空行后减号是分隔线", "family": "md-block", "check": "html", "input": {"md": "标题\n\n---\n"}, "expect": {"equals": "<p>标题</p>\n<hr />\n"}}
+{"id": "mdblock-单独等号不是分隔线", "family": "md-block", "check": "html", "input": {"md": "===\n"}, "expect": {"equals": "<p>===</p>\n"}}
+{"id": "mdblock-文本后等号是Setext一级", "family": "md-block", "check": "html", "input": {"md": "a\n===\n"}, "expect": {"equals": "<h1>a</h1>\n"}}
+{"id": "mdblock-文本后减号是Setext二级", "family": "md-block", "check": "html", "input": {"md": "a\n---\n"}, "expect": {"equals": "<h2>a</h2>\n"}}
+{"id": "mdblock-段落后的星号是分隔线", "family": "md-block", "check": "html", "input": {"md": "a\n***\n"}, "expect": {"equals": "<p>a</p>\n<hr />\n"}}
+# ----------------------------------------------------------------------
+# thematic break：多种写法与反例
+{"id": "mdblock-三个减号分隔线", "family": "md-block", "check": "html", "input": {"md": "---\n"}, "expect": {"equals": "<hr />\n"}}
+{"id": "mdblock-三个星号分隔线", "family": "md-block", "check": "html", "input": {"md": "***\n"}, "expect": {"equals": "<hr />\n"}}
+{"id": "mdblock-三个下划线分隔线", "family": "md-block", "check": "html", "input": {"md": "___\n"}, "expect": {"equals": "<hr />\n"}}
+{"id": "mdblock-空格分隔减号分隔线", "family": "md-block", "check": "html", "input": {"md": "- - -\n"}, "expect": {"equals": "<hr />\n"}}
+{"id": "mdblock-五个星号分隔线", "family": "md-block", "check": "html", "input": {"md": "*****\n"}, "expect": {"equals": "<hr />\n"}}
+{"id": "mdblock-四个减号分隔线", "family": "md-block", "check": "html", "input": {"md": "----\n"}, "expect": {"equals": "<hr />\n"}}
+{"id": "mdblock-两个减号不是分隔线", "family": "md-block", "check": "html", "input": {"md": "--\n"}, "expect": {"equals": "<p>--</p>\n"}}
+{"id": "mdblock-文字连减号不是分隔线", "family": "md-block", "check": "html", "input": {"md": "a---\n"}, "expect": {"equals": "<p>a---</p>\n"}}
+{"id": "mdblock-三格缩进分隔线", "family": "md-block", "check": "html", "input": {"md": "   ---\n"}, "expect": {"equals": "<hr />\n"}}
+{"id": "mdblock-四格缩进减号是代码", "family": "md-block", "check": "html", "input": {"md": "    ---\n"}, "expect": {"contains": ["<pre class=\"rmd-code\">"], "not_contains": ["<hr />"]}}
+{"id": "mdblock-制表符分隔星号分隔线", "family": "md-block", "check": "html", "input": {"md": "*\t*\t*\n"}, "expect": {"equals": "<hr />\n"}}
+{"id": "mdblock-混合符号不是分隔线", "family": "md-block", "check": "html", "input": {"md": "-*-\n"}, "expect": {"equals": "<p>-*-</p>\n"}}
+# ----------------------------------------------------------------------
+# 段落与换行：软换行默认 <br />、硬换行、hardbreaks:false
+{"id": "mdblock-软换行默认变换行标签", "family": "md-block", "check": "html", "input": {"md": "第一行\n第二行\n"}, "expect": {"equals": "<p>第一行<br />\n第二行</p>\n"}}
+{"id": "mdblock-两个尾随空格硬换行", "family": "md-block", "check": "html", "input": {"md": "第一行  \n第二行\n"}, "expect": {"equals": "<p>第一行<br />\n第二行</p>\n"}}
+{"id": "mdblock-反斜杠硬换行", "family": "md-block", "check": "html", "input": {"md": "第一行\\\n第二行\n"}, "expect": {"equals": "<p>第一行<br />\n第二行</p>\n"}}
+{"id": "mdblock-关闭硬换行时软换行保留换行符", "family": "md-block", "check": "html", "input": {"md": "第一行\n第二行\n", "opts": {"hardbreaks": false}}, "expect": {"equals": "<p>第一行\n第二行</p>\n"}}
+{"id": "mdblock-关闭硬换行时空格硬换行仍生效", "family": "md-block", "check": "html", "input": {"md": "第一行  \n第二行\n", "opts": {"hardbreaks": false}}, "expect": {"equals": "<p>第一行<br />\n第二行</p>\n"}}
+{"id": "mdblock-关闭硬换行时反斜杠仍生效", "family": "md-block", "check": "html", "input": {"md": "第一行\\\n第二行\n", "opts": {"hardbreaks": false}}, "expect": {"equals": "<p>第一行<br />\n第二行</p>\n"}}
+{"id": "mdblock-空行分隔两个段落", "family": "md-block", "check": "html", "input": {"md": "段落一\n\n段落二\n"}, "expect": {"equals": "<p>段落一</p>\n<p>段落二</p>\n"}}
+{"id": "mdblock-单行尾随空格不产生空行", "family": "md-block", "check": "html", "input": {"md": "a  \n"}, "expect": {"equals": "<p>a</p>\n"}}
+{"id": "mdblock-含空格空行分隔段落", "family": "md-block", "check": "html", "input": {"md": "a\n   \nb\n"}, "expect": {"equals": "<p>a</p>\n<p>b</p>\n"}}
+{"id": "mdblock-多个空行只分隔段落", "family": "md-block", "check": "html", "input": {"md": "a\n\n\n\n\nb\n"}, "expect": {"equals": "<p>a</p>\n<p>b</p>\n"}}
+{"id": "mdblock-三个尾随空格硬换行", "family": "md-block", "check": "html", "input": {"md": "a   \nb\n"}, "expect": {"equals": "<p>a<br />\nb</p>\n"}}
+{"id": "mdblock-段内制表符保留", "family": "md-block", "check": "html", "input": {"md": "a\tb\n"}, "expect": {"equals": "<p>a\tb</p>\n"}}
+# ----------------------------------------------------------------------
+# 引用块：单段、多段、嵌套、列表/代码/标题/表格
+{"id": "mdblock-单段引用", "family": "md-block", "check": "html", "input": {"md": "> 引用\n"}, "expect": {"equals": "<blockquote>\n<p>引用</p>\n</blockquote>\n"}}
+{"id": "mdblock-引用内两个段落", "family": "md-block", "check": "html", "input": {"md": "> 第一段\n>\n> 第二段\n"}, "expect": {"equals": "<blockquote>\n<p>第一段</p>\n<p>第二段</p>\n</blockquote>\n"}}
+{"id": "mdblock-嵌套引用", "family": "md-block", "check": "html", "input": {"md": "> > 嵌套\n"}, "expect": {"equals": "<blockquote>\n<blockquote>\n<p>嵌套</p>\n</blockquote>\n</blockquote>\n"}}
+{"id": "mdblock-引用内列表", "family": "md-block", "check": "html", "input": {"md": "> - 列表\n"}, "expect": {"equals": "<blockquote>\n<ul>\n<li>列表</li>\n</ul>\n</blockquote>\n"}}
+{"id": "mdblock-引用内代码围栏", "family": "md-block", "check": "html", "input": {"md": "> ```\n> 代码\n> ```\n"}, "expect": {"equals": "<blockquote>\n<pre class=\"rmd-code\"><code><span class=\"rmd-text rmd-plain\">代码\n</span></code></pre>\n</blockquote>\n"}}
+{"id": "mdblock-引用内标题", "family": "md-block", "check": "html", "input": {"md": "> # 标题\n"}, "expect": {"equals": "<blockquote>\n<h1>标题</h1>\n</blockquote>\n"}}
+{"id": "mdblock-引用惰性续行", "family": "md-block", "check": "html", "input": {"md": "> 首行\n续行\n"}, "expect": {"equals": "<blockquote>\n<p>首行<br />\n续行</p>\n</blockquote>\n"}}
+{"id": "mdblock-引用内分隔线", "family": "md-block", "check": "html", "input": {"md": "> ---\n"}, "expect": {"equals": "<blockquote>\n<hr />\n</blockquote>\n"}}
+{"id": "mdblock-空行分隔两个引用", "family": "md-block", "check": "html", "input": {"md": "> a\n\n> b\n"}, "expect": {"contains": ["<blockquote>\n<p>a</p>\n</blockquote>", "<blockquote>\n<p>b</p>\n</blockquote>"], "counts": {"<blockquote>": 2}}}
+{"id": "mdblock-引用块内表格解析", "family": "md-block", "check": "html", "input": {"md": "> | a | b |\n> |---|---|\n> | 1 | 2 |\n"}, "expect": {"contains": ["<blockquote>\n<table>", "</table>\n</blockquote>"]}}
+{"id": "mdblock-引用内有序列表带代码", "family": "md-block", "check": "html", "input": {"md": "> 1. a\n>    ```\n>    x\n>    ```\n"}, "expect": {"contains": ["<blockquote>", "<ol>", "<li>a", "<pre class=\"rmd-code\">"]}}
+# ----------------------------------------------------------------------
+# 列表：标记、起始序号、紧凑/松散、嵌套、跨行、代码
+{"id": "mdblock-减号无序列表", "family": "md-block", "check": "html", "input": {"md": "- a\n- b\n"}, "expect": {"equals": "<ul>\n<li>a</li>\n<li>b</li>\n</ul>\n"}}
+{"id": "mdblock-星号无序列表", "family": "md-block", "check": "html", "input": {"md": "* a\n* b\n"}, "expect": {"equals": "<ul>\n<li>a</li>\n<li>b</li>\n</ul>\n"}}
+{"id": "mdblock-加号无序列表", "family": "md-block", "check": "html", "input": {"md": "+ a\n+ b\n"}, "expect": {"equals": "<ul>\n<li>a</li>\n<li>b</li>\n</ul>\n"}}
+{"id": "mdblock-数字有序列表", "family": "md-block", "check": "html", "input": {"md": "1. a\n2. b\n"}, "expect": {"equals": "<ol>\n<li>a</li>\n<li>b</li>\n</ol>\n"}}
+{"id": "mdblock-有序列表起始三", "family": "md-block", "check": "html", "input": {"md": "3. a\n4. b\n"}, "expect": {"equals": "<ol start=\"3\">\n<li>a</li>\n<li>b</li>\n</ol>\n"}}
+{"id": "mdblock-右括号有序列表", "family": "md-block", "check": "html", "input": {"md": "1) a\n2) b\n"}, "expect": {"equals": "<ol>\n<li>a</li>\n<li>b</li>\n</ol>\n"}}
+{"id": "mdblock-右括号有序列表起始三", "family": "md-block", "check": "html", "input": {"md": "3) a\n4) b\n"}, "expect": {"equals": "<ol start=\"3\">\n<li>a</li>\n<li>b</li>\n</ol>\n"}}
+{"id": "mdblock-有序列表起始零", "family": "md-block", "check": "html", "input": {"md": "0. a\n1. b\n"}, "expect": {"equals": "<ol start=\"0\">\n<li>a</li>\n<li>b</li>\n</ol>\n"}}
+{"id": "mdblock-有序列表起始十", "family": "md-block", "check": "html", "input": {"md": "10. a\n11. b\n"}, "expect": {"equals": "<ol start=\"10\">\n<li>a</li>\n<li>b</li>\n</ol>\n"}}
+{"id": "mdblock-松散列表段落包裹", "family": "md-block", "check": "html", "input": {"md": "- a\n\n- b\n"}, "expect": {"equals": "<ul>\n<li>\n<p>a</p>\n</li>\n<li data-blanks=\"1\" style=\"--rmd-blanks:1\">\n<p>b</p>\n</li>\n</ul>\n"}}
+{"id": "mdblock-嵌套无序列表", "family": "md-block", "check": "html", "input": {"md": "- a\n  - b\n"}, "expect": {"equals": "<ul>\n<li>a\n<ul>\n<li>b</li>\n</ul>\n</li>\n</ul>\n"}}
+{"id": "mdblock-列表项跨行软换行", "family": "md-block", "check": "html", "input": {"md": "- a\n  b\n"}, "expect": {"equals": "<ul>\n<li>a<br />\nb</li>\n</ul>\n"}}
+{"id": "mdblock-列表项内两段落", "family": "md-block", "check": "html", "input": {"md": "- a\n\n  b\n"}, "expect": {"equals": "<ul>\n<li>\n<p>a</p>\n<p data-blanks=\"1\" style=\"--rmd-blanks:1\">b</p>\n</li>\n</ul>\n"}}
+{"id": "mdblock-列表项内代码围栏", "family": "md-block", "check": "html", "input": {"md": "- ```\n  code\n  ```\n"}, "expect": {"equals": "<ul>\n<li>\n<pre class=\"rmd-code\"><code><span class=\"rmd-text rmd-plain\">code\n</span></code></pre>\n</li>\n</ul>\n"}}
+{"id": "mdblock-任务列表勾选框", "family": "md-block", "check": "html", "input": {"md": "- [x] 完成\n- [ ] 未完成\n"}, "expect": {"contains": ["<ul class=\"contains-task-list\">", "<li class=\"task-list-item\">", "type=\"checkbox\"", "checked=\"\""], "counts": {"class=\"task-list-item\"": 2, "type=\"checkbox\"": 2}}}
+{"id": "mdblock-大写X任务列表", "family": "md-block", "check": "html", "input": {"md": "- [X] 大写\n"}, "expect": {"contains": ["class=\"task-list-item\"", "checked=\"\""]}}
+{"id": "mdblock-空方括号不是任务", "family": "md-block", "check": "html", "input": {"md": "- [] 空\n"}, "expect": {"not_contains": ["type=\"checkbox\""]}}
+{"id": "mdblock-星号后无空格不是任务", "family": "md-block", "check": "html", "input": {"md": "- [x]done\n"}, "expect": {"equals": "<ul>\n<li>[x]done</li>\n</ul>\n"}}
+{"id": "mdblock-嵌套有序列表", "family": "md-block", "check": "html", "input": {"md": "1. a\n   1. b\n"}, "expect": {"equals": "<ol>\n<li>a\n<ol>\n<li>b</li>\n</ol>\n</li>\n</ol>\n"}}
+{"id": "mdblock-列表项内引用", "family": "md-block", "check": "html", "input": {"md": "- > 引用\n"}, "expect": {"equals": "<ul>\n<li>\n<blockquote>\n<p>引用</p>\n</blockquote>\n</li>\n</ul>\n"}}
+{"id": "mdblock-空列表项", "family": "md-block", "check": "html", "input": {"md": "-\n- a\n"}, "expect": {"equals": "<ul>\n<li></li>\n<li>a</li>\n</ul>\n"}}
+{"id": "mdblock-列表标记后无空格是段落", "family": "md-block", "check": "html", "input": {"md": "-a\n"}, "expect": {"equals": "<p>-a</p>\n"}}
+{"id": "mdblock-列表项内缩进代码块", "family": "md-block", "check": "html", "input": {"md": "- a\n\n      code\n"}, "expect": {"equals": "<ul>\n<li>\n<p>a</p>\n<pre class=\"rmd-code\"><code><span class=\"rmd-text rmd-plain\">code\n</span></code></pre>\n</li>\n</ul>\n"}}
+{"id": "mdblock-松散列表内多段落", "family": "md-block", "check": "html", "input": {"md": "- a\n\n  b\n\n- c\n"}, "expect": {"equals": "<ul>\n<li>\n<p>a</p>\n<p data-blanks=\"1\" style=\"--rmd-blanks:1\">b</p>\n</li>\n<li data-blanks=\"1\" style=\"--rmd-blanks:1\">\n<p>c</p>\n</li>\n</ul>\n"}}
+{"id": "mdblock-有序列表项跨行续写", "family": "md-block", "check": "html", "input": {"md": "1. a\n   b\n2. c\n"}, "expect": {"equals": "<ol>\n<li>a<br />\nb</li>\n<li>c</li>\n</ol>\n"}}
+{"id": "mdblock-子列表松散段落", "family": "md-block", "check": "html", "input": {"md": "- a\n  - b\n\n  - c\n"}, "expect": {"contains": ["<li>a\n<ul>", "<li>\n<p>b</p>\n</li>", "<li data-blanks=\"1\" style=\"--rmd-blanks:1\">\n<p>c</p>\n</li>"], "counts": {"<p>": 2}}}
+{"id": "mdblock-列表项内减号成Setext标题", "family": "md-block", "check": "html", "input": {"md": "- a\n  ---\n"}, "expect": {"equals": "<ul>\n<li>\n<h2>a</h2>\n</li>\n</ul>\n"}}
+{"id": "mdblock-列表标记后减号变分隔线", "family": "md-block", "check": "html", "input": {"md": "- ---\n"}, "expect": {"equals": "<hr />\n"}}
+{"id": "mdblock-列表后顶格减号是分隔线", "family": "md-block", "check": "html", "input": {"md": "- a\n---\n"}, "expect": {"contains": ["<ul>\n<li>a</li>\n</ul>", "<hr />"], "counts": {"<ul>": 1, "<hr />": 1}}}
+{"id": "mdblock-列表项内表格", "family": "md-block", "check": "html", "input": {"md": "- | a |\n  |---|\n  | 1 |\n"}, "expect": {"contains": ["<li>\n<table>", "</table>\n</li>"]}}
+# ----------------------------------------------------------------------
+# 代码围栏：```/~~~、info string、未闭合、嵌套、缩进代码块
+{"id": "mdblock-无语言代码围栏", "family": "md-block", "check": "html", "input": {"md": "```\ncode\n```\n"}, "expect": {"equals": "<pre class=\"rmd-code\"><code><span class=\"rmd-text rmd-plain\">code\n</span></code></pre>\n"}}
+{"id": "mdblock-Rust代码围栏高亮外壳", "family": "md-block", "check": "html", "input": {"md": "```rust\nfn main() {}\n```\n"}, "expect": {"contains": ["<pre class=\"rmd-code\"><code class=\"language-rust\">", "main"], "not_contains": ["<p>"]}}
+{"id": "mdblock-波浪线围栏等价反引号", "family": "md-block", "check": "html", "input": {"md": "~~~rust\nfn main() {}\n~~~\n"}, "expect": {"contains": ["class=\"language-rust\"", "<pre class=\"rmd-code\">"]}}
+{"id": "mdblock-围栏信息多余词只取语言", "family": "md-block", "check": "html", "input": {"md": "```rust title\nx\n```\n"}, "expect": {"contains": ["class=\"language-rust\""], "not_contains": ["title"]}}
+{"id": "mdblock-围栏语言前空格", "family": "md-block", "check": "html", "input": {"md": "``` rust\nx\n```\n"}, "expect": {"contains": ["class=\"language-rust\""]}}
+{"id": "mdblock-未闭合围栏仍是代码块", "family": "md-block", "check": "html", "input": {"md": "```\nunclosed\n"}, "expect": {"equals": "<pre class=\"rmd-code\"><code><span class=\"rmd-text rmd-plain\">unclosed\n</span></code></pre>\n"}}
+{"id": "mdblock-四反引号围栏容纳三反引号", "family": "md-block", "check": "html", "input": {"md": "````\n```\nx\n```\n````\n"}, "expect": {"equals": "<pre class=\"rmd-code\"><code><span class=\"rmd-text rmd-plain\">```\nx\n```\n</span></code></pre>\n"}}
+{"id": "mdblock-四空格缩进代码块", "family": "md-block", "check": "html", "input": {"md": "    indented code\n"}, "expect": {"equals": "<pre class=\"rmd-code\"><code><span class=\"rmd-text rmd-plain\">indented code\n</span></code></pre>\n"}}
+{"id": "mdblock-空内容围栏", "family": "md-block", "check": "html", "input": {"md": "```\n\n```\n"}, "expect": {"equals": "<pre class=\"rmd-code\"><code><span class=\"rmd-text rmd-plain\">\n</span></code></pre>\n"}}
+{"id": "mdblock-围栏语言含引号转义", "family": "md-block", "check": "html", "input": {"md": "```a\"b\nx\n```\n"}, "expect": {"equals": "<pre class=\"rmd-code\"><code class=\"language-a&quot;b\"><span class=\"rmd-text rmd-plain\">x\n</span></code></pre>\n"}}
+{"id": "mdblock-围栏语言含逗号保留", "family": "md-block", "check": "html", "input": {"md": "```rust,ignore\nx\n```\n"}, "expect": {"contains": ["class=\"language-rust,ignore\""]}}
+{"id": "mdblock-三格缩进围栏", "family": "md-block", "check": "html", "input": {"md": "   ```\n   x\n   ```\n"}, "expect": {"equals": "<pre class=\"rmd-code\"><code><span class=\"rmd-text rmd-plain\">x\n</span></code></pre>\n"}}
+{"id": "mdblock-更长闭合围栏", "family": "md-block", "check": "html", "input": {"md": "```\nx\n`````\n"}, "expect": {"equals": "<pre class=\"rmd-code\"><code><span class=\"rmd-text rmd-plain\">x\n</span></code></pre>\n"}}
+{"id": "mdblock-波浪围栏容纳反引号", "family": "md-block", "check": "html", "input": {"md": "~~~\n```\nx\n```\n~~~\n"}, "expect": {"equals": "<pre class=\"rmd-code\"><code><span class=\"rmd-text rmd-plain\">```\nx\n```\n</span></code></pre>\n"}}
+{"id": "mdblock-信息含反引号不是围栏", "family": "md-block", "check": "html", "input": {"md": "```a`b\nx\n```\n"}, "expect": {"equals": "<p>```a`b<br />\nx</p>\n<pre class=\"rmd-code\"><code></code></pre>\n"}}
+{"id": "mdblock-围栏保留CRLF", "family": "md-block", "check": "html", "input": {"md": "```rust\r\nfn main() {}\r\n```\r\n"}, "expect": {"contains": ["class=\"language-rust\"", "\r\n</span></code></pre>\n"]}}
+{"id": "mdblock-围栏内HTML被转义", "family": "md-block", "check": "html", "input": {"md": "```html\n<script>alert(1)</script>\n```\n"}, "expect": {"contains": ["class=\"language-html\"", "&lt;"], "not_contains": ["<script>"]}}
+{"id": "mdblock-未闭合波浪围栏", "family": "md-block", "check": "html", "input": {"md": "~~~\nabc\n"}, "expect": {"equals": "<pre class=\"rmd-code\"><code><span class=\"rmd-text rmd-plain\">abc\n</span></code></pre>\n"}}
+# ----------------------------------------------------------------------
+# 表格：对齐、单元格、前后空行、列数不一致
+{"id": "mdblock-基本表格", "family": "md-block", "check": "html", "input": {"md": "| a | b |\n| --- | --- |\n| 1 | 2 |\n"}, "expect": {"equals": "<table>\n<thead>\n<tr>\n<th>a</th>\n<th>b</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>1</td>\n<td>2</td>\n</tr>\n</tbody>\n</table>\n"}}
+{"id": "mdblock-无首尾竖线表格", "family": "md-block", "check": "html", "input": {"md": "a | b\n--- | ---\n1 | 2\n"}, "expect": {"equals": "<table>\n<thead>\n<tr>\n<th>a</th>\n<th>b</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>1</td>\n<td>2</td>\n</tr>\n</tbody>\n</table>\n"}}
+{"id": "mdblock-左右对齐表格", "family": "md-block", "check": "html", "input": {"md": "| a | b |\n| :--- | ---: |\n| 1 | 2 |\n"}, "expect": {"equals": "<table>\n<thead>\n<tr>\n<th align=\"left\">a</th>\n<th align=\"right\">b</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td align=\"left\">1</td>\n<td align=\"right\">2</td>\n</tr>\n</tbody>\n</table>\n"}}
+{"id": "mdblock-居中对齐表格", "family": "md-block", "check": "html", "input": {"md": "| a | b |\n| :---: | --- |\n| 1 | 2 |\n"}, "expect": {"equals": "<table>\n<thead>\n<tr>\n<th align=\"center\">a</th>\n<th>b</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td align=\"center\">1</td>\n<td>2</td>\n</tr>\n</tbody>\n</table>\n"}}
+{"id": "mdblock-只有表头表格", "family": "md-block", "check": "html", "input": {"md": "| a | b |\n| --- | --- |\n"}, "expect": {"equals": "<table>\n<thead>\n<tr>\n<th>a</th>\n<th>b</th>\n</tr>\n</thead>\n</table>\n"}}
+{"id": "mdblock-短行补空单元格", "family": "md-block", "check": "html", "input": {"md": "| a | b |\n| --- | --- |\n| 1 |\n"}, "expect": {"equals": "<table>\n<thead>\n<tr>\n<th>a</th>\n<th>b</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>1</td>\n<td></td>\n</tr>\n</tbody>\n</table>\n"}}
+{"id": "mdblock-多余列被丢弃", "family": "md-block", "check": "html", "input": {"md": "| a | b |\n|---|---|\n| 1 | 2 | 3 |\n"}, "expect": {"equals": "<table>\n<thead>\n<tr>\n<th>a</th>\n<th>b</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>1</td>\n<td>2</td>\n</tr>\n</tbody>\n</table>\n"}}
+{"id": "mdblock-分隔行列数不符不是表格", "family": "md-block", "check": "html", "input": {"md": "| a | b |\n| --- |\n| 1 | 2 |\n"}, "expect": {"equals": "<p>| a | b |<br />\n| --- |<br />\n| 1 | 2 |</p>\n"}}
+{"id": "mdblock-行内代码不保护竖线", "family": "md-block", "check": "html", "input": {"md": "| a |\n| --- |\n| `x|y` |\n"}, "expect": {"equals": "<table>\n<thead>\n<tr>\n<th>a</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>`x</td>\n</tr>\n</tbody>\n</table>\n"}}
+{"id": "mdblock-转义竖线保留", "family": "md-block", "check": "html", "input": {"md": "| a |\n| --- |\n| x \\| y |\n"}, "expect": {"equals": "<table>\n<thead>\n<tr>\n<th>a</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>x | y</td>\n</tr>\n</tbody>\n</table>\n"}}
+{"id": "mdblock-代码内转义竖线", "family": "md-block", "check": "html", "input": {"md": "| a |\n| --- |\n| `x\\|y` |\n"}, "expect": {"equals": "<table>\n<thead>\n<tr>\n<th>a</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><code>x|y</code></td>\n</tr>\n</tbody>\n</table>\n"}}
+{"id": "mdblock-单元格br变换行", "family": "md-block", "check": "html", "input": {"md": "| a |\n| --- |\n| x<br>y |\n"}, "expect": {"contains": ["<td>x<br />\ny</td>"], "not_contains": ["raw HTML omitted"]}}
+{"id": "mdblock-单元格br大小写变体", "family": "md-block", "check": "html", "input": {"md": "| a |\n| --- |\n| a<br/>b<BR />c |\n"}, "expect": {"contains": ["<td>a<br />\nb<br />\nc</td>"], "counts": {"<br />": 2}}}
+{"id": "mdblock-转义br保持字面", "family": "md-block", "check": "html", "input": {"md": "| a |\n| --- |\n| a\\<br>b |\n"}, "expect": {"contains": ["<td>a&lt;br&gt;b</td>"], "not_contains": ["raw HTML omitted"]}}
+{"id": "mdblock-代码内br保持字面", "family": "md-block", "check": "html", "input": {"md": "| a |\n| --- |\n| `a<br>b` |\n"}, "expect": {"contains": ["<td><code>a&lt;br&gt;b</code></td>"], "not_contains": ["raw HTML omitted"]}}
+{"id": "mdblock-单减号分隔列有效", "family": "md-block", "check": "html", "input": {"md": "| a |\n| - |\n| 1 |\n"}, "expect": {"equals": "<table>\n<thead>\n<tr>\n<th>a</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>1</td>\n</tr>\n</tbody>\n</table>\n"}}
+{"id": "mdblock-对齐标记带空格", "family": "md-block", "check": "html", "input": {"md": "| a |\n| :---: |\n| 1 |\n"}, "expect": {"equals": "<table>\n<thead>\n<tr>\n<th align=\"center\">a</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td align=\"center\">1</td>\n</tr>\n</tbody>\n</table>\n"}}
+{"id": "mdblock-行尾无竖线表格", "family": "md-block", "check": "html", "input": {"md": "| a | b\n| --- | ---\n| 1 | 2\n"}, "expect": {"equals": "<table>\n<thead>\n<tr>\n<th>a</th>\n<th>b</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>1</td>\n<td>2</td>\n</tr>\n</tbody>\n</table>\n"}}
+{"id": "mdblock-标题后无空行仍表格", "family": "md-block", "check": "html", "input": {"md": "# 标题\n| a |\n|---|\n| 1 |\n"}, "expect": {"contains": ["<h1>标题</h1>\n<table>", "<td>1</td>"]}}
+{"id": "mdblock-段落后无空行仍表格", "family": "md-block", "check": "html", "input": {"md": "段落\n| a | b |\n| --- | --- |\n| 1 | 2 |\n"}, "expect": {"contains": ["<p>段落</p>\n<table>", "<td>1</td>"]}}
+{"id": "mdblock-表后无空行吞成表格行", "family": "md-block", "check": "html", "input": {"md": "| a |\n|---|\n| 1 |\n段落\n"}, "expect": {"contains": ["<td>段落</td>"], "counts": {"<table>": 1}}}
+{"id": "mdblock-两表无空行合并", "family": "md-block", "check": "html", "input": {"md": "| a |\n|---|\n| 1 |\n| b |\n|---|\n| 2 |\n"}, "expect": {"contains": ["<td>---</td>", "<td>b</td>", "<td>2</td>"], "counts": {"<table>": 1, "<tr>": 5}}}
+{"id": "mdblock-表后空行恢复段落", "family": "md-block", "check": "html", "input": {"md": "| a | b |\n| --- | --- |\n| 1 | 2 |\n\n后文\n"}, "expect": {"contains": ["</table>\n<p>后文</p>"]}}
+{"id": "mdblock-列表内表格", "family": "md-block", "check": "html", "input": {"md": "- | a |\n  |---|\n  | 1 |\n"}, "expect": {"contains": ["<li>\n<table>", "</table>\n</li>"]}}
+{"id": "mdblock-引用内表格结构", "family": "md-block", "check": "html", "input": {"md": "> | a | b |\n> |---|---|\n> | 1 | 2 |\n"}, "expect": {"contains": ["<blockquote>\n<table>", "</table>\n</blockquote>"]}}
+# ----------------------------------------------------------------------
+# HTML 块：<div>/<script> 整段丢弃为 <!-- raw HTML omitted -->
+{"id": "mdblock-div块被丢弃", "family": "md-block", "check": "html", "input": {"md": "<div>块</div>\n"}, "expect": {"equals": "<!-- raw HTML omitted -->\n"}}
+{"id": "mdblock-script块被丢弃", "family": "md-block", "check": "html", "input": {"md": "<script>alert(1)</script>\n"}, "expect": {"equals": "<!-- raw HTML omitted -->\n", "not_contains": ["<script"]}}
+{"id": "mdblock-多行div块被丢弃", "family": "md-block", "check": "html", "input": {"md": "<div>\n内容\n</div>\n"}, "expect": {"equals": "<!-- raw HTML omitted -->\n"}}
+{"id": "mdblock-div空行内容保留段落", "family": "md-block", "check": "html", "input": {"md": "<div>\n\n内容\n\n</div>\n"}, "expect": {"equals": "<!-- raw HTML omitted -->\n<p>内容</p>\n<!-- raw HTML omitted -->\n"}}
+{"id": "mdblock-行内span被丢弃", "family": "md-block", "check": "html", "input": {"md": "<span>x</span>\n"}, "expect": {"equals": "<p><!-- raw HTML omitted -->x<!-- raw HTML omitted --></p>\n"}}
+{"id": "mdblock-段落后HTML块被丢弃", "family": "md-block", "check": "html", "input": {"md": "段落\n<div>x</div>\n"}, "expect": {"equals": "<p>段落</p>\n<!-- raw HTML omitted -->\n"}}
+{"id": "mdblock-pre块被丢弃", "family": "md-block", "check": "html", "input": {"md": "<pre>x</pre>\n"}, "expect": {"equals": "<!-- raw HTML omitted -->\n"}}
+{"id": "mdblock-style块被丢弃", "family": "md-block", "check": "html", "input": {"md": "<style>a{}</style>\n"}, "expect": {"equals": "<!-- raw HTML omitted -->\n"}}
+{"id": "mdblock-行内注释被丢弃", "family": "md-block", "check": "html", "input": {"md": "a <!-- c --> b\n"}, "expect": {"equals": "<p>a <!-- raw HTML omitted --> b</p>\n"}}
+{"id": "mdblock-两个HTML块均丢弃", "family": "md-block", "check": "html", "input": {"md": "<div>a</div>\n\n<script>b</script>\n\n段落\n"}, "expect": {"contains": ["<!-- raw HTML omitted -->", "<p>段落</p>"], "counts": {"<!-- raw HTML omitted -->": 2}}}
+{"id": "mdblock-HTML的hr标签不成分隔线", "family": "md-block", "check": "html", "input": {"md": "<hr>\n"}, "expect": {"equals": "<!-- raw HTML omitted -->\n", "not_contains": ["<hr />"]}}
+# ----------------------------------------------------------------------
+# 脚注定义
+{"id": "mdblock-基本脚注定义与回链", "family": "md-block", "check": "html", "input": {"md": "正文[^1]\n\n[^1]: 脚注\n"}, "expect": {"contains": ["class=\"footnote-ref\"", "<section class=\"footnotes\" data-footnotes>", "<li id=\"fn-1\">", "class=\"footnote-backref\""]}}
+{"id": "mdblock-多行脚注软换行", "family": "md-block", "check": "html", "input": {"md": "正文[^a]\n\n[^a]: 多行\n    续行\n"}, "expect": {"contains": ["多行<br />\n续行"]}}
+{"id": "mdblock-未引用脚注消失", "family": "md-block", "check": "html", "input": {"md": "正文\n\n[^a]: 定义\n"}, "expect": {"equals": "<p>正文</p>\n"}}
+{"id": "mdblock-定义在引用之前", "family": "md-block", "check": "html", "input": {"md": "[^a]: 定义\n\n正文[^a]\n"}, "expect": {"contains": ["id=\"fnref-a\"", "<li id=\"fn-a\">"]}}
+{"id": "mdblock-两个脚注按引用排序", "family": "md-block", "check": "html", "input": {"md": "甲[^a] 乙[^b]\n\n[^b]: 第二个\n\n[^a]: 第一个\n"}, "expect": {"contains": ["<li id=\"fn-a\">", "<li id=\"fn-b\">", "第一个", "第二个"], "counts": {"class=\"footnote-backref\"": 2}}}
+{"id": "mdblock-重复引用生成第二个锚点", "family": "md-block", "check": "html", "input": {"md": "甲[^a] 乙[^a]\n\n[^a]: 一次\n"}, "expect": {"contains": ["id=\"fnref-a\"", "id=\"fnref-a-2\""]}}
+{"id": "mdblock-脚注内列表块", "family": "md-block", "check": "html", "input": {"md": "甲[^a]\n\n[^a]: 定义\n\n    - 列表\n"}, "expect": {"contains": ["<li id=\"fn-a\">", "<ul>\n<li>列表</li>\n</ul>"]}}
+{"id": "mdblock-脚注编号递增", "family": "md-block", "check": "html", "input": {"md": "甲[^a] 乙[^b]\n\n[^a]: 一\n\n[^b]: 二\n"}, "expect": {"contains": ["data-footnote-ref>1</a>", "data-footnote-ref>2</a>"]}}
+# ----------------------------------------------------------------------
+# 链接引用定义
+{"id": "mdblock-链接定义带标题", "family": "md-block", "check": "html", "input": {"md": "[foo]: /url \"标题\"\n\n[foo]\n"}, "expect": {"equals": "<p><a href=\"/url\" title=\"标题\">foo</a></p>\n"}}
+{"id": "mdblock-单独链接定义无输出", "family": "md-block", "check": "html", "input": {"md": "[foo]: /url\n"}, "expect": {"equals": ""}}
+{"id": "mdblock-重复链接定义首个生效", "family": "md-block", "check": "html", "input": {"md": "[foo]: /url\n[foo]: /url2\n\n[foo]\n"}, "expect": {"equals": "<p><a href=\"/url\">foo</a></p>\n"}}
+{"id": "mdblock-尖括号URL空格编码", "family": "md-block", "check": "html", "input": {"md": "[foo]: <https://example.com/a b> \"t\"\n\n[foo]\n"}, "expect": {"equals": "<p><a href=\"https://example.com/a%20b\" title=\"t\">foo</a></p>\n"}}
+{"id": "mdblock-定义后紧接使用", "family": "md-block", "check": "html", "input": {"md": "[foo]: /url\n[foo]\n"}, "expect": {"equals": "<p><a href=\"/url\">foo</a></p>\n"}}
+{"id": "mdblock-单引号链接标题", "family": "md-block", "check": "html", "input": {"md": "[foo]: /url '单引号'\n\n[foo]\n"}, "expect": {"equals": "<p><a href=\"/url\" title=\"单引号\">foo</a></p>\n"}}
+# ----------------------------------------------------------------------
+# 块级公式 $$…$$：默认开 / 关闭
+{"id": "mdblock-块级公式默认开启", "family": "md-block", "check": "html", "input": {"md": "$$\nE=mc^2\n$$\n"}, "expect": {"contains": ["<math", "display=\"block\"", "E=mc^2"], "not_contains": ["<p>"], "starts_with": "<div class=\"rmd-math-display\">"}}
+{"id": "mdblock-单行双美元块公式", "family": "md-block", "check": "html", "input": {"md": "$$E=mc^2$$\n"}, "expect": {"contains": ["display=\"block\""], "not_contains": ["<p>"], "starts_with": "<div class=\"rmd-math-display\">"}}
+{"id": "mdblock-四美元不是公式", "family": "md-block", "check": "html", "input": {"md": "$$$$\n"}, "expect": {"equals": "<p>$$$$</p>\n"}}
+{"id": "mdblock-空块公式回退占位", "family": "md-block", "check": "html", "input": {"md": "$$ $$\n"}, "expect": {"equals": "<div class=\"rmd-math-source rmd-math-empty\" data-math-style=\"display\"></div>"}}
+{"id": "mdblock-公式后文字被段落包裹", "family": "md-block", "check": "html", "input": {"md": "$$\nx\n$$ 后文\n"}, "expect": {"contains": ["<p><div class=\"rmd-math-display\">", "后文"]}}
+{"id": "mdblock-关闭公式后变文本", "family": "md-block", "check": "html", "input": {"md": "$$\nE=mc^2\n$$\n", "opts": {"math_dollars": false}}, "expect": {"equals": "<p>$$<br />\nE=mc^2<br />\n$$</p>\n"}}
+{"id": "mdblock-公式两侧空格裁剪", "family": "md-block", "check": "html", "input": {"md": "$$ x $$\n"}, "expect": {"contains": ["<div class=\"rmd-math-display\">", "<annotation encoding=\"application/x-tex\">x</annotation>"]}}
+{"id": "mdblock-多行块公式保留换行", "family": "md-block", "check": "html", "input": {"md": "$$\na\nb\n$$\n"}, "expect": {"contains": ["<annotation encoding=\"application/x-tex\">a\nb</annotation>"]}}
+{"id": "mdblock-公式闭合后空格", "family": "md-block", "check": "html", "input": {"md": "$$\nx\n$$   \n"}, "expect": {"not_contains": ["<p>"], "starts_with": "<div class=\"rmd-math-display\">"}}
+{"id": "mdblock-math围栏不走代码高亮", "family": "md-block", "check": "html", "input": {"md": "```math\nx^2\n```\n"}, "expect": {"equals": "<pre><code class=\"language-math\" data-math-style=\"display\">x^2\n</code></pre>\n"}}
+# ----------------------------------------------------------------------
+# 指令段落：[TOC] / @(笔记本)[标签] 与各种反例
+{"id": "mdblock-TOC指令段落被剥离", "family": "md-block", "check": "html", "input": {"md": "[TOC]\n"}, "expect": {"equals": ""}}
+{"id": "mdblock-小写toc指令剥离", "family": "md-block", "check": "html", "input": {"md": "[toc]\n"}, "expect": {"equals": ""}}
+{"id": "mdblock-混合大小写TOC剥离", "family": "md-block", "check": "html", "input": {"md": "[ToC]\n"}, "expect": {"equals": ""}}
+{"id": "mdblock-TOC尾随空格仍剥离", "family": "md-block", "check": "html", "input": {"md": "[TOC]  \n"}, "expect": {"equals": ""}}
+{"id": "mdblock-at指令段落剥离", "family": "md-block", "check": "html", "input": {"md": "@(笔记本)[标签]\n"}, "expect": {"equals": ""}}
+{"id": "mdblock-at指令两侧空格仍剥离", "family": "md-block", "check": "html", "input": {"md": "  @(笔记本)[标签]  \n"}, "expect": {"equals": ""}}
+{"id": "mdblock-转义TOC保留", "family": "md-block", "check": "html", "input": {"md": "\\[TOC\\]\n"}, "expect": {"equals": "<p>[TOC]</p>\n"}}
+{"id": "mdblock-HTML实体TOC保留", "family": "md-block", "check": "html", "input": {"md": "&#91;TOC&#93;\n"}, "expect": {"equals": "<p>[TOC]</p>\n"}}
+{"id": "mdblock-引用内TOC保留", "family": "md-block", "check": "html", "input": {"md": "> [TOC]\n"}, "expect": {"equals": "<blockquote>\n<p>[TOC]</p>\n</blockquote>\n"}}
+{"id": "mdblock-句子中TOC保留", "family": "md-block", "check": "html", "input": {"md": "关于 [TOC] 的说明\n"}, "expect": {"equals": "<p>关于 [TOC] 的说明</p>\n"}}
+{"id": "mdblock-行内代码TOC保留", "family": "md-block", "check": "html", "input": {"md": "`[TOC]`\n"}, "expect": {"equals": "<p><code>[TOC]</code></p>\n"}}
+{"id": "mdblock-加粗TOC保留", "family": "md-block", "check": "html", "input": {"md": "**[TOC]**\n"}, "expect": {"equals": "<p><strong>[TOC]</strong></p>\n"}}
+{"id": "mdblock-TOC带正文保留", "family": "md-block", "check": "html", "input": {"md": "[TOC] 正文\n"}, "expect": {"equals": "<p>[TOC] 正文</p>\n"}}
+{"id": "mdblock-两行TOC保留", "family": "md-block", "check": "html", "input": {"md": "[TOC]\n[TOC]\n"}, "expect": {"equals": "<p>[TOC]<br />\n[TOC]</p>\n"}}
+{"id": "mdblock-列表内TOC保留", "family": "md-block", "check": "html", "input": {"md": "- [TOC]\n"}, "expect": {"equals": "<ul>\n<li>[TOC]</li>\n</ul>\n"}}
+{"id": "mdblock-标题内TOC保留", "family": "md-block", "check": "html", "input": {"md": "# [TOC]\n"}, "expect": {"equals": "<h1>[TOC]</h1>\n"}}
+{"id": "mdblock-全角TOC保留", "family": "md-block", "check": "html", "input": {"md": "［TOC］\n"}, "expect": {"equals": "<p>［TOC］</p>\n"}}
+{"id": "mdblock-错位括号at指令保留", "family": "md-block", "check": "html", "input": {"md": "@(笔记)本)[标签]\n"}, "expect": {"equals": "<p>@(笔记)本)[标签]</p>\n"}}
+# ----------------------------------------------------------------------
+# CRLF / BOM / 纯空文档
+{"id": "mdblock-空文档无输出", "family": "md-block", "check": "html", "input": {"md": ""}, "expect": {"equals": ""}}
+{"id": "mdblock-只换行无输出", "family": "md-block", "check": "html", "input": {"md": "\n"}, "expect": {"equals": ""}}
+{"id": "mdblock-只空格无输出", "family": "md-block", "check": "html", "input": {"md": "   \n"}, "expect": {"equals": ""}}
+{"id": "mdblock-空格制表符无输出", "family": "md-block", "check": "html", "input": {"md": "  \t \n"}, "expect": {"equals": ""}}
+{"id": "mdblock-只CRLF无输出", "family": "md-block", "check": "html", "input": {"md": "\r\n"}, "expect": {"equals": ""}}
+{"id": "mdblock-只BOM无输出", "family": "md-block", "check": "html", "input": {"md": "﻿"}, "expect": {"equals": ""}}
+{"id": "mdblock-BOM后标题", "family": "md-block", "check": "html", "input": {"md": "﻿# 标题\n"}, "expect": {"equals": "<h1>标题</h1>\n"}}
+{"id": "mdblock-CRLF文档归一化", "family": "md-block", "check": "html", "input": {"md": "# 标题\r\n\r\n段落\r\n"}, "expect": {"equals": "<h1>标题</h1>\n<p>段落</p>\n"}}
+{"id": "mdblock-BOM后HTML块仍丢弃", "family": "md-block", "check": "html", "input": {"md": "﻿<div>x</div>\n"}, "expect": {"equals": "<!-- raw HTML omitted -->\n"}}
+# ----------------------------------------------------------------------
+# blocks 检查器：顶层块 kind / start_line / end_line / editable
+{"id": "mdblock-混合文档顶层块全序列", "family": "md-block", "check": "blocks", "input": {"md": "# 标题\n\n正文第一段\n\n- 一\n- 二\n\n```rust\nlet x = 1;\n```\n\n> 引用\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\n---\n\n<div>x</div>\n"}, "expect": {"count": 8, "items": [{"index": 0, "kind": "Heading", "start_line": 1, "end_line": 1, "editable": true}, {"index": 1, "kind": "Paragraph", "start_line": 3, "end_line": 3, "editable": true}, {"index": 2, "kind": "List", "start_line": 5, "end_line": 6, "editable": true}, {"index": 3, "kind": "CodeBlock", "start_line": 8, "end_line": 10, "editable": true}, {"index": 4, "kind": "BlockQuote", "start_line": 12, "end_line": 12, "editable": true}, {"index": 5, "kind": "Table", "start_line": 14, "end_line": 16, "editable": false}, {"index": 6, "kind": "ThematicBreak", "start_line": 18, "end_line": 18, "editable": false}, {"index": 7, "kind": "HtmlBlock", "start_line": 20, "end_line": 20, "editable": false}]}}
+{"id": "mdblock-空文档块为空", "family": "md-block", "check": "blocks", "input": {"md": ""}, "expect": {"count": 0}}
+{"id": "mdblock-纯空行块为空", "family": "md-block", "check": "blocks", "input": {"md": "\n\n\n"}, "expect": {"count": 0}}
+{"id": "mdblock-空格制表符块为空", "family": "md-block", "check": "blocks", "input": {"md": "   \n\t\n"}, "expect": {"count": 0}}
+{"id": "mdblock-单段落块范围", "family": "md-block", "check": "blocks", "input": {"md": "一段\n"}, "expect": {"count": 1, "items": [{"index": 0, "kind": "Paragraph", "start_line": 1, "end_line": 1, "editable": true}]}}
+{"id": "mdblock-标题段落两块", "family": "md-block", "check": "blocks", "input": {"md": "# 标题\n\n段落\n"}, "expect": {"count": 2, "items": [{"index": 0, "kind": "Heading", "start_line": 1, "end_line": 1}, {"index": 1, "kind": "Paragraph", "start_line": 3, "end_line": 3}]}}
+{"id": "mdblock-多行段落行范围", "family": "md-block", "check": "blocks", "input": {"md": "a\nb\n"}, "expect": {"count": 1, "items": [{"index": 0, "kind": "Paragraph", "start_line": 1, "end_line": 2, "editable": true}]}}
+{"id": "mdblock-嵌套列表只记顶层", "family": "md-block", "check": "blocks", "input": {"md": "- 一\n  - 一之一\n- 二\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"}, "expect": {"count": 2, "items": [{"index": 0, "kind": "List", "start_line": 1, "end_line": 3}, {"index": 1, "kind": "Table", "start_line": 5, "end_line": 7, "editable": false}]}}
+{"id": "mdblock-表格不可编辑", "family": "md-block", "check": "blocks", "input": {"md": "| a |\n|---|\n| 1 |\n"}, "expect": {"count": 1, "items": [{"index": 0, "kind": "Table", "start_line": 1, "end_line": 3, "editable": false}]}}
+{"id": "mdblock-HTML块不可编辑", "family": "md-block", "check": "blocks", "input": {"md": "<div>块</div>\n"}, "expect": {"count": 1, "items": [{"index": 0, "kind": "HtmlBlock", "start_line": 1, "end_line": 1, "editable": false}]}}
+{"id": "mdblock-分隔线不可编辑", "family": "md-block", "check": "blocks", "input": {"md": "---\n"}, "expect": {"count": 1, "items": [{"index": 0, "kind": "ThematicBreak", "start_line": 1, "end_line": 1, "editable": false}]}}
+{"id": "mdblock-代码围栏可编辑", "family": "md-block", "check": "blocks", "input": {"md": "```rust\nx\n```\n"}, "expect": {"count": 1, "items": [{"index": 0, "kind": "CodeBlock", "start_line": 1, "end_line": 3, "editable": true}]}}
+{"id": "mdblock-引用可编辑", "family": "md-block", "check": "blocks", "input": {"md": "> 引用\n"}, "expect": {"count": 1, "items": [{"index": 0, "kind": "BlockQuote", "start_line": 1, "end_line": 1, "editable": true}]}}
+{"id": "mdblock-被引用脚注定义成块", "family": "md-block", "check": "blocks", "input": {"md": "正文[^a]\n\n[^a]: 定义\n"}, "expect": {"count": 2, "items": [{"index": 0, "kind": "Paragraph", "start_line": 1, "end_line": 1}, {"index": 1, "kind": "FootnoteDefinition", "start_line": 3, "end_line": 3, "editable": false}]}}
+{"id": "mdblock-未引用脚注定义不成块", "family": "md-block", "check": "blocks", "input": {"md": "正文\n\n[^a]: 定义\n"}, "expect": {"count": 1, "items": [{"index": 0, "kind": "Paragraph", "start_line": 1, "end_line": 1}]}}
+{"id": "mdblock-脚注块顺序不按行号", "family": "md-block", "check": "blocks", "input": {"md": "正文一[^a]\n\n正文二\n\n[^a]: 定义\n\n正文三\n"}, "expect": {"count": 4, "items": [{"index": 0, "kind": "Paragraph", "start_line": 1, "end_line": 1}, {"index": 1, "kind": "Paragraph", "start_line": 3, "end_line": 3}, {"index": 2, "kind": "Paragraph", "start_line": 7, "end_line": 7}], "at": {"3": {"index": 3, "kind": "FootnoteDefinition", "start_line": 5, "end_line": 5, "editable": false}}}}
+{"id": "mdblock-独占块公式不可编辑", "family": "md-block", "check": "blocks", "input": {"md": "$$\na+b\n$$\n"}, "expect": {"count": 1, "items": [{"index": 0, "kind": "Paragraph", "start_line": 1, "end_line": 3, "editable": false}]}}
+{"id": "mdblock-行内公式段落可编辑", "family": "md-block", "check": "blocks", "input": {"md": "前面 $x$ 后面\n"}, "expect": {"count": 1, "items": [{"index": 0, "kind": "Paragraph", "start_line": 1, "end_line": 1, "editable": true}]}}
+{"id": "mdblock-特殊围栏不可编辑", "family": "md-block", "check": "blocks", "input": {"md": "```flow\nst=>start: S\ne=>end\nst->e\n```\n\n```sequence\nA->B: x\n```\n\n```math\na+b\n```\n\n```rust\nlet x = 1;\n```\n"}, "expect": {"count": 4, "items": [{"index": 0, "kind": "CodeBlock", "start_line": 1, "end_line": 5, "editable": false}, {"index": 1, "kind": "CodeBlock", "start_line": 7, "end_line": 9, "editable": false}, {"index": 2, "kind": "CodeBlock", "start_line": 11, "end_line": 13, "editable": false}, {"index": 3, "kind": "CodeBlock", "start_line": 15, "end_line": 17, "editable": true}]}}
+{"id": "mdblock-Setext标题两行范围", "family": "md-block", "check": "blocks", "input": {"md": "标题\n===\n"}, "expect": {"count": 1, "items": [{"index": 0, "kind": "Heading", "start_line": 1, "end_line": 2, "editable": true}]}}
+{"id": "mdblock-两表夹段落顺序", "family": "md-block", "check": "blocks", "input": {"md": "| a |\n|---|\n| 1 |\n\n正文\n\n| b |\n|---|\n| 2 |\n"}, "expect": {"count": 3, "items": [{"index": 0, "kind": "Table", "start_line": 1, "end_line": 3, "editable": false}, {"index": 1, "kind": "Paragraph", "start_line": 5, "end_line": 5}, {"index": 2, "kind": "Table", "start_line": 7, "end_line": 9, "editable": false}]}}
+{"id": "mdblock-引用内表格只记引用块", "family": "md-block", "check": "blocks", "input": {"md": "> | c | d |\n> |---|---|\n> | 3 | 4 |\n"}, "expect": {"count": 1, "items": [{"index": 0, "kind": "BlockQuote", "start_line": 1, "end_line": 3, "editable": true}]}}
+{"id": "mdblock-列表内代码只记列表块", "family": "md-block", "check": "blocks", "input": {"md": "- a\n\n      code\n"}, "expect": {"count": 1, "items": [{"index": 0, "kind": "List", "start_line": 1, "end_line": 3, "editable": true}]}}
+{"id": "mdblock-CRLF段落行范围", "family": "md-block", "check": "blocks", "input": {"md": "a\r\nb\r\n"}, "expect": {"count": 1, "items": [{"index": 0, "kind": "Paragraph", "start_line": 1, "end_line": 2}]}}
+{"id": "mdblock-制表符代码块", "family": "md-block", "check": "blocks", "input": {"md": "\tcode\n"}, "expect": {"count": 1, "items": [{"index": 0, "kind": "CodeBlock", "start_line": 1, "end_line": 1, "editable": true}]}}
+{"id": "mdblock-空标题成块", "family": "md-block", "check": "blocks", "input": {"md": "#\n"}, "expect": {"count": 1, "items": [{"index": 0, "kind": "Heading", "start_line": 1, "end_line": 1, "editable": true}]}}
+{"id": "mdblock-TOC剥离后无块", "family": "md-block", "check": "blocks", "input": {"md": "[TOC]\n"}, "expect": {"count": 0}}
+{"id": "mdblock-TOC剥离保留后续行号", "family": "md-block", "check": "blocks", "input": {"md": "[TOC]\n\n# 标题\n"}, "expect": {"count": 1, "items": [{"index": 0, "kind": "Heading", "start_line": 3, "end_line": 3}]}}
+{"id": "mdblock-at指令剥离后无块", "family": "md-block", "check": "blocks", "input": {"md": "@(笔记本)[标签]\n"}, "expect": {"count": 0}}
+{"id": "mdblock-列表后分隔线两块", "family": "md-block", "check": "blocks", "input": {"md": "- a\n---\n"}, "expect": {"count": 2, "items": [{"index": 0, "kind": "List", "start_line": 1, "end_line": 1, "editable": true}, {"index": 1, "kind": "ThematicBreak", "start_line": 2, "end_line": 2, "editable": false}]}}
+{"id": "mdblock-单独链接定义不成块", "family": "md-block", "check": "blocks", "input": {"md": "[foo]: /url\n"}, "expect": {"count": 0}}
+{"id": "mdblock-定义后段落行号", "family": "md-block", "check": "blocks", "input": {"md": "[foo]: /url\n\n正文\n"}, "expect": {"count": 1, "items": [{"index": 0, "kind": "Paragraph", "start_line": 3, "end_line": 3}]}}
+# ----------------------------------------------------------------------
+# toc 检查器：多级、重复、跳级、行内代码/公式标题
+{"id": "mdblock-基本目录三项去重编号", "family": "md-block", "check": "toc", "input": {"md": "# 一\n\n## 二\n\n# 一\n"}, "expect": {"count": 3, "items": [{"level": 1, "text": "一", "id": "一", "line": 1}, {"level": 2, "text": "二", "id": "二", "line": 3}, {"level": 1, "text": "一", "id": "一-1", "line": 5}]}}
+{"id": "mdblock-三个重复标题编号", "family": "md-block", "check": "toc", "input": {"md": "# 重复\n\n# 重复\n\n# 重复\n"}, "expect": {"count": 3, "items": [{"id": "重复", "line": 1}, {"id": "重复-1", "line": 3}, {"id": "重复-2", "line": 5}]}}
+{"id": "mdblock-跳级标题目录", "family": "md-block", "check": "toc", "input": {"md": "## 跳级\n\n#### 更深\n"}, "expect": {"count": 2, "items": [{"level": 2, "text": "跳级", "line": 1}, {"level": 4, "text": "更深", "line": 3}]}}
+{"id": "mdblock-行内代码进入目录文字", "family": "md-block", "check": "toc", "input": {"md": "# 标题 `代码`\n"}, "expect": {"count": 1, "items": [{"level": 1, "text": "标题 代码", "id": "标题-代码", "line": 1}]}}
+{"id": "mdblock-公式开启目录取注释文字", "family": "md-block", "check": "toc", "input": {"md": "# 标题 $x$\n"}, "expect": {"count": 1, "items": [{"level": 1, "text": "标题 x", "id": "标题-x"}]}}
+{"id": "mdblock-公式关闭目录保留美元符", "family": "md-block", "check": "toc", "input": {"md": "# 标题 $x$\n", "opts": {"math_dollars": false}}, "expect": {"count": 1, "items": [{"text": "标题 $x$", "id": "标题-x"}]}}
+{"id": "mdblock-强调文字进入目录", "family": "md-block", "check": "toc", "input": {"md": "# **粗体** 与 *斜体*\n"}, "expect": {"count": 1, "items": [{"text": "粗体 与 斜体", "id": "粗体-与-斜体"}]}}
+{"id": "mdblock-Setext标题进目录", "family": "md-block", "check": "toc", "input": {"md": "Setext 标题\n===\n"}, "expect": {"count": 1, "items": [{"level": 1, "text": "Setext 标题", "id": "setext-标题", "line": 1}]}}
+{"id": "mdblock-目录标点归一化", "family": "md-block", "check": "toc", "input": {"md": "# 带 空格、标点！\n"}, "expect": {"count": 1, "items": [{"text": "带 空格、标点！", "id": "带-空格标点"}]}}
+{"id": "mdblock-链接文字进入目录", "family": "md-block", "check": "toc", "input": {"md": "# [链接](https://example.com)\n"}, "expect": {"count": 1, "items": [{"text": "链接", "id": "链接"}]}}
+{"id": "mdblock-六级标题进目录", "family": "md-block", "check": "toc", "input": {"md": "###### 六级\n"}, "expect": {"count": 1, "items": [{"level": 6, "text": "六级", "id": "六级"}]}}
+{"id": "mdblock-目录去掉结尾井号", "family": "md-block", "check": "toc", "input": {"md": "# 标题 ###\n"}, "expect": {"count": 1, "items": [{"text": "标题", "id": "标题"}]}}
+{"id": "mdblock-空标题空锚点", "family": "md-block", "check": "toc", "input": {"md": "#\n"}, "expect": {"count": 1, "items": [{"level": 1, "text": "", "id": "", "line": 1}]}}
+{"id": "mdblock-无空格井号不进目录", "family": "md-block", "check": "toc", "input": {"md": "#无空格\n"}, "expect": {"count": 0}}
+{"id": "mdblock-多行Setext目录文本", "family": "md-block", "check": "toc", "input": {"md": "多行\n标题\n===\n"}, "expect": {"count": 1, "items": [{"level": 1, "text": "多行 标题", "id": "多行-标题", "line": 1}]}}
+{"id": "mdblock-CRLF与指令后目录行号跨度", "family": "md-block", "check": "toc", "input": {"md": "[TOC]\n\n# 一\r\n## 二\r\n"}, "expect": {"count": 2, "items": [{"level": 1, "text": "一", "id": "一", "line": 3, "span": [7, 12]}, {"level": 2, "text": "二", "id": "二", "line": 4, "span": [14, 20]}]}}
+{"id": "mdblock-缩进标题目录跨度", "family": "md-block", "check": "toc", "input": {"md": "   # 缩进\n"}, "expect": {"count": 1, "items": [{"level": 1, "text": "缩进", "id": "缩进", "line": 1, "span": [3, 11]}]}}
+{"id": "mdblock-大小写重复标题编号", "family": "md-block", "check": "toc", "input": {"md": "# A B\n\n# a b\n"}, "expect": {"count": 2, "items": [{"text": "A B", "id": "a-b"}, {"text": "a b", "id": "a-b-1"}]}}
+{"id": "mdblock-表情符号锚点", "family": "md-block", "check": "toc", "input": {"md": "# 🚀 发射\n"}, "expect": {"count": 1, "items": [{"text": "🚀 发射", "id": "-发射"}]}}
+{"id": "mdblock-纯标点标题空锚点", "family": "md-block", "check": "toc", "input": {"md": "# !!!\n"}, "expect": {"count": 1, "items": [{"text": "!!!", "id": ""}]}}
+{"id": "mdblock-引用内标题进目录", "family": "md-block", "check": "toc", "input": {"md": "> # 引用标题\n"}, "expect": {"count": 1, "items": [{"level": 1, "text": "引用标题", "id": "引用标题", "line": 1, "span": [2, 16]}]}}
+{"id": "mdblock-列表内标题进目录", "family": "md-block", "check": "toc", "input": {"md": "- # 列表标题\n"}, "expect": {"count": 1, "items": [{"level": 1, "text": "列表标题", "id": "列表标题", "line": 1, "span": [2, 16]}]}}
+{"id": "mdblock-同级同文标题编号", "family": "md-block", "check": "toc", "input": {"md": "# 同\n\n## 同\n"}, "expect": {"count": 2, "items": [{"level": 1, "id": "同"}, {"level": 2, "id": "同-1"}]}}
+{"id": "mdblock-两个空标题锚点递增", "family": "md-block", "check": "toc", "input": {"md": "# \n\n## \n"}, "expect": {"count": 2, "items": [{"level": 1, "text": "", "id": "", "line": 1}, {"level": 2, "text": "", "id": "-1", "line": 3}]}}
+{"id": "mdblock-脚注引用不进目录文字", "family": "md-block", "check": "toc", "input": {"md": "# 标题[^a]\n\n[^a]: 注\n"}, "expect": {"count": 1, "items": [{"level": 1, "text": "标题", "id": "标题", "line": 1, "span": [0, 12]}]}}
+{"id": "mdblock-ASCII标题跨度", "family": "md-block", "check": "toc", "input": {"md": "## ab\n"}, "expect": {"count": 1, "items": [{"level": 2, "text": "ab", "id": "ab", "line": 1, "span": [0, 5]}]}}
+{"id": "mdblock-标题中减号文字锚点", "family": "md-block", "check": "toc", "input": {"md": "# a --- b\n"}, "expect": {"count": 1, "items": [{"text": "a --- b", "id": "a-----b"}]}}

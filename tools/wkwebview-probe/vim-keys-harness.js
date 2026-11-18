@@ -189,6 +189,9 @@
       state: CM6.EditorState.create({ doc: o.doc != null ? o.doc : 文档, extensions: exts }),
       parent: host,
     });
+    // ⭐ 把扩展表挂在 view 上**只为用例级隔离**（下一条 `清空历史` 要重建同一条链）。
+    //    ⚠️ 属性名带探针前缀：⛔ 不碰 CM6 自己的 `view.state` / `view.plugins`。
+    view.__探针扩展 = exts;
     return view;
   }
 
@@ -248,6 +251,21 @@
       记.push({ id: id, '名': 名, '判据': 判据, '结果': 结果, '值': 值 || null });
     }
     function 致命(为什么) { return { '致命': 为什么, '检查': 记 }; }
+
+    // ⭐ **允许不进编辑态转发的动作**（`design/0056` §2.2 F）：`view.start` 是 owner=web，
+    //    但 `accel` 是**裸 `F2`**（不含 cmd）⇒ `deriveWhitelist` 按"含 cmd"那条派生规则
+    //    把它记进 `skipped`。设计明说这是**有意的**：F2 由主窗口/应用层处理，焦点在正文里
+    //    时先 `⌘E` 退出，⛔ 编辑器里按 F2 不响应。
+    //    ⚠️ 这是**例外清单**，⛔ 不是把判据放宽成"skipped 可以非空"：
+    //    `0b-5` 仍要求 specs 非空、且**每一条** skipped 的 id 都在这里登记；没登记的就红。
+    //    ⚠️ `0c-R1a` / `0c-R2b` 用同一张表把这条从"必须落到应用 handler"里排除，
+    //    ⛔ 不另写第二份豁免清单（`INV-SET-01`：没有第二份键位/白名单真相）。
+    const 允许跳过编辑态 = Object.freeze({
+      'view.start': '裸 F2（无 cmd）——design/0056 §2.2 F：由主窗口处理，⛔ 不进编辑态转发',
+    });
+    function 允许跳过(id) {
+      return Object.prototype.hasOwnProperty.call(允许跳过编辑态, id);
+    }
 
     // ── E1 · 页面骨架（⛔ 缺一样就说明 .sh 与夹具对不上了） ──
     const hostA = document.getElementById('host-a');
@@ -418,13 +436,39 @@
                 + '它们由 `keymap.of()` 的 `enables` 带出来；`vimPlugin` 是独立插件。' });
     }
     {
+      // ⚠️⭐⭐ `skipped` **允许非空**，但只允许**登记过**的例外（见 `允许跳过编辑态`）。
+      //    `view.start`（裸 F2）按 `design/0056` §2.2 F 不该被转发 ⇒ 在这里是**设计明说**的形态，
+      //    ⛔ 不是"派生写漏了"。例外之外的任何 skipped 仍必须让这条红。
+      const 未登记 = 派生.skipped.filter(function (r) { return !允许跳过(r.id); });
+      const 豁免 = 派生.skipped.filter(function (r) { return 允许跳过(r.id); });
+      const 派生ok = 派生.specs.length > 0 && 未登记.length === 0;
       存('0b-5', '转发白名单从真表派生（⛔ 无第二份清单）',
-        '`deriveWhitelist(真表)` 的 specs 逐条都对得上表里 owner=web∧含cmd∧不含ctrl 的行；skipped 空',
-        (派生.specs.length > 0 && 派生.skipped.length === 0) ? '通过' : '失败',
+        '`deriveWhitelist(真表)` 的 specs 非空 ∧ 每一条 skipped 的 id 都在允许清单里'
+        + '（`view.start`＝裸 F2，design/0056 §2.2 F：由主窗口处理，⛔ 不进编辑态转发）',
+        派生ok ? '通过' : '失败',
         { '表长': TABLE.length,
           specs: 派生.specs.map(function (r) { return r.id + '：' + r.accel + ' → ' + r.spec; }),
           skipped: 派生.skipped.map(function (r) { return r.id + '（' + r.why + '）'; }),
+          未登记: 未登记.map(function (r) { return r.id + '（' + r.why + '）'; }),
+          豁免: 豁免.map(function (r) { return r.id + '（' + r.why + '）'; }),
           notes: 派生.notes.map(function (r) { return r.id + '（' + r.why + '）'; }) });
+    }
+    {
+      // ⭐ **反向对照（判据没被放空）**：把 `view.start` 从允许清单里拿掉，
+      //    `0b-5` 的同一条算式**必须变红**；同时旧口径（skipped 必须为空）今天也必须红。
+      //    ⚠️ 这条**不依赖外部动作**：两次数的是同一份 `派生`，只换"允不允许"这一个开关
+      //    ⇒ 哪天有人把 0b-5 放宽成"skipped 非空就算过"，这里当场红。
+      const 收紧允许 = function (id) { return 允许跳过(id) && id !== 'view.start'; };
+      const 收紧不合 = 派生.skipped.filter(function (r) { return !收紧允许(r.id); });
+      const 今天 = 派生.specs.length > 0 && 派生.skipped.every(function (r) { return 允许跳过(r.id); });
+      const 收紧后 = 派生.specs.length > 0 && 收紧不合.length === 0;
+      const 旧口径 = 派生.specs.length > 0 && 派生.skipped.length === 0;
+      存('0b-5-反向对照', '⭐ 拿掉 `view.start` 的豁免 ⇒ `0b-5` 必须变红（判据没被放空）',
+        '今天口径 === 通过 ∧ 拿掉豁免后 === 失败 ∧ 旧口径（skipped 必须为空）=== 失败',
+        (今天 === true && 收紧后 === false && 旧口径 === false) ? '通过' : '失败',
+        { '拿掉后的不合规': 收紧不合.map(function (r) { return r.id + '（' + r.why + '）'; }),
+          'view.start 在 skipped 里': 派生.skipped.some(function (r) { return r.id === 'view.start'; }),
+          今天口径: 今天, '拿掉豁免后': 收紧后, 旧口径: 旧口径 });
     }
 
     // ══════════════ 按键分发的小框架 ══════════════
@@ -473,6 +517,33 @@
       try { 发键(view, { key: 'Escape', keyCode: 27 }); } catch (e) { /* 同上 */ }
     }
 
+    // ══════════════ 用例级隔离（`bugs/0096` ②） ══════════════
+    //
+    // ⚠️⚠️ **为什么必须重建 EditorState**：`historyKeymap` 注册的 `Mod-z` / `Mod-Shift-z`
+    //    优先级高于我们那条 `Prec.low` 转发扩展（`gui/mod.rs:477-479` 已承认这个顺序）。
+    //    ⇒ 上一条用例 `dd` ＋ `⌘Z` 留下的 **redo 栈**会把下一条 `edit.redo` 截胡：
+    //    事件被 `historyKeymap` 吃掉、`应用到=[]`，看起来像"转发链漏了"（`0c-R2b` 的假红）。
+    //    ⭐ 隔离做在**框架层**（这一处），⛔ 不给每条用例单独打补丁。
+    //    ⚠️ `setState` 会销毁并重建 ViewPlugin（含 vim 插件）⇒ `view.cm` 也是新的；
+    //    需要插入模式的用例由 `隔离用例(view, true)` 重新按 `i`。
+    function 清空历史(view) {
+      const exts = view && view.__探针扩展;
+      if (!exts) return false;
+      try {
+        view.setState(CM6.EditorState.create({ doc: 文档, extensions: exts }));
+        return true;
+      } catch (e) { return false; }
+    }
+
+    /** 清历史 ＋（可选）重新进入插入模式；返回"前提成立吗"（⛔ 不抛，交给判据记跳过）。 */
+    async function 隔离用例(view, 进插入) {
+      if (!清空历史(view)) return false;
+      设焦点(view, true);
+      if (!进插入) return true;
+      发键(view, { key: 'i' });
+      return await 等(function () { return vim状态(view).插入模式 === true; }, 1200);
+    }
+
     // ══════════════ 0c-R1 · ⌘-系应用键在编辑区落不落到应用 handler ══════════════
     //
     // ⚠️⚠️ **判据在这里**（`design/0014` §7.1 那一行）：⭐「`⌘`-系**落到应用 handler**」。
@@ -485,7 +556,7 @@
     {
       const 行 = [];
       for (const r of TABLE) {
-        复位(viewA);
+        await 隔离用例(viewA, false);          // ⭐ 用例级隔离（清 undo/redo 栈）
         设焦点(viewA, true);
         const 参 = 事件参数(r.accel);
         const o = 发一条(viewA, 参);
@@ -494,13 +565,21 @@
       }
       const web行 = 行.filter(function (x) { return x.owner === 'web'; });
       const menu行 = 行.filter(function (x) { return x.owner !== 'web'; });
-      // ⭐ 判据：每一条 owner=web 的行都必须落到自己的 handler 上；
+      // ⭐ 判据：每一条 owner=web、且**不在允许跳过清单里**的行都必须落到自己的 handler 上；
       //    且**不许**落到别的 id 上（"按一次动两次"在单键层面的形态）。
-      const web不合 = web行.filter(function (x) { return x.应用到.indexOf(x.id) < 0 || x.应用到.length !== 1; });
+      //    ⚠️ `view.start`（裸 F2）由 `design/0056` §2.2 F 排除在转发之外 ⇒ 只**记录**、
+      //    ⛔ 不要求它落到 handler；但它若**真的**落了，说明豁免掩盖了一个真实偏差 ⇒ 也红。
+      const 应转发行 = web行.filter(function (x) { return !允许跳过(x.id); });
+      const 豁免行 = web行.filter(function (x) { return 允许跳过(x.id); });
+      const web不合 = 应转发行.filter(function (x) { return x.应用到.indexOf(x.id) < 0 || x.应用到.length !== 1; });
+      const 豁免脏 = 豁免行.filter(function (x) { return x.应用到.length > 0; });
       存('0c-R1a', '⭐ owner=web 的 `⌘`-系：每一条都落到**自己**的应用 handler',
-        '∀ owner=web 行：`应用到 === [该 id]`（视图 = 产品形态：vim + 转发链，编辑区聚焦）',
-        (!e3ok) ? '跳过' : (web不合.length === 0 ? '通过' : '失败'),
-        { '前提_E3': e3ok, '条数': web行.length, '不合规': web不合, '全表': 行 });
+        '∀ owner=web ∧ 不在允许跳过清单的行：`应用到 === [该 id]`；'
+        + '豁免行（`view.start`）必须**一个 handler 都不落**（design/0056 §2.2 F）'
+        + '（视图 = 产品形态：vim + 转发链，编辑区聚焦）',
+        (!e3ok) ? '跳过' : ((web不合.length === 0 && 豁免脏.length === 0) ? '通过' : '失败'),
+        { '前提_E3': e3ok, '应转发条数': 应转发行.length, '豁免条数': 豁免行.length,
+          不合规: web不合, 豁免脏: 豁免脏, 全表: 行 });
       // ⭐ 判据：owner=Menu 的行**一条都不许**被转发（`INV-SET-04` 的落点；
       //    `editor-keyprobe` 在真按键下也验过一次：⌘B/⌘, 各只动一次、页面侧没绑定）。
       const menu脏 = menu行.filter(function (x) { return x.应用到.length > 0; });
@@ -515,7 +594,9 @@
       //    ⚠️ 夹具：先用 Vim 的 `dd` 造一条**确定的**改动（⛔ 不靠 `复位` 那次 dispatch ——
       //       它自己有 `selection` 而无 `changes`，在"文档本来就对"时**什么都不做**，
       //       于是 `⌘Z` 就没有东西可退，判据会假红）。
-      复位(viewA); 设焦点(viewA, true); await 歇(30);
+      //    ⭐ `bugs/0096` ②：先清空 CM6 历史再 `dd`，否则上一条用例留下的 redo 栈会改
+      //       变 `⌘Z` 的走向（`historyKeymap` 的 redo 先于转发扩展接手）。
+      await 隔离用例(viewA, false); 设焦点(viewA, true); await 歇(30);
       发键(viewA, { key: 'd' }); await 歇(20);
       发键(viewA, { key: 'd' }); await 歇(40);
       const 改后 = 文本(viewA);
@@ -542,7 +623,7 @@
       const 键 = ['Cmd+S', 'Cmd+F', 'Cmd+P', 'Cmd+C', 'Cmd+V', 'Cmd+X', 'Cmd+A', 'Cmd+Z'];
       const 行 = [];
       for (const a of 键) {
-        复位(viewC); 设焦点(viewC, true);
+        await 隔离用例(viewC, false); 设焦点(viewC, true);   // ⭐ 用例级隔离（bugs/0096 ②）
         const o = 发一条(viewC, 事件参数(a));
         行.push({ '键': a, prevented: o.prevented, '文变了': o.文变了, '应用到': o.应用到, '态后': o.态后 });
       }
@@ -562,23 +643,32 @@
       //       本条要挡的是一个**会卡死用户**的形态：敲着中文（插入模式）按 `⌘E`（`edit.toggle`）
       //       却被 Vim 吞掉 ⇒ 退不出编辑态。
       //    ⚠️ 判据与 `0c-R1a` **同形**（每一条落到**自己**的 handler 上），⛔ 不发明第二套。
-      复位(viewA); 设焦点(viewA, true); await 歇(30);
-      发键(viewA, { key: 'i' });
-      const 进插入 = await 等(function () { return vim状态(viewA).插入模式 === true; }, 1200);
+      //    ⭐⭐ `bugs/0096` ②：**每一条用例前**重建一次 EditorState（清空 undo/redo 栈）。
+      //       理由：上一条用例 `dd`＋`⌘Z` 留下的 **redo 栈**会被 `historyKeymap` 的
+      //       `Mod-Shift-z` 先吃掉 ⇒ `edit.redo` 的 `应用到=[]` 是状态污染，⛔ 不是转发链漏了。
+      //       重建之后重新按 `i` 回到插入模式（插入模式本身不是这里要隔离的东西）。
+      let 全进插入 = true;
       const 行2 = [];
       for (const r of TABLE) {
+        const 在插入 = await 隔离用例(viewA, true);
+        if (!在插入) 全进插入 = false;
         设焦点(viewA, true);
         const o = 发一条(viewA, 事件参数(r.accel));
         行2.push({ id: r.id, accel: r.accel, owner: r.owner, prevented: o.prevented,
-                   '应用到': o.应用到, '仍在插入模式': o.态后.插入模式 });
+                   '应用到': o.应用到, '仍在插入模式': o.态后.插入模式, '历史已重建': 在插入 });
       }
       const web行2 = 行2.filter(function (x) { return x.owner === 'web'; });
-      const 不合2 = web行2.filter(function (x) { return x.应用到.indexOf(x.id) < 0 || x.应用到.length !== 1; });
+      const 应转发2 = web行2.filter(function (x) { return !允许跳过(x.id); });
+      const 豁免2 = web行2.filter(function (x) { return 允许跳过(x.id); });
+      const 不合2 = 应转发2.filter(function (x) { return x.应用到.indexOf(x.id) < 0 || x.应用到.length !== 1; });
+      const 豁免脏2 = 豁免2.filter(function (x) { return x.应用到.length > 0; });
       存('0c-R2b', '⭐ 插入模式下 `owner=web` 的 `⌘`-系**同样**落到应用 handler',
-        '∀ owner=web 行：`应用到 === [该 id]`（⚠️ 打字打到一半按 `⌘E`/`⌘F` 也必须到得了应用）',
-        (!进插入 || !e3ok) ? '跳过' : (不合2.length === 0 ? '通过' : '失败'),
-        { '进了插入模式': 进插入, '前提_E3': e3ok, '条数': web行2.length, '不合规': 不合2, '全表': 行2 });
-      复位(viewA); await 歇(20);
+        '∀ owner=web ∧ 不在允许跳过清单的行：`应用到 === [该 id]`；豁免行（`view.start`）'
+        + '必须一个 handler 都不落（⚠️ 打字打到一半按 `⌘E`/`⌘F` 也必须到得了应用）',
+        (!全进插入 || !e3ok) ? '跳过' : ((不合2.length === 0 && 豁免脏2.length === 0) ? '通过' : '失败'),
+        { '进插入_每行': 全进插入, '前提_E3': e3ok, '应转发条数': 应转发2.length, '豁免条数': 豁免2.length,
+          不合规: 不合2, 豁免脏: 豁免脏2, 全表: 行2 });
+      await 隔离用例(viewA, false); await 歇(20);   // ⭐ 组末再清一次（bugs/0096 ②）
     }
 
     // ══════════════ 0c-C · `⌃O`/`⌃K`/`⌃D`/`⌃H`（裁定 (e) 的基线） ══════════════
@@ -590,7 +680,7 @@
       const 键 = ['Ctrl+O', 'Ctrl+K', 'Ctrl+D', 'Ctrl+H'];
       const 开 = [];
       for (const a of 键) {
-        复位(viewA); 设焦点(viewA, true);
+        await 隔离用例(viewA, false); 设焦点(viewA, true);   // ⭐ 用例级隔离（bugs/0096 ②）
         const o = 发一条(viewA, 事件参数(a));
         // ⭐ 裁定 (e)：判据是「**改了什么 ＋ 退得回去吗**」（⛔ 只看 prevented 不算数）。
         let 退回 = null;
@@ -604,7 +694,7 @@
       }
       const 关 = [];
       for (const a of 键) {
-        复位(viewB); 设焦点(viewB, true);
+        await 隔离用例(viewB, false); 设焦点(viewB, true);   // ⭐ 用例级隔离（bugs/0096 ②）
         const o = 发一条(viewB, 事件参数(a));
         关.push({ '键': a, prevented: o.prevented, '文变了': o.文变了, '应用到': o.应用到 });
       }
@@ -624,9 +714,9 @@
       //    ① 系统把它当 `deleteBackward` ⇒ `e.key` 可能是 `'Backspace'`（`specialKey` 会翻成 `<BS>`）；
       //    ② `e.key` 就是 `'h'`（⇒ `<C-h>`，正是 Vim 的插入模式退格）。
       //    ⇒ 两条都发一遍，看 Vim 各认成什么。⚠️ `e.key` 的**真值**仍只能取 `editor-keyprobe`。
-      复位(viewA); 设焦点(viewA, true);
+      await 隔离用例(viewA, false); 设焦点(viewA, true);   // ⭐ 用例级隔离（bugs/0096 ②）
       const a = 发一条(viewA, 事件参数({ key: 'h', ctrl: true }));
-      复位(viewA); 设焦点(viewA, true);
+      await 隔离用例(viewA, false); 设焦点(viewA, true);   // ⭐ 用例级隔离（bugs/0096 ②）
       const b = 发一条(viewA, 事件参数({ key: 'Backspace', ctrl: true, keyCode: 8 }));
       存('0c-C-H-两形态', '`⌃H` 的两种 `e.key` 形态（如实记录）',
         '两种写法各发一次，记录 `prevented` / 文档变化 / Vim 认成了什么（`vimKeyFromEvent` 的产物）',
@@ -637,7 +727,7 @@
     {
       // ⭐⭐ `⌥x`（§1.4 那条反例）：mac 上 `A-` 前缀被上游**剥掉** ⇒ 键变成裸 `x` ⇒
       //    normal 模式下**执行 vim 的 `x`＝删一个字符**。⚠️ 判据是"真的改了文档"，⛔ 不是"看起来没反应"。
-      复位(viewA); 设焦点(viewA, true);
+      await 隔离用例(viewA, false); 设焦点(viewA, true);   // ⭐ 用例级隔离（bugs/0096 ②）
       const 长前 = 文本(viewA).length;
       const o = 发一条(viewA, { key: 'x', alt: true });
       const o2 = 发一条(viewA, { key: '≈', alt: true });
@@ -651,7 +741,7 @@
 
     // ══════════════ 0c-V · Vim 基本动作（hjkl / dd / u / : / 模式类名） ══════════════
     {
-      复位(viewA); 设焦点(viewA, true);
+      await 隔离用例(viewA, false); 设焦点(viewA, true);   // ⭐ 用例级隔离（bugs/0096 ②）
       // 先把光标挪到第 3 行中段（`h`/`l` 两个方向都要看得见）
       const 修 = viewA.state.doc.line(3).from + 5;
       viewA.dispatch({ selection: { anchor: 修 } });
@@ -667,7 +757,7 @@
         { '起': 起, '按h后': 左, '按l后': 右 });
     }
     {
-      复位(viewA); 设焦点(viewA, true);
+      await 隔离用例(viewA, false); 设焦点(viewA, true);   // ⭐ 用例级隔离（bugs/0096 ②）
       await 歇(20);
       const 行数前 = viewA.state.doc.lines;
       发键(viewA, { key: 'd' }); await 歇(20);
@@ -684,11 +774,11 @@
     {
       // ⭐ `.cm-vimMode` 只在 **normal/overwrite** 模式存在（上游 `updateClass`，产物 `:1406`）
       //    ——它是上游遮蔽原生插入符那条规则的**开关**，也是本探针 0e③ 的支点。
-      复位(viewA); 设焦点(viewA, true); await 歇(40);
+      await 隔离用例(viewA, false); 设焦点(viewA, true); await 歇(40);   // ⭐ 用例级隔离（bugs/0096 ②）
       const normal = { '类': viewA.scrollDOM.classList.contains('cm-vimMode'), '插入模式': vim状态(viewA).插入模式 };
       发键(viewA, { key: 'i' }); await 歇(40);
       const insert = { '类': viewA.scrollDOM.classList.contains('cm-vimMode'), '插入模式': vim状态(viewA).插入模式 };
-      复位(viewA); await 歇(40);
+      await 隔离用例(viewA, false); await 歇(40);   // ⭐ 清一次历史（bugs/0096 ②）
       存('0c-V-模式类名', '⭐ `.cm-vimMode` 只在 normal 模式存在（上游 `updateClass`）',
         'normal ⇒ 有该类 ∧ 插入模式=false；按 `i` ⇒ 类消失 ∧ 插入模式=true',
         (normal.类 === true && normal.插入模式 === false && insert.类 === false && insert.插入模式 === true) ? '通过' : '失败',
@@ -706,7 +796,7 @@
       // ⚠️ `发键` 是同步的，而 `:` 面板的 DOM 更新要**一轮 frame** ⇒ 每步之间必须 `歇`。
       //    ⇒ 读屏这一步因此**不能**写在同步函数里（那会造出 `await` 出现在非 async 函数里的语法错，
       //    本文件第一版就是这么挂的）——统一走下面那个 `async` 的 `跑冒号命令`，⛔ 不留第二份。
-      复位(viewA); 设焦点(viewA, true); await 歇(30);
+      await 隔离用例(viewA, false); 设焦点(viewA, true); await 歇(30);   // ⭐ 用例级隔离（bugs/0096 ②）
       const 冒号前 = 屏幕文本();
       发键(viewA, { key: ':' }); await 歇(60);
       const 冒号后 = 屏幕文本();
@@ -733,7 +823,7 @@
        * ⚠️ 反馈里如实带 `有input` 与 `输入值`：命令没提交成时，读的人要能一眼看出来。
        */
       async function 跑冒号命令(命令) {
-        复位(viewA); 设焦点(viewA, true); await 歇(30);
+        await 隔离用例(viewA, false); 设焦点(viewA, true); await 歇(30);   // ⭐ 用例级隔离（bugs/0096 ②）
         发键(viewA, { key: ':' }); await 歇(60);
         const inp = viewA.dom.querySelector('.cm-vim-panel input')
                  || viewA.dom.querySelector('input[type="text"]')

@@ -8,7 +8,9 @@
 //   · 打开收藏时先授权再复核 / 把记录侧也规范化 ⇒ **多授权了一个路径**，
 //     屏幕上与正常放行**逐字节相同**；
 //   · 根头与原树共用一个 host ⇒ 树一刷新根头就**消失**，或新建输入行跑到根头上面；
-//   · 收藏行也编上数字 ⇒ 两段编号随条数漂移，按 `2` 打开的是**另一条**。
+//   · 收藏行也编上数字 ⇒ 两段编号随条数漂移，按 `2` 打开的是**另一条**；
+//   · 打开收藏后按 `mode` 分派 ⇒ 正开着目录时点**文件**收藏会被当成目录、正文根本不打开
+//     （`bugs/0301`，表现是"点了没反应"，与一次空目录逐字节相同）。
 // 这些都不是"跑一下看得见"的错，只能靠结构判据钉住。
 //
 // ⚠️ **判据对注释免疫**：本仓注释里大量写着"⛔ 别写成 X"，直接 grep 原文会把
@@ -138,9 +140,12 @@ function score() {
       bad.push('open_favorite 走的是 authorize_file（会授权软链解析后的新目标），' +
         '文件收藏必须用记录目标复核那一版');
     }
-    // ⚠️ 目录走的就是既有的 `enter_directory`（同一条授权收尾，⛔ 不另开一条）
-    if (openFav.indexOf('enter_directory') < 0) {
-      bad.push('open_favorite 的目录分支没有复用 enter_directory（`INV-START-03` 单一授权收尾）');
+    // ⚠️ 目录走的就是既有的换根收尾（同一条授权路径，⛔ 不另开一条）。
+    //    ⭐ `design/0071` 起那个收尾**多了一层共用入口** `open_root_from_backend`
+    //    （它内部就是 `enter_directory`）——四种进目录的方式全部经它，
+    //    ⇒ 这里认两层：直接调 `enter_directory`，或调那个共用入口。
+    if (openFav.indexOf('enter_directory') < 0 && openFav.indexOf('open_root_from_backend') < 0) {
+      bad.push('open_favorite 的目录分支没有复用换根收尾（`INV-START-03` 单一授权收尾）');
     }
   }
 
@@ -154,6 +159,30 @@ function score() {
     if (/canonical|normalize|toLowerCase|replace\(/.test(openFavJs)) {
       bad.push('session.js::openFavorite 在前端对路径做了规范化 —— 逐字命中会失效');
     }
+  }
+
+  // ── ④b ⭐ `bugs/0301`：打开收藏后的分派只看 `opened_favorite`，⛔ 不看 `mode` ──
+  // ⚠️ `Session::mode()` 判 `roots` **优先**——正开着目录时点一条**文件**收藏，`mode`
+  //    仍是 `"directory"`；照它分派就走"空态 + 树"，把 `startup_document` 丢掉
+  //    （表现是"点了没反应"，屏幕上与一次空目录完全一样 ⇒ 只能靠结构判据钉住）。
+  const onAt = FILES.main.indexOf('async function onOpenFavorite(');
+  if (onAt < 0) bad.push('main.js 没有 onOpenFavorite');
+  else {
+    const onEnd = FILES.main.indexOf('\n  }', onAt);
+    const body = FILES.main.slice(onAt, onEnd > 0 ? onEnd : FILES.main.length);
+    if (body.indexOf('ST.favoriteOpenAction(') < 0) {
+      bad.push('main.js::onOpenFavorite 没有经 services/start.js::favoriteOpenAction 分派');
+    }
+    if (/\b(?:snap|snapshot)\.mode\b/.test(body)) {
+      bad.push('main.js::onOpenFavorite 读了 snap.mode —— 开着目录时文件收藏会被当成目录（bugs/0301）');
+    }
+  }
+  if (!/opened_favorite/.test(FILES.start)) {
+    bad.push('services/start.js::favoriteOpenAction 没读 `opened_favorite`');
+  }
+  // Rust 侧两条分支都必须标出"这一次是什么收藏"，否则前端只能回头猜 `mode`
+  if (openFav.indexOf('Some("directory")') < 0 || openFav.indexOf('Some("file")') < 0) {
+    bad.push('open_favorite 的两条分支没有写 opened_favorite（前端只能回头猜 mode）');
   }
 
   // ── ⑤ 数字键只映射最近表（`INV-FAV-05`）：整份文件只画一次 `start-num` ──
@@ -240,11 +269,11 @@ test('⭐ 五条 i18n 键在**两本**字典里都有（收藏段不许出现"�
 });
 
 // ────────────────────────────────────────────────────────────────
-// 变异自测：五处写坏各必须让**对应**判据变红
+// 变异自测：七处写坏各必须让**对应**判据变红
 // ⚠️ 没有这一步，"全绿"只说明判据没看那一眼（`.claude/rules/tests.md` 的四种"没红"）。
 // ────────────────────────────────────────────────────────────────
 
-test('⭐ 变异自测：五处写坏各必须让对应判据变红', function () {
+test('⭐ 变异自测：七处写坏各必须让对应判据变红', function () {
   assert.deepStrictEqual(score(), [], '基线必须先全绿，否则下面分不清是谁的红');
 
   const with_ = function (patch) {
@@ -298,4 +327,20 @@ test('⭐ 变异自测：五处写坏各必须让对应判据变红', function (
   // 变异 5：顶层深度改成 1（根头占掉一层 ⇒ 深度上限提前截断）
   bad = scoreWith({ tree: FILES.tree.replace('fillLayer(host, rootPath, 0, fresh)', 'fillLayer(host, rootPath, 1, fresh)') });
   assert.ok(has(bad, '顶层深度'), '深度下压没被抓到：\n' + bad.join('\n'));
+
+  // 变异 6：分派改回看 `mode`（`bugs/0301` 的原始缺陷）
+  const dispatchAt = 'const act = ST.favoriteOpenAction(snap);';
+  const mainMut = FILES.main.replace(
+    dispatchAt,
+    "const act = { kind: snap.mode === 'directory' ? 'directory' : 'file', path: snap.startup_document || '' };"
+  );
+  assert.notStrictEqual(mainMut, FILES.main, '变异 6 没改到（找不到分派那一行）');
+  bad = scoreWith({ main: mainMut });
+  assert.ok(has(bad, 'snap.mode'), '按 mode 分派没被抓到：\n' + bad.join('\n'));
+
+  // 变异 7：后端文件分支不标 `opened_favorite`（前端只能回头猜 mode）
+  const fsMut = FILES.cmdFs.replace('snap.opened_favorite = Some("file");', '');
+  assert.notStrictEqual(fsMut, FILES.cmdFs, '变异 7 没改到（找不到文件分支那一行）');
+  bad = scoreWith({ cmdFs: fsMut });
+  assert.ok(has(bad, 'opened_favorite'), '后端不标操作形态没被抓到：\n' + bad.join('\n'));
 });

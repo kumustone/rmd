@@ -33,17 +33,24 @@
         cell: require('./cell.js'),
         task: require('./task.js'),
         objects: require('./objects.js'),
+        txn: require('./txn.js'),
+        // ⭐ `design/0078`：块命令与表格行列操作的纯计划层。
+        blockCmd: require('./blockcmd.js'),
+        table: require('./table.js'),
       };
     }
     // ⚠️ 加载期取值 ⇒ `index.html` 里 `model.js` / `blocks.js` / `cell.js` / `task.js`
-    //    / `objects.js` 必须排在**本文件之前**（`tests/js/keymap.test.js` 的
-    //    「脚本加载顺序」闸门盯着这一条）。
+    //    / `objects.js` / `txn.js` / `blockcmd.js` / `table.js` 必须排在**本文件之前**
+    //    （`tests/js/keymap.test.js` 的「脚本加载顺序」闸门盯着这一条）。
     return {
       model: window.rmd.liveModel,
       blocks: window.rmd.liveBlocks,
       cell: window.rmd.liveCell,
       task: window.rmd.liveTask,
       objects: window.rmd.liveObjects,
+      txn: window.rmd.liveTxn,
+      blockCmd: window.rmd.liveBlockCmd,
+      table: window.rmd.liveTable,
     };
   })();
 
@@ -56,8 +63,19 @@
    */
   const LIMITS = { maxBlockLines: 2000, maxBlockBytes: 256 * 1024 };
 
+  // ⛔⛔ **2026-11-09**：`LIMITS` 是**成本参数**，⛔ 不是体验口径。它今天的作用是"别让一次点击
+  //   把 10 MB 的文档搬进 CM6"，代价是**大块直接进不去编辑**（`INV-LIVE-19` 的拒收分支）——
+  //   按 `INV-LIVE-04` ①（`design/0047` §5）与用户 2026-11-09「用户体验第一，先不过于考虑
+  //   实现成本」，**"进不去"不许当成合规结果**：它是欠账。⇒ 每一条走到 `editable=false`
+  //   ／`超预算退出` 的记录都要单独立账（`design/0059` 阶段 E 的降级策略必须先有用户体验答案）。
+
   /** 等高容差（§2.3 步骤 ⑤ 写死 0.5 px）。 */
   const HEIGHT_TOLERANCE = 0.5;
+
+  // ⛔⛔ **2026-11-09**：`HEIGHT_TOLERANCE` 只是**测量量化下限**（`getBoundingClientRect()`
+  //   报带小数的值，两次独立测量本来就可能差一点点）。⛔ 它不是"允许半像素的布局变化"，
+  //   更不是"结构差容得下"——`layoutSlack` 那套上界已经整条作废（`design/0047` §10 尾注）。
+  //   ⇒ 见到 `diff > HEIGHT_TOLERANCE` 一律当**缺陷**记（状态条是回归网，不是验收结论）。
 
   /** 一次 `leave()` 里最多补提交几轮（渲染期间用户还能继续打字）。 */
   const MAX_COMMIT_ROUNDS = 3;
@@ -98,10 +116,42 @@
     return LIVE.model.splitLines(text).slice(from, to);
   }
 
+  /**
+   * 把一个拒绝/异常翻成**一句人话**（状态条用）。
+   *
+   * ⚠️⚠️ 2026-11-13（`bugs/0320`）：旧实现是 `e.message || String(e)`，而后端
+   * `Denied` 的多数变体（`Stale` / `NoDocument` / `NotAuthorized` / `Conflict` …）
+   * **本来就不带 `message`**——`services/tauri.js::normalizeError` 给的形状是
+   * `{kind, path, message:'', wording, raw}` ⇒ `String(e)` 落地成 `[object Object]`，
+   * 用户看到的是「改不进去: [object Object]」（截图见 `bugs/0320`）。
+   * ⇒ 顺序改成：**译文一句 `wording`**（必有的那半）＋ 有细节时接 `：message`；
+   *    退化到 `kind`、再到 `JSON.stringify`；⛔ **任何分支都不许落到 `String(对象)`**。
+   */
   function msgOf(e) {
     if (!e) return '';
     if (typeof e === 'string') return e;
-    return e.message || String(e);
+    if (typeof e !== 'object') return String(e);
+    const 话 = typeof e.wording === 'string' ? e.wording : '';
+    const 细 = typeof e.message === 'string' ? e.message : '';
+    if (话 && 细) return 话 + '：' + 细;
+    if (话 || 细) return 话 || 细;
+    if (typeof e.kind === 'string' && e.kind) return e.kind;
+    try {
+      const s = JSON.stringify(e);
+      if (s && s !== '{}') return s;
+    } catch (err) {
+      // 循环引用 / 不可序列化 ⇒ 走下面的兜底，⛔ 别让格式化把原来的错盖掉。
+    }
+    // ⚠️ 兜底文案**也**要能翻译：它会经 `status.*-failed` 的 `{msg}` 上屏
+    //    （`bugs/0320` 之前这里是 `[object Object]`）。⛔ 不写字面量——
+    //    `tests/js/i18n.test.js` 的漏翻闸门会把没走 `t()` 的中文抓出来。
+    return 未知错误();
+  }
+
+  /** `status.unknown-error`（i18n 未加载时退到英文，⛔ 不留中文裸字面量）。 */
+  function 未知错误() {
+    const i18n = (typeof window !== 'undefined' && window.rmd) ? window.rmd.i18n : null;
+    return (i18n && typeof i18n.t === 'function') ? i18n.t('status.unknown-error') : 'Unknown error';
   }
 
   /** 块 → splice 用的行区间（**唯一的换算点**）。 */
@@ -113,6 +163,10 @@
   function identOfPayload(p) {
     return {
       realPath: String((p && p.real_path) || ''),
+      // ⭐ `design/0082`：草稿号（`null` = 真实文档）。⚠️ 草稿的 `realPath` 是**空串**，
+      //    而"磁盘上还没有这一份"这件事只能靠这个字段表达（⛔ 别用 `!realPath` 猜：
+      //    `ident` 还有"根本没有文档"的那种空值，两者要分开）。
+      draft: (p && p.draft) || null,
       generation: p && p.generation !== undefined ? p.generation : p && p.gen,
       docSeq: p && p.doc_seq,
       lineCount: p && p.line_count,
@@ -139,6 +193,31 @@
   }
 
   /**
+   * 一次事务的**完整载荷**（`design/0058` §2.2 / `design/0059` 阶段 A）。
+   *
+   * ⚠️ 三个维度**分开**：`mode`（来源模式，今天只有 `live`）/ `operation`（操作种类）/
+   *    `objectKind`（对象种类）。⛔ 别拿其中任何一个当"没有回环"的证明——防回环靠
+   *    `txId` ＋ 修订比对 ＋ 同步应用标记。
+   *
+   * @typedef {{status:string, committed:boolean, unchanged:boolean, rejected:boolean,
+   *   stale:boolean, failed:boolean, why:string, txId:any, revision:object|null,
+   *   selectionBefore:object|null, selectionAfter:object|null, selectionLost:boolean,
+   *   entry:any, lines:string[]|null, fullText:string|null, lineCount:number,
+   *   identity:object|null, mode:string, operation:string, objectKind:string,
+   *   group:string|null}} TxPayload
+   */
+
+  /**
+   * 交给 [`createController`] 里 `runTransaction` 的**计划**（唯一发布入口的入参）。
+   *
+   * @typedef {{txId?:string, operation:string, objectKind:string,
+   *   range:{from:number, to:number}, next?:string[],
+   *   verify?:object|null, apply?:function, onPublish?:function,
+   *   selectionBefore?:object|null, selectionAfter?:object|null,
+   *   group?:string|null, rejected?:string}} TxPlan
+   */
+
+  /**
    * @param {object} deps 全部注入（真实现见 `main.js` 的 `liveDeps`）
    * @param {function} deps.t `services/i18n.js::t`
    * @param {function} deps.report 状态条一行
@@ -160,6 +239,9 @@
    * @param {function} [deps.cellNodeOf] `(blockIndex, flat) -> node`（单元格形态；`design/0049`）
    * @param {function} [deps.heightOf] `(el) -> number`（默认量 **border box 的分数像素**，
    *   见下方那段注释；⛔ 不要用 `offsetHeight`）
+   * @param {function} [deps.onStaleDocument] `({why}) -> void`：身份四件套不符时**请上层自动重载**
+   *   （`design/0047` §6「身份四件套不符 ⇒ 自动重载」）。⚠️ 只在这条路上调，⛔ 不在
+   *   `save()` 的"磁盘被别人改过"路上调——那一条要的是**拒绝覆盖**，不是重载。
    * @param {object} [deps.limits] 覆盖 [`LIMITS`]
    */
   function createController(deps) {
@@ -191,6 +273,7 @@
     const blocksMod = d.blocks || LIVE.blocks;
     const cellMod = d.cell || LIVE.cell;
     const taskMod = d.task || LIVE.task;
+    const txn = d.txn || LIVE.txn;
     const limits = {
       maxBlockLines: d.limits && d.limits.maxBlockLines ? d.limits.maxBlockLines : LIMITS.maxBlockLines,
       maxBlockBytes: d.limits && d.limits.maxBlockBytes ? d.limits.maxBlockBytes : LIMITS.maxBlockBytes,
@@ -245,11 +328,107 @@
      */
     let publishFailed = '';
     /**
+     * ⭐ **最近一次事务载荷**（`design/0059` 阶段 A 的观测口）。
+     * ⚠️ 它由 `txPayload()` 这**唯一构造点**写入，⛔ 不在各调用点各自记——
+     *    那样一漏就等于"有的入口有载荷、有的没有"，而判据只会去看有载荷的那几个。
+     * ⚠️ 只读观测：⛔ 不参与任何判定，也⛔ 不许拿它当"这次提交成功"的凭证。
+     */
+    let lastTx = null;
+    /**
      * ⭐ 最近一次「`⌘↵` 新起一段」的账（`bugs/0024`）：`blockIndex` = 从哪一块跳出来的，
-     * `insertAt` = 那三行**插在哪一行之前**（撤销时靠它认出栈顶是不是自己那条），
+     * `insertAt` = 那些空行**插在哪一行之前**（撤销时靠它认出栈顶是不是自己那条），
      * `caretBefore` = 操作前的块内光标（撤销要回到这里）。
      */
     let lastNewPara = null;
+    /**
+     * ⭐ **事务序号**（`design/0058` §2.2 的 `txId`）：只用于**所有权校验**——
+     * 回滚句柄拿它对"我是不是这一趟的主人"。⛔ 不是凭证、不是授权。
+     */
+    let txSeq = 0;
+
+    /** 新的一次事务号（字符串，避免与 `renderSeq` 这类数值混用）。 */
+    function newTxId() {
+      txSeq += 1;
+      return 'tx' + txSeq;
+    }
+
+    /**
+     * 当前活动目标里的选区（`design/0058` §2.5）：带 `anchor`/`head` **方向**、
+     * `space`（块编辑文本 / 格内编辑文本）与 `revision`。
+     *
+     * ⚠️ `space` ⛔ 不是 `doc`：块/格 CM6 里的偏移是**那段编辑文本**的偏移，
+     * 与 LF 规范化全文的偏移不是一回事（前面还有别的行）。把它标成 `doc`
+     * 就是"格内偏移裸加源码偏移"的同族缺陷（`INV-MUT-08`）。
+     * ⚠️ 视图不提供选区（阅读态 / 合成宿主）⇒ 返回 `null`，⛔ 不伪造 `0`。
+     */
+    function viewSelection(a) {
+      if (!a || !a.view || typeof a.view.selection !== 'function' || !session) return null;
+      const s = a.view.selection();
+      if (!s) return null;
+      return txn.selection({
+        anchor: s.anchor,
+        head: s.head,
+        space: a.cell ? 'cell' : 'block',
+        revision: session.revision(),
+        objectId: a.cell ? 'cell:' + a.index + ':' + a.cell.flat : 'block:' + a.index,
+      });
+    }
+
+    /**
+     * 事务结果的**完整载荷**（`design/0059` 阶段 A）：五种状态 ＋ 文本/身份/修订/选区
+     * ＋ 三个**分开声明**的维度（`mode` / `operation` / `objectKind`）。
+     *
+     * ⚠️ 同时保留旧的三个布尔，现有调用方与测试照旧能读；但新代码⛔ 别再用
+     * "`failed === false`" 推"成功了"——`stale` 与 `unchanged` 也在那里。
+     *
+     * @param {string} status [`txn.STATUS`]
+     * @param {{why?:string, txId?:any, revision?:object|null,
+     *   selection?:object|null, selectionBefore?:object|null, selectionAfter?:object|null,
+     *   selectionLost?:boolean, entry?:any, lines?:string[], fullText?:string,
+     *   lineCount?:number, identity?:object|null, operation?:string, objectKind?:string,
+     *   group?:string|null}} [o]
+     * @returns {TxPayload}
+     */
+    function txPayload(status, o) {
+      const r = o || {};
+      // ⭐⭐ **选前 / 选后是两个字段，⛔ 不许互相顶替**（`design/0059` 阶段 A）：
+      //    发布成功时选后选区是**发布那一刻**从活动视图取的（`runTransaction` 里算好传进来）；
+      //    其余结果没有改动真值 ⇒ 选区不变，选后就等于选前。
+      //    ⚠️ 旧调用点只传一个 `selection`（选前），保持可用；但它**不能**再冒充选后——
+      //    那样"选后选区"只是个同义反复，调用方读到的永远是自己进去时的那个。
+      const before = r.selectionBefore !== undefined ? r.selectionBefore : (r.selection || null);
+      const after = r.selectionAfter !== undefined ? r.selectionAfter : before;
+      const payload = {
+        status: status,
+        committed: status === txn.STATUS.COMMITTED,
+        unchanged: status === txn.STATUS.UNCHANGED,
+        rejected: status === txn.STATUS.REJECTED,
+        stale: status === txn.STATUS.STALE,
+        failed: status === txn.STATUS.FAILED,
+        why: r.why === undefined || r.why === null ? '' : String(r.why),
+        txId: r.txId === undefined ? null : r.txId,
+        // ⭐ **修订描述的是"载荷里这份文本是哪一版"**（`design/0059` 阶段 A 的载荷注释），
+        //    ⛔ 不是这次事务的**基线**版本。二者在 `committed` 上必然不同：发布让 `commitSeq`
+        //    前进了一次。⇒ 默认取当前会话的修订；只有确实要标明另一份文本时才显式传。
+        //    ⚠️ 旧写法在调用点传 T0 的 `revision`，于是"成功"的载荷里
+        //    `fullText` 是新文本、`revision` 却还是旧文本 ⇒ 谁按修订去取都会取错一份。
+        revision: r.revision !== undefined ? r.revision : (session ? session.revision() : null),
+        selectionBefore: before,
+        selectionAfter: after,
+        selectionLost: r.selectionLost === true,
+        entry: r.entry === undefined ? null : r.entry,
+        lines: r.lines || (session ? session.lines() : null),
+        fullText: r.fullText === undefined ? (session ? session.fullText() : null) : r.fullText,
+        lineCount: r.lineCount === undefined ? (session ? session.lineCount() : 0) : r.lineCount,
+        identity: r.identity || (session ? session.identity() : null),
+        mode: 'live',
+        operation: r.operation || 'edit',
+        objectKind: r.objectKind || 'block',
+        group: r.group === undefined ? null : r.group,
+      };
+      lastTx = payload;
+      return payload;
+    }
 
     // ── 身份 / 块表 ────────────────────────────────────────────────────
 
@@ -338,10 +517,13 @@
 
     /**
      * @param {{index?:number, block?:Object, el?:Object, point?:Object,
-     *          cell?:{flat:number}, caretPos?:number}} [req]
+     *          cell?:{flat:number}, caretPos?:number,
+     *          caretEdge?:'start'|'end'}} [req]
      *   `cell` 是**单元格形态**（`design/0049`）：`flat` 是这一块的第几格。
      *   ⭐ `caretPos` 是**落点的块内偏移**（`bugs/0024`，2026-10-28）：`⌘↵` 新起的一段用
      *   `0`（段首，能立刻接着打字）、撤销之后用**操作前记下的那个偏移**（光标回到原处）。
+     *   ⭐ `caretEdge`（`bugs/0104`）：方向键跨格，落在目标格文本的**首/末**——目标格的长度
+     *   在这一步之前拿不到（视图还没建），所以⛔ 不硬塞一个 `caretPos`。
      *   ⚠️ 一个键都不标成必填：`req || {}` 里那个 `{}` 必须能赋给这个类型
      *   （`design/0052` U8 踩过）；真正的必填性由下面那串 `if (!…)` 判。
      * @returns {Promise<{ok:boolean, why?:string}>}
@@ -365,7 +547,7 @@
       const wantCell = !!r.cell;
       let block = r.block || blockAt(r.index);
       let el = r.el;
-      // ⚠️⚠️ **上面那次 `leave()` 会提交并整篇重渲**（`submit()` → `mount()` → `#doc.innerHTML`）
+      // ⚠️⚠️ **上面那次 `leave()` 会提交并整篇重渲**（`runTransaction()` → `mount()` → `#doc.innerHTML`）
       //    ⇒ 调用方手里那个 `block` 与 `el` 在那一刻**都已经过期**：
       //    · `block` 的行区间是**旧表**的（刚提交的块可能多/少了几行 ⇒ 切出来的是别人家的话）；
       //    · `el` 已经**脱树** ⇒ `getComputedStyle` 一颗盒子都读不到、`heightOf` 量成 0、
@@ -449,7 +631,8 @@
       if (why) {
         state = 'viewing';
         await safeEndEdit(true);
-        fail(t('status.live-identity', { why: why }));
+        // ⭐ §6：**自动重载**（⛔ 只报一句红字就完事）。
+        staleDocument(why);
         return { ok: false, why: 'identity' };
       }
       // 行尾不统一 ⇒ ⛔ 不就地改（保存会把整篇行尾统一，那是一次**看不见的**全文改写）。
@@ -525,17 +708,20 @@
       // ⭐⭐ **`INV-KERNEL-05`：块永远进得去**（`design/0052` U6）。
       //    几何差**只许告警、只许补滚动，⛔ 不许阻断进入**——用户 2026-10-27 拍板
       //    「U6 以使用体验为先」：宁可"进去之后下面的内容移动几行"，也不许"点了没反应"。
-      //    ⚠️ 曾经这里是**双向拒收**（上界 `slack + 0.5`、下界 `-0.5`），代价是
-      //    ① 高过一屏的块**永远进不去**（CM6 只测量视口内的行，视口外的塌行在高度表里
-      //       仍按整行计 ⇒ 实测恒定 **+20.141 px**，而 U5 之后 `slack` 是 0）；
-      //    ② 结构差算漏一类就整块进不去（`docs/bugs/0025` 那一族）。
-      //    ⇒ 现在**只剩告警**，两件事都不再拦人。
+      //
+      //    ⛔⛔ **2026-11-09 用户重订 `INV-LIVE-04`（`design/0047` §5）："移动几行"这一半作废。**
+      //    进入瞬间**块自身**也不许长高/变矮，块外也不许有位移动；不再有"外部依赖/已知量"豁免。
+      //    ⇒ 这里"不阻断进入"只剩**可用性兜底**的意义（点了不能没反应），⛔ 不是几何契约：
+      //      ① 走到这个 `note` 的每一块都是**待修缺陷**，探针 `B<i>-3a` 一律判红，
+      //         ⛔ 不许拿"状态条报了"当绿；
+      //      ② 变高方向同样要修——此前"变高不逐条报"只是因为会淹掉真错误，
+      //         不是因为变高可以接受（`bugs/0298` 就是这么漏了整整三周）；
+      //      ③ 根因是**编辑态没把阅读态的布局补齐**（段间距、围栏行、边框、嵌套缩进），
+      //         修法是把差补齐，⛔ 不是放宽容差、也不是"进得去就算完"。
       //
       //    ⚠️ 为什么"变矮"仍然要报：变矮意味着字号 / 行高 / 内边距**搬丢了**
       //    （`h1` −7 px、`h3` −8.672 px 都是实测过的这一族），它在屏幕上不会报错，
-      //    状态条是用户唯一能看见的那一处。⚠️ 但**仍放行**——那是排版瑕疵，不是进不去的理由。
-      //    ⚠️ 上界的偏差（变高）**不再逐条报**：U6 之后进得去是常态，每块都弹一句会淹掉真错误；
-      //    量出来的差值仍由 `make probe-live-block` 的 `B-3b` 记账。
+      //    状态条是用户唯一能看见的那一处。⚠️ 但**仍放行**——那是可用性兜底，见上面 ①。
       const diff = got - want;
       if (!wantCell && diff < -HEIGHT_TOLERANCE) {
         note(t('status.live-short', { want: round1(want), got: round1(got) }));
@@ -550,7 +736,11 @@
 
       // ④ Swap：⚠️ 这一段**同步**，⛔ 没有 await（"同步块内完成"只约束这里）。
       //    ⭐ `point` 一起交下去：`design/0052` U6 的锚定要拿它当"用户点的那一处"。
-      const swapped = d.swap({ el: el, host: view.dom, view: view, cell: wantCell, point: r.point });
+      //    ⭐ `block` 也交下去：锚点必须知道这一块跨了**几个源码行**——只跨一行的块
+      //    （段落 / 标题 / 单行引用）里，"点击落第几个视觉行"不等于"第几个源码行"
+      //    （`bugs/0078`），`swapLiveView` 要按这个区分。
+      const swapped = d.swap({ el: el, host: view.dom, view: view, cell: wantCell,
+        point: r.point, block: block });
       active = {
         index: block.index,
         el: el,
@@ -566,8 +756,15 @@
       state = 'editing';
       // ⭐ 落点（`bugs/0024`）：`caretPos` 优先于 `point`——`⌘↵` 新起一段用 `0`，
       //    撤销之后用**操作前记下的那个偏移**（要回到原来的光标，⛔ 不是上次点的地方）。
+      // ⭐⭐ `{ reading: true }`（`bugs/0084`）：这一下点的是**阅读态**那一屏（视图刚建、
+      //    活动行还没展开），换算坐标必须按"标记全藏"的排版做。⛔ 别在 `focusPoint`
+      //    （已经在编辑时再点）那条路上传它——那时用户点的就是**展开后**的排版。
+      // ⭐ `caretEdge`（`bugs/0104`）：方向键跨格时还不知道目标格的长度 ⇒ 按"文本首/末"
+      //    定位（`text` 是**这一格视图里的**文本，`<br>` 已由 `decode` 还原成换行）。
       if (view.focusAt && Number.isInteger(r.caretPos)) view.focusAt({ pos: r.caretPos });
-      else if (view.focusAt && r.point) view.focusAt(r.point);
+      else if (view.focusAt && r.caretEdge === 'start') view.focusAt({ pos: 0 });
+      else if (view.focusAt && r.caretEdge === 'end') view.focusAt({ pos: text.length });
+      else if (view.focusAt && r.point) view.focusAt(r.point, { reading: true });
       return { ok: true };
     }
 
@@ -576,7 +773,7 @@
      *
      * ⚠️⚠️ **行数不从 `ident` 取，从 `baseline` 取**（2026-10-27，`bugs/0017`）：
      *    `ident.lineCount` 来自**最近一次挂载的载荷**，而 `render_preview` 那一份描述的是
-     *    **还没写盘的编辑缓冲**（`submit()` 就是拿它 mount 的）⇒ 提交过一块、
+     *    **还没写盘的编辑缓冲**（`runTransaction()` 就是拿它 mount 的）⇒ 提交过一块、
      *    行数变了、⛔ 还没按 ⌘S 时，它比磁盘**新**。拿它跟 `begin_edit` 的磁盘文本比，
      *    必然不等 ⇒ **之后每一块都进不去**，而报的还是「正文在打开后被改过」——
      *    把用户**自己**的改动说成了外部改动，且反复点都没有出路。
@@ -590,6 +787,10 @@
       if (grant.real_path !== undefined && grant.real_path !== id.realPath) {
         return t('status.live-why-path', { got: grant.real_path });
       }
+      // ⭐ `design/0082`：草稿**磁盘上还没有这一份** ⇒ 没有"被别人改过"这件事可比，
+      //    `begin_edit` 回的是一份**空**文本（与"从它出发的基线"无关）。
+      //    ⚠️ 不短路的话，第一次提交之后每一块都会撞一条**假的**「正文在打开后被改过」。
+      if (id && id.draft) return '';
       const disk = m.splitLines(grant.text);
       // 有会话 ⇒ 按**磁盘基线**比。⚠️ 会话必须属于**同一份文档**，否则 `baseline` 是别人的。
       const base =
@@ -606,6 +807,37 @@
         return t('status.live-why-line-count', { want: id.lineCount, got: disk.length });
       }
       return '';
+    }
+
+    /**
+     * ⭐ 身份四件套不符时的**收场**：请上层**自动重载**，⛔ 不是停在一条红字上。
+     *
+     * ⚠️⚠️ `design/0047` §6 的原话是「身份四件套不符（换文档/重载/行数变了）⇒
+     *    ⛔ 不进编辑态；用户可见「正文已变化，重新载入中」；恢复＝**自动重载**」。
+     *    而此前两处入口（`begin` / `toggleTask`）只做了前半句：红字一条、正文不动
+     *    ⇒ 用户点下去得到的是一句"改过了，没开始"，**得自己去菜单里重载**，
+     *    而重载按钮只在大文件降级时才出现在提示条上（2026-11-03 用户实测报的正是这个）。
+     *
+     * ⚠️ 为什么**只在这两处**叫重载：它们是"用户点了一下、什么也没发生"的入口。
+     *    `save()` 里那条同族判据（`status.live-identity`）⛔ **不叫重载**——
+     *    那一条挡的是"覆盖掉别人刚写的内容"，重载会把用户攒着的提交一起丢掉。
+     *
+     * ⚠️ 没有注入 `onStaleDocument`（老调用方 / 单测）⇒ 退回原来那条红字，⛔ 不假装重载了。
+     */
+    function staleDocument(why) {
+      if (typeof d.onStaleDocument === 'function') {
+        // ⚠️ `note`（⛔ 不是 `fail`）：这是**正在自愈**，不是一次失败。
+        //    标红会让用户以为出错了，而下一秒正文就会自己刷新。
+        note(t('status.live-reloading'));
+        try {
+          d.onStaleDocument({ why: why });
+        } catch (e) {
+          // ⚠️ 重载请求炸了也不能把"进不去编辑"这件事吞掉：再报一次原因。
+          fail(t('status.live-identity', { why: why }));
+        }
+        return;
+      }
+      fail(t('status.live-identity', { why: why }));
     }
 
     /**
@@ -647,7 +879,11 @@
         await d.endEdit({ discard: discard !== false });
       } catch (e) {
         // ⚠️ 释放失败 ⛔ 不该打断用户：写授权只影响下一次 `save_document`，它自己会拒。
-        void e;
+        //    ⚠️ 但⛔ 不许静默：吞掉之后「授权有没有还回去」在探针里只剩计数对不上，
+        //    连"是没调、还是调了失败"都分不清（2026-11-05 `B7-8 end_edit +0` 排查）。
+        try {
+          console.error('[rmd-live] end_edit 失败：' + (e && e.message ? e.message : String(e)));
+        } catch (ignored) { void ignored; }
       }
     }
 
@@ -669,14 +905,21 @@
      *   ⑤ **失败不污染**：①②③ 任一步失败时 `lines` / 撤销栈 / `ident` / 磁盘**全部原状**，
      *      视图与用户输入都还在（⛔ 不销毁唯一持有输入的东西）。
      *
-     * @param {any} a 活动块
-     * @param {{range:{from:number,to:number}, next:string[],
-     *          verify:({block:number,line:number,cell:number,replacement:string}|null),
-     *          onPublish:(function():void)}} plan
-     * @returns {Promise<{committed:boolean, failed:boolean, why:string}>}
+     * @param {any} a 活动块（`null` = 阅读态 / 无视图的入口）
+     * @param {TxPlan} plan
+     * @returns {Promise<TxPayload>}
      */
-    async function publish(a, plan) {
-      if (!session) return { committed: false, failed: false, why: '' };
+    async function runTransaction(a, plan) {
+      const txId = (plan && plan.txId) || newTxId();
+      const sess0 = session;
+      if (!sess0) return txPayload(txn.STATUS.FAILED, { txId: txId, why: 'no-session' });
+      const revision = sess0.revision();
+      // ⭐ **载荷必需字段**（`design/0059` 阶段 A 的验收）：缺了就**明确失败**，
+      //    ⛔ 不悄悄回退成"没有 operation 的旧发布"。保留输入由调用方负责（视图不动）。
+      if (!plan || !plan.operation || !plan.objectKind || !plan.range) {
+        fail(t('status.live-verify-plan'));
+        return txPayload(txn.STATUS.FAILED, { txId: txId, why: 'plan' });
+      }
       // ⭐⭐ **必需性闸门**（2026-10-29 代码评审第 7 条）：`live/objects.js` 声明
       //    `verify: 'structure'` 的对象，写回时**必须**带结构证据。
       //    ⚠️ 在此之前这条只活在"两个调用点各自记得"里：`commitCell` 记得填、
@@ -685,30 +928,98 @@
       //    ⇒ 判据放在**唯一入口**上，不放在调用点。
       //    ⚠️ 它排在造候选之前：这时还没动 `state`，⛔ 也不会多算一次 `renderSeq`。
       const pol = LIVE.objects.policyOf({ cell: a && a.cell });
-      if (pol.verify === 'structure' && !(plan && plan.verify)) {
+      if (pol.verify === 'structure' && !plan.verify) {
         fail(t('status.live-verify-plan'));
-        return { committed: false, failed: true, why: 'verify-plan' };
+        return txPayload(txn.STATUS.FAILED, { txId: txId, why: 'verify-plan' });
+      }
+      // ⭐ 入口处已经判定"这段输入在格内无法无损表达" ⇒ `rejected`：
+      //    **保留输入、报错、⛔ 不清脏**（`INV-MUT-03`）。
+      if (plan.rejected) {
+        fail(t('status.cell-inexpressible'));
+        return txPayload(txn.STATUS.REJECTED, {
+          txId: txId, why: String(plan.rejected),
+          selection: viewSelection(a),
+        });
       }
       // —— ① 造候选（⛔ 不碰真值）——
-      const lines = session.lines();
+      const lines = sess0.lines();
       const range = plan.range;
       const next = plan.next || [];
       if (range.from < 0 || range.to > lines.length || range.from > range.to) {
-        return { committed: false, failed: true, why: 'range' };
+        return txPayload(txn.STATUS.FAILED, { txId: txId, why: 'range' });
       }
       const candLines = lines.slice(0, range.from).concat(next, lines.slice(range.to));
-      const baseText = session.fullText();
+      const baseText = sess0.fullText();
       const candText = model.joinLines(candLines);
+      const selectionBefore = plan.selectionBefore === undefined
+        ? viewSelection(a)
+        : plan.selectionBefore;
       // ⚠️ 候选与基线逐字相同 ⇒ 没有改动，⛔ 不发 IPC、⛔ 不压撤销条目。
-      if (candText === baseText) return { committed: false, failed: false, why: '' };
+      if (candText === baseText) {
+        return txPayload(txn.STATUS.UNCHANGED, {
+          txId: txId, selection: selectionBefore,
+        });
+      }
 
       const ver = plan.verify || null;
       const token = ver ? 'v' + ++verifySeq : '';
       const my = ++renderSeq;
       const req = ++renderReq;
-      const atBuild = session.identity();
+      const atBuild = sess0.identity();
+
+      // —— T0 快照（⚠️ 在任何 `await` 之前取；`save()` 在 `add()` 那一刻就执行）——
+      // ⭐ 覆盖 `design/0058` §2.2 的整张表：全文 ＋ 两侧栈 → `session` 快照；
+      //    编辑对象区间 / 宿主状态 → `object`；身份与四张表 → `tables`。
+      //    ⚠️ `session` 换成别的对象（`reset()` / 换文档）时**不许**回滚：
+      //    那份快照属于旧会话，退回去就是"给新文档塞旧全文"。⇒ 恢复体里抛错，
+      //    由 `frame.restore` 记进 `failed[]`（进而 `publishFailed` 拒存）。
+      const frame = txn.createFrame({ txId: txId, kind: plan.operation, revision: revision });
+      const base = sess0.snapshot();
+      frame.add('session', function () {
+        return base;
+      }, function (v) {
+        if (session !== sess0) throw new Error('session-swapped');
+        sess0.restore(v);
+      });
+      if (a) {
+        frame.add('object', function () {
+          return {
+            a: a.a,
+            b: a.b,
+            detached: a.detached,
+            cell: a.cell ? { from: a.cell.from, to: a.cell.to } : null,
+          };
+        }, function (v) {
+          a.a = v.a;
+          a.b = v.b;
+          a.detached = v.detached;
+          if (a.cell && v.cell) {
+            a.cell.from = v.cell.from;
+            a.cell.to = v.cell.to;
+          }
+        });
+      }
+      frame.add('tables', function () {
+        return { ident: ident, table: table, issues: issues, cellTable: cellTable, taskTable: taskTable };
+      }, function (v) {
+        ident = v.ident;
+        table = v.table;
+        issues = v.issues;
+        cellTable = v.cellTable;
+        taskTable = v.taskTable;
+      });
+
       const prev = state;
       state = 'committing';
+      // ⭐⭐ **状态恢复的归属闸门**（旧回包污染新生命周期，2026-11-03 补测暴露）：
+      //    这一笔事务只有在**自己的会话还活着**时才有资格改全局 `state`。
+      //    `reset()` / 换文档之后 `session` 已经换成别的对象（或为 `null`），
+      //    此时旧包无论 resolve 还是 reject，把 `state` 恢复成发起时的 `prev='editing'`
+      //    都会**把新文档打回编辑态**——屏幕上像"莫名进了编辑"，而 `frame` 那边
+      //    已经因为 `session !== sess0` 拒绝回滚，两边对不上。
+      const restoreState = function () {
+        if (session === sess0) state = prev;
+      };
 
       // —— ② 校验（唯一的异步段）——
       let payload;
@@ -729,32 +1040,42 @@
             : null,
         });
       } catch (e) {
-        state = prev;
+        restoreState();
         fail(t('status.live-commit-failed', { msg: msgOf(e) }));
-        return { committed: false, failed: true, why: msgOf(e) };
+        return txPayload(txn.STATUS.FAILED, {
+          txId: txId, why: msgOf(e), selection: selectionBefore,
+        });
       }
 
       // —— ③ 复核（无 await）——
       if (my !== renderSeq) {
         // 有更新的一次提交在途 ⇒ 这一包**丢**（`§2.5`「渲染期间新输入」）。⛔ 不动任何东西。
-        state = prev;
-        return { committed: false, failed: false, why: 'stale' };
+        restoreState();
+        return txPayload(txn.STATUS.STALE, {
+          txId: txId, why: 'stale', selection: selectionBefore,
+        });
       }
       if (ver) {
         const v = payload && payload.verify;
         if (!v || v.token !== token) {
           // ⚠️ 缺验证结果（旧后端）⇒ ⛔ **不得发布**，也⛔ 不许读成"通过"。
-          state = prev;
+          restoreState();
           fail(t('status.live-verify-missing'));
-          return { committed: false, failed: true, why: 'verify-missing' };
+          return txPayload(txn.STATUS.FAILED, {
+            txId: txId, why: 'verify-missing', selection: selectionBefore,
+          });
         }
         if (v.ok !== true) {
-          state = prev;
+          // ⭐ 结构校验**拒绝** ⇒ `rejected`（不是"坏了"）：保留输入、报理由、⛔ 不清脏。
+          restoreState();
           fail(t('status.live-verify-failed', { msg: verifyWhy(v) }));
-          return { committed: false, failed: true, why: String(v.reason || 'rejected') };
+          return txPayload(txn.STATUS.REJECTED, {
+            txId: txId, why: String(v.reason || 'rejected'),
+            selection: selectionBefore,
+          });
         }
       }
-      const now = session.identity();
+      const now = sess0.identity();
       const acc = model.acceptReply(
         {
           docSeq: now.docSeq,
@@ -766,42 +1087,30 @@
         replyOfPayload(payload)
       );
       if (!acc.ok) {
-        state = prev;
+        restoreState();
         fail(t('status.live-align', { msg: acc.why }));
-        return { committed: false, failed: true, why: acc.why };
+        return txPayload(txn.STATUS.FAILED, {
+          txId: txId, why: acc.why, selection: selectionBefore,
+        });
       }
       // ⭐ 会话在等包期间**没有被别的提交动过**：候选是照 `atBuild` 那份文本造的，
-      //    现在真值已经变了 ⇒ 这一包作废（⛔ 覆盖）。
-      if (now.commitSeq !== atBuild.commitSeq) {
-        state = prev;
-        fail(t('status.live-align', { msg: t('status.live-why-stale-session') }));
-        return { committed: false, failed: false, why: 'stale-session' };
+      //    现在真值已经变了 ⇒ 这一包作废（⛔ 覆盖、⛔ 回滚、⛔ 重放）。
+      if (session !== sess0 || now.commitSeq !== atBuild.commitSeq) {
+        restoreState();
+        return txPayload(txn.STATUS.STALE, {
+          txId: txId, why: 'stale-session', selection: selectionBefore,
+        });
       }
 
       // —— ④ 发布（⚠️ 这一段**没有 `await`**）——
-      // ⭐⭐ **发布前的可恢复快照**（2026-10-29 复评 P2-4）：
-      //    这一段里 `plan.onPublish` 会把 `a.a` / `a.b` / `a.cell.to` 改成"跟着新内容走"的
-      //    新值，`notePayload` 还会换掉 `ident` 与四张表——而 `d.mount` **可能抛错**。
-      //    ⚠️ 旧写法在 catch 里只 `session.undo()`：全文退回去了，**区间没回去**。
-      //    下一轮候选就拿一个陈旧的 `from`/`to` 去切新源码，拼出越界或错位的候选；
-      //    假后端照收（它不做结构校验），真后端会拒 ⇒「重试一次就坏」只在真机上出现。
-      //    ⇒ 回滚必须把发布段里动过的**每一处**都退回去：全文、编辑对象区间、身份与块表、
-      //      宿主状态（`a.detached`）。⚠️ 用户按 `⌘Z` **不是**事务回滚——它还会推进
-      //      `commitSeq`；这里是发布段自己的一半失败，必须由发布段自己收干净。
-      const snap = {
-        a: a ? a.a : 0,
-        b: a ? a.b : 0,
-        detached: a ? a.detached : false,
-        cell: a && a.cell ? { from: a.cell.from, to: a.cell.to } : null,
-        ident: ident,
-        table: table,
-        issues: issues,
-        cellTable: cellTable,
-        taskTable: taskTable,
-      };
-      // ⚠️ 只有**真的压过栈**才许撤销：`session.commit` 自己抛错时栈顶还是上一次编辑，
-      //    无条件 `undo()` 会把**之前那一次**撤掉（比不撤更糟）。
-      let pushed = false;
+      // ⭐⭐ **回滚由 T0 的 `frame` 成对完成**（`design/0058` §2.2）：发布段里
+      //    `plan.onPublish` 会把 `a.a` / `a.b` / `a.cell.to` 改成"跟着新内容走"的新值，
+      //    `notePayload` 还会换掉 `ident` 与四张表——而 `d.mount` **可能抛错**。
+      //    ⚠️ 旧写法在 catch 里只 `session.undo()`：全文退回去了，**区间没回去**；
+      //    下一轮候选就拿一个陈旧的 `from`/`to` 去切新源码，拼出越界或错位的候选。
+      //    ⭐ 现在每一处都在 `frame.add(...)` 里，回滚顺序与所有权/幂等由 `txn.js` 管：
+      //    旧事务的 `catch` 拿到过期句柄时**什么都不做**（`{why:'not-owner'|'newer'}`）。
+      let entry = null;
       try {
         // ⚠️⚠️ 摘宿主必须在 `mount` **之前**（`bugs/0018`：否则 `swap.undo()` 会把旧节点
         //    追加到 `#doc` 末尾，屏幕上多出一段一模一样的文字）。
@@ -816,55 +1125,58 @@
           a.swap.undo();
           a.detached = true;
         }
-        session.commit(range, next);
-        pushed = true;
+        // ⭐ **`apply` 是计划给的"真值变更"**：默认 `session.commit`（编辑/任务/插入），
+        //    撤销与重做传 `session.undoEdit()` / `session.redoEdit()`。
+        //    ⚠️ 候选**先**算好（T1），这里只负责把它落进真值——⛔ 不再有第二条"先改后查"的路。
+        const applied = plan.apply ? plan.apply() : sess0.commit(range, next);
+        if (applied && applied.entry) entry = applied.entry;
+        // ⚠️ 落地结果必须与校验过的那份候选**逐字相同**：不同 ⇒ 期间会话/栈已经变了，
+        //    挂上去的 HTML 会对不上真值。⛔ 不许发布，交给回滚。
+        if (sess0.fullText() !== candText) throw new Error('apply-mismatch');
         if (plan.onPublish) plan.onPublish();
         d.mount(payload, { keepScroll: true });
         if (a) a.detached = false;
         notePayload(payload);
         publishFailed = '';
-        if (state === 'committing') state = prev;
+        if (state === 'committing') restoreState();
         note(t('status.live-committed'));
         announce(t('status.live-committed'));
-        return { committed: true, failed: false, why: '' };
+        // ⭐⭐ **选后选区在这一刻取**（`design/0059` 阶段 A）：发布已经把真值/修订换到新版，
+        //    而活动视图还活着（`reseat` 只是把它挂回新树，⛔ 不重建它的 `state`）。
+        //    ⇒ 这一份就是"调用方实际执行完之后的选区"，⛔ 不是把选前那份抄一遍。
+        //    ⚠️ 调用方可以在计划里显式给 `selectionAfter`（例如插入后要落到的位置）；
+        //    没给才从视图取。`a === null`（撤销/重做/任务）时没有活动视图 ⇒ `null`，
+        //    如实表示"这次变更不携带选后位置"，⛔ 不编一个 `{0,0}` 冒充。
+        const selectionAfter = plan.selectionAfter === undefined
+          ? viewSelection(a)
+          : plan.selectionAfter;
+        return txPayload(txn.STATUS.COMMITTED, {
+          txId: txId,
+          selectionBefore: selectionBefore,
+          selectionAfter: selectionAfter,
+          entry: entry, lines: sess0.lines(), fullText: candText,
+          lineCount: candLines.length, identity: sess0.identity(),
+          operation: plan.operation, objectKind: plan.objectKind, group: plan.group,
+        });
       } catch (e) {
-        // ⚠️ 发布段一半失败（DOM 挂载异常）：把这一趟动过的东西**逐项退回**，并核对
-        //    "全文真的回到了发起前那一份"。核不过 ⇒ 真值里可能留着一份**看不见的改动**，
-        //    `publishFailed` 非空，`save()` 继续拒（⛔ 不许把屏幕上那份当成要写的内容）。
-        //    ⭐ 回滚**成对做**：全文退回成功才退区间与身份（两者指的是同一份文本，
-        //    只退一半就是"区间按旧文本算、内容是新文本"——下一轮候选必然错位）。
-        let restored = false;
-        try {
-          if (pushed) session.undo();
-          restored = session.fullText() === baseText;
-        } catch (e2) {
-          void e2;
-        }
-        if (restored) {
-          if (a) {
-            a.a = snap.a;
-            a.b = snap.b;
-            a.detached = snap.detached;
-            if (a.cell && snap.cell) {
-              a.cell.from = snap.cell.from;
-              a.cell.to = snap.cell.to;
-            }
-          }
-          // ⚠️ `notePayload` 可能已经跑过一半（`ident` 先赋值、`fromPayload` 才抛）
-          //    ⇒ 五样一起退回发起前那一份，⛔ 别留下"身份是新的、内容是旧的"这种拼接状态。
-          ident = snap.ident;
-          table = snap.table;
-          issues = snap.issues;
-          cellTable = snap.cellTable;
-          taskTable = snap.taskTable;
-        }
-        // ⚠️ 无论退没退干净都**必须留标记**：`d.mount` 抛过错 ⇒ 屏幕上那一份是未知状态，
-        //    而 `save()` 写的是会话真值。只有下一次**成功的发布**（屏幕与会话重新对上）
-        //    才许清掉它（那个赋值在发布段的成功分支里）。
-        publishFailed = msgOf(e);
-        if (state === 'committing') state = prev;
+        // ⚠️ 发布段一半失败（DOM 挂载异常）：按 T0 **逐项退回**，并核对"全文真的回到了
+        //    发起前那一份"。核不过 ⇒ 真值里可能留着一份**看不见的改动**，`publishFailed`
+        //    非空，`save()` 继续拒（⛔ 不许把屏幕上那份当成要写的内容）。
+        //    ⚠️ `claim` 必须带 **T0 那一份修订**（`revision`），⛔ 不是 `sess0.revision()`：
+        //    这一段的提交**已经把修订推前了**，拿现在的去比只会得到 `newer`，
+        //    于是"该退的一项都不退"——正文停在已提交的新文本上、区间却还是旧的。
+        //    判 `newer` 的真正含义是"T0 之后**别人**又提交过"，那时快照才不该盖上去。
+        const claim = { txId: txId, revision: revision };
+        const back = frame.restore(claim);
+        // ⚠️ 无论退没退干净都**必须留标记**：`d.mount` 抛过错 ⇒ 屏幕上那一份是未知状态。
+        //    只有下一次**成功的发布**（屏幕与会话重新对上）才许清掉它。
+        publishFailed = msgOf(e) + (back.ok ? '' : ' / rollback:' + (back.why || 'partial'));
+        if (state === 'committing') restoreState();
         fail(t('status.live-publish-failed', { msg: msgOf(e) }));
-        return { committed: false, failed: true, why: msgOf(e) };
+        return txPayload(txn.STATUS.FAILED, {
+          txId: txId, why: msgOf(e), selection: selectionBefore,
+          operation: plan.operation, objectKind: plan.objectKind, group: plan.group,
+        });
       }
     }
 
@@ -885,11 +1197,13 @@
 
     /**
      * 把活动块的内容提交进 `fullText`（候选 → 校验 → 发布）。**不动真值直到发布那一刻。**
-     * @returns {Promise<{committed:boolean, failed:boolean, why:string}>}
+     * @returns {Promise<TxPayload>}
      */
     async function commitActive(target) {
       const a = target || active;
-      if (!a || !session) return { committed: false, failed: false, why: '' };
+      if (!a || !session) {
+        return txPayload(txn.STATUS.UNCHANGED, { txId: newTxId(), operation: 'edit' });
+      }
       // ⭐ `design/0054` `INV-EDITOBJ-01/02`：**写回校验的种类由对象声明**（`live/objects.js`），
       //    ⛔ 不是在这里再判一次 `a.cell`。`structure` ⇒ 单元格那条（行区间 ＋ 后端结构证据）；
       //    `lines` ⇒ 块级那条（写回校验就是行区间，不带 `verify`）。
@@ -900,9 +1214,19 @@
       const range = { from: a.a - 1, to: a.b };
       const next = a.view.lines();
       const cur = session.lines().slice(range.from, range.to);
-      if (sameLines(next, cur)) return { committed: false, failed: false, why: '' };
+      if (sameLines(next, cur)) {
+        return txPayload(txn.STATUS.UNCHANGED, {
+          txId: newTxId(),
+          revision: session.revision(),
+          selection: viewSelection(a),
+          operation: 'edit',
+          objectKind: 'block',
+        });
+      }
 
-      return await publish(a, {
+      return await runTransaction(a, {
+        operation: 'edit',
+        objectKind: 'block',
         range: range,
         next: next,
         // 块级对象的写回校验就是**行区间**（`design/0054` §2.1 的表）⇒ 不带 `verify`。
@@ -928,34 +1252,50 @@
     async function commitCell(a) {
       const lines = session.lines();
       const cur = lines[a.cell.line - 1];
-      if (typeof cur !== 'string') return { committed: false, failed: false, why: '' };
-      let encoded;
-      let replacement;
-      let nextLine;
-      // ⭐⭐ **无改动判据比的是视图文本，⛔ 不是编码之后的串**（`bugs/0040` 的 (b)）：
-      //    `decode` 把 `<br />` / `<BR>` 归一成 `\n`、`encode` 再一律写回 `<br>`
-      //    ⇒ 拿 `nextLine === cur` 当判据，点进一个含 `<br />` 的格子、什么都不改再点出去，
-      //    用户的源码就被**静默改写**了（屏幕上一点变化都没有）。
-      const viewText = a.view.lines().join('\n');
-      try {
-        if (cellMod.isUnchanged(cur, a.cell.from, a.cell.to, viewText)) {
-          return { committed: false, failed: false, why: '' };
-        }
-        encoded = cellMod.encode(viewText);
-        // ⭐ `padFor` 是**内容之外**的右侧填充：内容以反斜杠结尾且右边紧贴 `|` 时补一个空格，
-        //    否则那个 `\` 会把分隔竖线转义掉、把右邻格并进来（评审 P1；判据在 `cell.js`）。
-        //    ⚠️ 它不参与 `encoded.length`——新区间仍只盖**内容**。
-        replacement = cellMod.padFor(cur, a.cell.to, encoded);
-        nextLine = cellMod.splice(cur, a.cell.from, a.cell.to, replacement);
-      } catch (e) {
-        fail(t('status.cell-write-failed', { msg: msgOf(e) }));
-        // ⚠️ `failed: true`（⛔ 不是 `false`）：这是一次**没写进去**的失败，不是"没有改动"。
-        //    报 `false` 会让 `commitTarget` 把视图连同输入一起销毁（2026-10-29 复评 P1-3）。
-        return { committed: false, failed: true, why: msgOf(e) };
+      // 区间不可信 ⇒ 建不出绑定 ⇒ `judge` 会判 `rejected`（⛔ 不许读成"没改动"）。
+      const binding = cellMod.bind({
+        raw: typeof cur === 'string' ? cellMod.textOf(cur, a.cell.from, a.cell.to) : null,
+        from: a.cell.from,
+        to: a.cell.to,
+        objectId: 'cell:' + a.index + ':' + a.cell.flat,
+        revision: session.revision(),
+      });
+      // ⭐⭐ **唯一判据**（`design/0058` §2.1）：`unchanged` / `valid` / `rejected`。
+      //    ⚠️ 旧形态是 `isUnchanged` 判"没改"、`needsWrite` 判"要写"——两条各算一遍，
+      //    口径靠人记得对齐（`bugs/0047` 就是那么长出来的）。现在只有这一处。
+      const verdict = cellMod.judge(binding, typeof cur === 'string' ? cur : '', a.view.lines().join('\n'));
+      if (verdict.status === 'unchanged') {
+        return txPayload(txn.STATUS.UNCHANGED, {
+          txId: newTxId(),
+          revision: session.revision(),
+          selection: viewSelection(a),
+          operation: 'edit',
+          objectKind: 'cell',
+        });
       }
-      if (nextLine === cur) return { committed: false, failed: false, why: '' };
+      if (verdict.status === 'rejected') {
+        // ⚠️ `rejected`（⛔ 不是 `unchanged`）：候选不可无损表达 / 区间坏了 ⇒
+        //    **保留输入、报错、不清脏**。⛔ 不许为了"能退出"而清空（`INV-MUT-03`）。
+        const why = verdict.why || 'rejected';
+        fail(why === 'range'
+          ? t('status.cell-write-failed', { msg: why })
+          : t('status.cell-inexpressible'));
+        return txPayload(txn.STATUS.REJECTED, {
+          txId: newTxId(),
+          revision: session.revision(),
+          why: why,
+          selection: viewSelection(a),
+          operation: 'edit',
+          objectKind: 'cell',
+        });
+      }
+      const encoded = verdict.encoded || '';
+      const replacement = verdict.replacement || '';
+      const nextLine = verdict.nextLine || '';
       const from = a.cell.line - 1;
-      return await publish(a, {
+      return await runTransaction(a, {
+        operation: 'edit',
+        objectKind: 'cell',
         range: { from: from, to: from + 1 },
         next: [nextLine],
         // ⭐ 结构证据全由后端给（`INV-SINGLE-01`）：目标对象身份 ＋ 预期替换源码。
@@ -972,42 +1312,6 @@
           a.b = a.cell.line;
         },
       });
-    }
-
-    /**
-     * 一次"文本变了 ⇒ 重渲染 ⇒ 提交点"的公共尾巴（`commit` 与 `undo` 共用）。
-     * ⚠️ 它**不**碰 `state`，由调用方决定（提交中 / 仍在编辑）。
-     */
-    async function submit(res) {
-      const my = ++renderSeq;
-      const req = ++renderReq;
-      const prev = state;
-      state = 'committing';
-      try {
-        const payload = await d.renderPreview({
-          text: res.fullText,
-          generation: ident.generation,
-          req: req,
-        });
-        // ⑤ 身份复核（`INV-LIVE-20`）：`commitSeq` 与 `doc_seq` 都还匹配才进提交点。
-        const acc = model.acceptReply(res.identity, replyOfPayload(payload));
-        if (my !== renderSeq) return false; // 有更新的一次提交在途 ⇒ 这一包**丢**
-        if (!acc.ok) {
-          fail(t('status.live-align', { msg: acc.why }));
-          return false;
-        }
-        // ④ 提交点：⭐ **只经 `mountDocument`**（`main.js:2550`）。
-        d.mount(payload, { keepScroll: true });
-        notePayload(payload);
-        note(t('status.live-committed'));
-        announce(t('status.live-committed'));
-        return true;
-      } catch (e) {
-        fail(t('status.live-commit-failed', { msg: msgOf(e) }));
-        return false;
-      } finally {
-        if (state === 'committing') state = prev;
-      }
     }
 
     /**
@@ -1029,10 +1333,20 @@
       if (!a || !session) return false;
       if (a.cell) {
         const cur = session.lines()[a.cell.line - 1];
-        if (typeof cur !== 'string') return false;
-        // ⭐ 与 `commitCell` 同一条判据（`bugs/0040`）：⛔ 别拿 `encode(视图)` 去比源码——
-        //    含 `<br />` 的格子在那条判据下**永远"脏"**，`commitTarget` 会白白空转几轮。
-        return !cellMod.isUnchanged(cur, a.cell.from, a.cell.to, a.view.lines().join('\n'));
+        // ⚠️ 区间不可信 ⇒ **脏**（⛔ 不许读成"干净"让 `leave()` 把输入销毁掉）。
+        if (typeof cur !== 'string') return true;
+        // ⭐ 与 `commitCell` **同一条判据**（`design/0058` §2.1 / `INV-MUT-02`）：
+        //    `judge` 的 `unchanged` 才算干净；`valid` 与 `rejected` 都还算脏
+        //    （`rejected` 尤其不能读成"没改动"——那会把用户的输入当垃圾丢掉）。
+        return cellMod.judge(
+          cellMod.bind({
+            raw: cellMod.textOf(cur, a.cell.from, a.cell.to),
+            from: a.cell.from,
+            to: a.cell.to,
+          }),
+          cur,
+          a.view.lines().join('\n')
+        ).status !== 'unchanged';
       }
       const cur = session.lines().slice(a.a - 1, a.b);
       return !sameLines(a.view.lines(), cur);
@@ -1050,14 +1364,16 @@
      *
      * 三步：
      *   ① [`leave`]：提交当前块（会整篇重渲，`ident` 跟着换成新行数）；
-     *   ② 在刚提交那一块之后**插三行空行**：上分隔 / 新段落 / 下分隔。
-     *      ⚠️ 为什么是三行：comrak 把**相邻非空行并进同一段**。少插任何一侧 ⇒ 用户敲的
+     *   ② 在刚提交那一块之后**插空行**：上分隔 / 新段落（/ 下分隔）。
+     *      ⚠️ 为什么必须有上分隔：comrak 把**相邻非空行并进同一段**。少插上面那一侧 ⇒ 用户敲的
      *      第一个字会跟上面的引用或下面的正文**合并**（屏幕上表现为"新写的字跑进了引用块"）。
      *      这是 markdown 的事实，⛔ 不是实现取舍。
+     *      ⚠️ 下分隔**看情况**（`bugs/0079`）：块后本来就有一行块间空行（常态）⇒ 只插 2 行，
+     *      拿那一行当新段落的下分隔；否则（文档末尾 / 块后紧贴下一块）才插 3 行。
      *   ③ 用一个**临时 `<p>` 宿主**（`d.pendingHost`）＋ 合成块 `begin()`：空行在 comrak 里
      *      **不是块**，所以这一块只存在于"视图开着"的这段时间里。
      *
-     * ⚠️ 没敲字就退出 ⇒ [`leave`] 会把这三行**原样撤回**（弹掉我们压的那条提交栈条目），
+     * ⚠️ 没敲字就退出 ⇒ [`leave`] 会把它们**原样撤回**（弹掉我们压的那条提交栈条目），
      *    ⛔ 不在用户文件里留空行。
      *
      * @returns {Promise<boolean>} 真的开出了一段新段落
@@ -1079,27 +1395,36 @@
       // ① 提交并离开（⚠️ 必须真的走 `leave()`：它负责"先还宿主再提交"那条顺序，`bugs/0018` ④）
       const left = await leave({ reason: 'new-paragraph' });
       // ⭐ 2026-10-29 复评 P1-3 之后 `leave()` 会**如实失败**（三轮没收敛 / 被拒）：
-      //    那时视图与输入都还在 ⇒ ⛔ 不许在它上面继续插三行（会先插进 `session`、
+      //    那时视图与输入都还在 ⇒ ⛔ 不许在它上面继续插空行（会先插进 `session`、
       //    再被 `begin()` 的第二次 `leave()` 顶掉，用户看到的是一次"凭空多出空行"）。
       if (!left.ok) return false;
       // ② 重取那一块 —— 那次提交会整篇重渲，旧表已过期（`bugs/0018` ⑤）
       const b = blockAtLine(caretLine) || blockAt(fromIndex);
       if (!b) return false;
       const insertAt = b.to;
-      let res;
-      try {
-        // ⚠️ 插入是 `from === to` 的提交（`model.applyEdit` 支持，⛔ 不是特例分支）。
-        res = session.commit({ from: insertAt, to: insertAt }, ['', '', '']);
-      } catch (e) {
-        fail(t('status.live-commit-failed', { msg: msgOf(e) }));
-        return false;
-      }
-      const ok = await submit(res);
-      if (!ok) {
-        // 渲染没成 ⇒ 把这三行撤回去，⛔ 留一段空白在文档里
-        session.undo();
-        return false;
-      }
+      // ⭐ 下分隔**不要重复插**（`bugs/0079`）：标准 Markdown 里 `b.to` 那一行本来就是块间空行
+      //    ⇒ 再按字面插三行，新段落下方就留下 2 个空行，每按一次多一个。
+      //    「那一行已经是空行」⇒ 只插 **上分隔 ＋ 新段落** 两行（原有的空行正好当新段落的下分隔）；
+      //    否则（文档末尾、块后紧贴下一块）才插三行。
+      //    ⚠️ 不能"先插三行再删一行"：那会多一条撤销条目，破坏 `design/0059` §2.1。
+      const 现有行 = session.lines();
+      const 后面已有分隔行 =
+        insertAt < 现有行.length && String(现有行[insertAt]).trim() === '';
+      const 空行数 = 后面已有分隔行 ? 2 : 3;
+      const 插入行 = [];
+      for (let i = 0; i < 空行数; i++) 插入行.push('');
+      // ⚠️ 插入是 `from === to` 的提交（`model.applyEdit` 支持，⛔ 不是特例分支）。
+      //    ⭐ 走**同一条事务**（候选 → 校验 → 复核 → 发布）：失败时由 T0 快照成对回滚，
+      //    ⛔ 不再"自己 `session.undo()` 补一下"。
+      const ins = await runTransaction(null, {
+        operation: 'insert',
+        objectKind: 'block',
+        range: { from: insertAt, to: insertAt },
+        next: 插入行,
+        // 插入段落是**一个已定义的逻辑动作** ⇒ 这一次的撤销条目归同一组（`design/0059` §2.1）。
+        group: 'insert-paragraph',
+      });
+      if (ins.status !== txn.STATUS.COMMITTED) return false;
       // ③ 临时宿主 ＋ 合成块：`line1` 是**中间**那一行（1-based）
       const line1 = insertAt + 2;
       const prev = typeof d.nodeOf === 'function' ? d.nodeOf(b.index) : null;
@@ -1123,10 +1448,12 @@
         return false;
       }
       if (active) {
-        active.synthetic = { from: insertAt, to: insertAt + 3 };
+        active.synthetic = { from: insertAt, to: insertAt + 空行数 };
         lastNewPara = {
           blockIndex: b.index,
           insertAt: insertAt,
+          // ⚠️ 插了几行（2 或 3），撤销时按它核对栈顶那一条，⛔ 别再写死 3（`bugs/0079`）。
+          rows: 空行数,
           caretBefore: caretBefore,
         };
       }
@@ -1140,7 +1467,7 @@
      * ⚠️ 只有在**新段落视图里、CM6 自己已经没有历史**时才轮到它（`main.js::undoOnce`）——
      *    `resolveUndo` 那条「⛔ 一次 ⌘Z 不跨层」的纪律不变：先撤键级，键级空了才撤提交栈。
      *
-     * ⚠️⚠️ 只弹**一条**：`⌘↵` 压的是"那三行插入"。它**下面**若还有一条"当前块的改动"，
+     * ⚠️⚠️ 只弹**一条**：`⌘↵` 压的是"那次空行插入"。它**下面**若还有一条"当前块的改动"，
      *    那是用户按 `⌘↵` **之前**敲进去的字 ⇒ ⛔ 连它一起撤掉就等于"撤销把刚写的东西吃掉"。
      *    （2026-10-28 定：先写成"倒回 `stackBefore`"，那正是这个错——块里有字时按 ⌘↵ 再 ⌘Z，
      *    敲的字会一起没；`live-controller.test.js` 有对应判据。）
@@ -1151,7 +1478,7 @@
       if (!s || !session) return false;
       if (!active || !active.synthetic) return false;
       const top = session.stack().peek();
-      if (!top || top.from !== s.insertAt || top.after.length !== 3) return false;
+      if (!top || top.from !== s.insertAt || top.after.length !== (s.rows || 3)) return false;
       for (let i = 0; i < top.after.length; i++) {
         if (String(top.after[i]).trim() !== '') return false;
       }
@@ -1165,10 +1492,10 @@
       //    **本来就要随撤销一起消失**，⛔ 没有任何东西需要提交；宿主也活不过下一次整篇重渲。
       const host = active.el; // 提交失败时把它摘掉（⛔ 在文档里留一个空 `<p>`）
       await leave({ reason: 'undo-new-paragraph', discard: true });
-      const res = session.undo();
-      if (!res) return false;
-      const ok = await submit(res);
-      if (!ok) {
+      // ⚠️ 这里用**内部回滚**（`session.undo()`，不往重做栈里记）：这一步是"取消我们自己
+      //    刚插的空行"，⛔ 不是用户的一次撤销——记进重做栈会让 `⇧⌘Z` 能把空段落又贴回来。
+      const out = await undoTop({ operation: 'undo', pop: true });
+      if (!out || out.status !== txn.STATUS.COMMITTED) {
         if (host && host.parentNode) host.parentNode.removeChild(host);
         return false;
       }
@@ -1189,8 +1516,8 @@
     /**
      * 「`⌘↵` 新起一段」里一个字都没敲就退出 ⇒ 撤销那次插入。
      *
-     * ⚠️ 只认**栈顶恰好是那次插入**（`from` 对得上、恰好 3 行、内容全空）：中间被别的提交
-     *    动过就不碰 —— ⛔ 宁可留三个空行，也不许撤掉用户已经写进去的字。
+     * ⚠️ 只认**栈顶恰好是那次插入**（`from` 对得上、行数与当时插的一致、内容全空）：中间被别的提交
+     *    动过就不碰 —— ⛔ 宁可留几个空行，也不许撤掉用户已经写进去的字。
      */
     async function dropEmptyPending(a, viewLines) {
       const s = a && a.synthetic;
@@ -1198,13 +1525,42 @@
       const empty = !viewLines || (viewLines.length === 1 && String(viewLines[0]).trim() === '');
       if (!empty) return false;
       const top = session.stack().peek();
-      if (!top || top.from !== s.from || top.after.length !== 3) return false;
+      // ⚠️ 插了 2 行还是 3 行由当时块后有没有块间空行决定（`bugs/0079`）⇒ 取合成的跨度。
+      if (!top || top.from !== s.from || top.after.length !== (s.to - s.from)) return false;
       for (let i = 0; i < top.after.length; i++) {
         if (String(top.after[i]).trim() !== '') return false;
       }
-      const res = session.undo();
-      if (!res) return false;
-      return await submit(res);
+      return await undoTop({ operation: 'undo', pop: true }) !== null;
+    }
+
+    /**
+     * ⭐ **栈顶那一条**的统一撤销（阅读态 `⌘Z` / 撤回「新起一段」/ 丢弃空段落共用）。
+     *
+     * 候选**先从 `peekUndo()` 算**（⛔ 不动真值），校验／复核通过后才在 T4 调
+     * `session.undoEdit()`（用户撤销，进重做栈）或 `session.undo()`（内部回滚，不进）。
+     *
+     * @param {{operation?:string, pop?:boolean, group?:string|null}} [o]
+     * @returns {Promise<TxPayload|null>} `null` = 没有可撤的条目
+     */
+    async function undoTop(o) {
+      const opts = o || {};
+      if (!session) return null;
+      const peek = session.peekUndo();
+      if (!peek) return null;
+      return await runTransaction(null, {
+        operation: opts.operation || 'undo',
+        objectKind: 'block',
+        range: peek.range,
+        next: peek.next,
+        // ⚠️ 落地时必须**真的做那一次撤销**：候选来自 `peekUndo`，落地来自 `undo*()`。
+        //    两者对不上时 `runTransaction` 的 `apply-mismatch` 会把它变成失败并回滚。
+        apply: function () {
+          const r = opts.pop ? session.undo() : session.undoEdit();
+          if (!r) throw new Error('nothing-to-undo');
+          return r;
+        },
+        group: opts.group === undefined ? null : opts.group,
+      });
     }
 
     // ── 退出 ───────────────────────────────────────────────────────────
@@ -1213,7 +1569,8 @@
      * @param {{reason?:string, discard?:boolean}} [opts]
      *   `discard: true` ⇒ 丢掉视图里的内容（调用方已经过了 0012 的脏提示闸）。
      *   ⚠️ 默认**提交**：脏内容不静默丢（§2.5 的 `Esc` 那行）。
-     * @returns {Promise<{ok:boolean, committed:boolean, failed?:boolean, why?:string}>}
+     * @returns {Promise<{ok:boolean, committed:boolean, failed?:boolean, why?:string,
+     *   pending?:boolean}>}
      *   ⭐ `design/0054` §7 第 5 条：**失败必须能传出去**（⛔ 不许退化成 `committed:false`）：
      *   `ok === false` ⇒ 视图**没被销毁**、输入还在，调用方（`begin()` / 切文档）⛔ 不许当没事发生。
      */
@@ -1226,7 +1583,7 @@
       }
       // ⚠️⚠️ **先提交、后摘视图**（`design/0054`）：复核失败/结构被拒时视图必须**原样活着**，
       //    否则"拒绝"这两个字就是把用户唯一那份输入一起删掉。
-      //    ⚠️ 摘宿主这一步已经挪进 `publish()` 的发布段（紧挨着 `mount`）——
+      //    ⚠️ 摘宿主这一步已经挪进 `runTransaction()` 的发布段（紧挨着 `mount`）——
       //    ⛔ 别在这里提前摘（`bugs/0018` 说的顺序是"摘在 mount 之前"，不是"摘在提交之前"）。
       let out = { committed: false, failed: false, why: '' };
       if (!o.discard) out = await commitTarget(a);
@@ -1236,7 +1593,7 @@
         //    ⚠️ `committed` 要**如实带出去**（前面几轮可能真的提交进去了）：
         //    写授权退不退、状态条说什么，靠的是"有没有东西真的进了会话"，
         //    ⛔ 不是"这一趟最后成没成"。
-        return { ok: false, committed: out.committed, failed: true, why: out.why };
+        return { ok: false, committed: out.committed, failed: true, why: out.why, pending: true };
       }
       active = null;
       enterSeq++;
@@ -1246,7 +1603,7 @@
         a.view && typeof a.view.lines === 'function' ? a.view.lines() : null;
       if (a.view && a.view.destroy) a.view.destroy();
       state = 'viewing';
-      // ⭐ 「`⌘↵` 新起一段」里一个字都没敲 ⇒ 把那三行**原样撤回**（⛔ 不留空行，`bugs/0024`）
+      // ⭐ 「`⌘↵` 新起一段」里一个字都没敲 ⇒ 把那些空行**原样撤回**（⛔ 不留空行，`bugs/0024`）
       if (!o.discard) await dropEmptyPending(a, viewLines);
       if (out.committed) await safeEndEdit(false);
       else await safeEndEdit(true);
@@ -1264,15 +1621,20 @@
      *    现形态：**每一轮结束都问一次 `stillDirty(a)`**；只要还脏就不许报成功，
      *    也⛔ 不许靠"再加几轮"掩盖——预算是有界的，耗尽了就**显式失败并留在原地**。
      *
-     * @returns {Promise<{committed:boolean, failed:boolean, why:string}>}
+     * @returns {Promise<{committed:boolean, failed:boolean, why:string, rejected?:boolean}>}
      */
     async function commitTarget(a) {
       let any = false;
       for (let round = 0; round < MAX_COMMIT_ROUNDS; round++) {
         const out = await commitActive(a);
-        if (out.failed) return { committed: any, failed: true, why: out.why };
+        // ⭐ `rejected`（表达不了 / 结构被拒）与 `failed` 一样**不许**让调用方销毁视图：
+        //    两者都还留着用户的输入。`stale` 不在这里返回——它下面由 `stillDirty` 兜住。
+        if (out.failed || out.rejected) {
+          return { committed: any, failed: true, why: out.why };
+        }
         if (out.committed) any = true;
         // ⭐ 唯一判据：**视图里还有没有没提交的字**（与 `dirty()` 用的是同一份 `stillDirty`）。
+        //    `stale` 若还脏，就走不到这里 ⇒ 落到下面的"没发布却仍脏" ⇒ 显式失败。
         if (!stillDirty(a)) {
           // ⚠️ `why` 要**原样带出去**：`stale`（被更新的一次提交挤掉）与"没有改动"都是
           //    收敛了，但调用方/判据得分得清是哪一种（`design/0054` §7 第 5 条）。
@@ -1290,7 +1652,7 @@
      * 「没收敛」的唯一出口：**说出来 ＋ 报失败**（⛔ 不许静默返回成功让调用方销毁视图）。
      * @param {boolean} any
      * @param {string} why
-     * @returns {{committed:boolean, failed:boolean, why:string}}
+     * @returns {{committed:boolean, failed:boolean, why:string, rejected?:boolean}}
      */
     function notConverged(any, why) {
       fail(t('status.live-still-dirty'));
@@ -1394,7 +1756,28 @@
         lastEnvelope = grant.envelope || lastEnvelope;
       }
       try {
-        await d.saveDisk({ text: snapText, envelope: lastEnvelope, realPath: snapRealPath });
+        const saved = await d.saveDisk({ text: snapText, envelope: lastEnvelope, realPath: snapRealPath });
+        // ⭐ `design/0082`：未命名草稿的落点由**系统保存面板**产生，用户可能在面板里**取消**。
+        //    ⚠️ 那不是失败，也⛔ 不是"已保存"：磁盘上一个字节没动、`baseline` 不许往前推
+        //    （推了就等于把用户还没落盘的内容说成"与磁盘一致" ⇒ 之后不再提示丢稿）。
+        //    调用方（`main.js::liveSaveNow`）会按 `{cancelled:true}` 说一句"已取消保存"。
+        if (saved && saved.cancelled) return false;
+        // ⭐⭐ **草稿刚刚变成了真实文档**：路径有了、`doc_seq` +1。⚠️ 不回填身份的话，
+        //    下一次 `begin_edit` 会拿新路径去比旧的空串 ⇒ 每一块都被判「身份不符」，
+        //    而报出来的是"正文在打开后被改过"（把用户自己的保存说成外部改动）。
+        //    ⚠️ `session` 不在这里换：它的文本与磁盘逐字节相同，换路径的活由下一次
+        //    `sameDocumentSession` 判否之后按盘重建（那次重建是无损的，`grant.text` 就是它）。
+        if (ident0.draft && saved && saved.path) {
+          ident = {
+            realPath: String(saved.path),
+            draft: null,
+            generation: ident0.generation,
+            docSeq: saved.doc_seq,
+            lineCount: snapLines.length,
+          };
+          baseline = snapLines;
+          return true;
+        }
         // ⭐⭐ 基线 = **这一次写出去的那份快照**，⛔ 不是 `session.lines()`：
         //    写盘期间可能又提交了别的内容，那些**不在磁盘上**，必须继续算脏。
         //    ⚠️ 只在"还是同一个会话"时回填；换了文档 ⇒ 这份快照不是它的基线。
@@ -1504,7 +1887,8 @@
       if (why) {
         state = 'viewing';
         await safeEndEdit(true);
-        fail(t('status.live-identity', { why: why }));
+        // ⭐ 与 `begin()` 同一条：打勾这条路也会撞上"正文在打开后被改过"。
+        staleDocument(why);
         return { ok: false, why: 'identity' };
       }
       if (grant.envelope && grant.envelope.lossy) {
@@ -1539,13 +1923,23 @@
         return { ok: false, why: 'task-write' };
       }
 
-      const res = session.commit({ from: idx, to: idx + 1 }, [nextLine]);
-      // ⑤ 走**同一条**提交链（`INV-TASK-04`）：`submit` → `mountDocument`。
-      const ok = await submit(res);
+      // ⑤ 走**同一条事务链**（`INV-TASK-04`）：候选 → 校验 → 复核 → 发布。
+      //    ⭐ 失败时由 T0 快照成对回滚（旧写法在这里**什么都不做**，真值已经前进、
+      //    屏幕还是旧的——`design/0058` §1.2 点名的那条）。
+      const out = await runTransaction(null, {
+        operation: 'task',
+        objectKind: 'block',
+        range: { from: idx, to: idx + 1 },
+        next: [nextLine],
+        // 一次打勾是**一个已定义的逻辑动作** ⇒ 撤销时整步回到（`design/0059` §2.1）。
+        group: 'toggle-task',
+      });
       state = 'viewing';
       // 写授权先还回去：`save()` 自己要的时候会再要一次（`design/0051` §2.5）。
       await safeEndEdit(false);
-      if (!ok) return { ok: false, why: 'submit' };
+      if (out.status !== txn.STATUS.COMMITTED) {
+        return { ok: false, why: out.why || out.status };
+      }
 
       // ⚠️⚠️ 参数是**翻之前**那一行（`cur`），⛔ 不是 `nextLine`：
       //    `isCheckedSymbol` 的口径是「把这一行翻一下之后是不是勾上」（它自己会再翻一次）。
@@ -1568,18 +1962,71 @@
      * ⚠️ 编辑态下 ⛔ 不走这里——`⌘Z` 只交给 CM6（不跨层）。
      */
     async function undo() {
-      if (state !== 'viewing' || !session) return false;
-      const res = session.undo();
-      if (!res) {
+      // ⚠️ `session === null`（打开文档、还没进过编辑）也是**「没有可撤的」**，
+      //    ⛔ 不是"这个语境不归我" ⇒ 必须说一句（`bugs/0020` 评审 P2-5）。
+      if (state !== 'viewing') return false;
+      if (!session) {
         note(t('status.live-nothing-to-undo'));
         return false;
       }
-      const ok = await submit(res);
+      // ⭐ 走**同一条事务**：候选来自 `peekUndo`，复核通过后才落地；失败由 T0 成对回滚
+      //    （旧写法先改真值、失败再 `res.revert()`——那是 `design/0058` §1.2 的第二条路）。
+      const out = await undoTop({ operation: 'undo' });
+      if (!out || out.status === txn.STATUS.UNCHANGED) {
+        note(t('status.live-nothing-to-undo'));
+        return false;
+      }
+      const ok = out.status === txn.STATUS.COMMITTED;
       if (ok) {
         note(t('status.live-undo'));
         announce(t('status.live-undo'));
       }
       return ok;
+    }
+
+    /**
+     * `Viewing` 态的 `⇧⌘Z`：重做**最近一次被撤销的提交**（`bugs/0020` §8）。
+     * ⚠️ 重做栈只装"用户撤销过的"那条：新提交、换文档、外部重载都会把它清掉
+     *    （`live/model.js::createCommitStack`）——没有可重做的就说一声。
+     */
+    async function redo() {
+      if (state !== 'viewing') return false;
+      if (!session) {
+        note(t('status.live-nothing-to-redo'));
+        return false;
+      }
+      const out = await redoTop();
+      if (!out || out.status === txn.STATUS.UNCHANGED) {
+        note(t('status.live-nothing-to-redo'));
+        return false;
+      }
+      const ok = out.status === txn.STATUS.COMMITTED;
+      if (ok) {
+        note(t('status.live-redo'));
+        announce(t('status.live-redo'));
+      }
+      return ok;
+    }
+
+    /**
+     * ⭐ **栈顶那一条重做**（`⇧⌘Z`）：候选来自 `peekRedo()`，落地才调 `session.redo()`。
+     * @returns {Promise<TxPayload|null>} `null` = 没有可重做的条目
+     */
+    async function redoTop() {
+      if (!session) return null;
+      const peek = session.peekRedo();
+      if (!peek) return null;
+      return await runTransaction(null, {
+        operation: 'redo',
+        objectKind: 'block',
+        range: peek.range,
+        next: peek.next,
+        apply: function () {
+          const r = session.redo();
+          if (!r) throw new Error('nothing-to-redo');
+          return r;
+        },
+      });
     }
 
     // ── 生命周期 ───────────────────────────────────────────────────────
@@ -1604,12 +2051,204 @@
     /** 信封（`begin_edit` 给的那一份）：`save()` 要原样还回去，`main.js` 也要用它显示提示。 */
     let lastEnvelope = null;
 
+    /**
+     * 活动格的只读快照（`null` = 块形态 / 没在编辑）。`activeCell` 与 `activeCellForNav`
+     * 共用这一份取值，避免两处各抄一遍字段表。
+     * @returns {{blockIndex:number, flat:number, line:number, from:number, to:number}|null}
+     */
+    function activeCellInfo() {
+      if (!active || !active.cell) return null;
+      return {
+        blockIndex: active.index,
+        flat: active.cell.flat,
+        line: active.cell.line,
+        from: active.cell.from,
+        to: active.cell.to,
+      };
+    }
+
+    /**
+     * ⭐ 行落在哪一块：优先**真正包含**这一行的那一块（块内空行也算），
+     * 找不到才退回 `blockAtLine()`（块间空行归上面那一块）。
+     *
+     * ⚠️ 为什么不用块下标：`leave()` 会提交并整篇重渲，刚提交的块可能被拆成两块
+     * （用户在块里敲了一个空行），旧下标会指向**另一块**——`bugs/0024` 同族。
+     * @param {number} line0 0-based
+     * @returns {Object|null}
+     */
+    function blockContainingLine(line0) {
+      for (let i = 0; i < table.length; i++) {
+        if (table[i].from <= line0 && line0 < table[i].to) return table[i];
+      }
+      return blockAtLine(line0);
+    }
+
+    /** 偏移在文本里的行号（0-based，只数 `\n`）。 */
+    function lineOfOffset(text, pos) {
+      let line = 0;
+      const end = Math.min(text.length, Math.max(0, pos));
+      for (let i = 0; i < end; i++) if (text.charAt(i) === '\n') line++;
+      return line;
+    }
+
+    /** 把块内偏移夹进文本范围（提交后文本可能变长/变短）。 */
+    function clampOffset(text, pos) {
+      const n = typeof pos === 'number' && isFinite(pos) ? Math.trunc(pos) : 0;
+      return Math.min(text.length, Math.max(0, n));
+    }
+
+    /**
+     * ⭐ **块命令**（`design/0078` §2.2）：当前块 → 纯计划 → 一次整块提交。
+     *
+     * ⚠️ 没有编辑上下文 / 当前在格内 ⇒ 直接 `{ok:false}`，⛔ 不报错、⛔ 不猜目标
+     * （格式栏据此把菜单项禁用，`INV-TABLEOP-05`）。
+     *
+     * @param {string} cmd
+     * @returns {Promise<{ok:boolean, status?:string, why?:string}>}
+     */
+    async function blockCommand(cmd) {
+      const mod = LIVE.blockCmd;
+      const a0 = active;
+      if (!mod || !a0 || a0.cell || state !== 'editing') {
+        return { ok: false, why: 'no-editing' };
+      }
+      if (!session || !ident) return { ok: false, why: 'no-document' };
+      const block0 = blockAt(a0.index);
+      if (!block0) return { ok: false, why: 'no-block' };
+      const text0 = session.lines().slice(block0.from, block0.to).join('\n');
+      let anchor = 0;
+      let head = 0;
+      if (a0.view && typeof a0.view.selection === 'function') {
+        const s = a0.view.selection();
+        if (s) { anchor = s.anchor; head = s.head; }
+      }
+      anchor = clampOffset(text0, anchor);
+      head = clampOffset(text0, head);
+      const caretLine = block0.startLine + lineOfOffset(text0, anchor);
+      // ⚠️ 先提交落定（它自己是一次提交），再按**行**重取目标块。
+      const left = await leave({ reason: 'block-command' });
+      if (!left.ok) return { ok: false, why: 'commit-failed' };
+      if (!session) return { ok: false, why: 'no-document' };
+      const block = blockContainingLine(caretLine - 1);
+      if (!block) return { ok: false, why: 'no-block' };
+      const blockLines = session.lines().slice(block.from, block.to);
+      const text = blockLines.join('\n');
+      const out = mod.plan(cmd, text, clampOffset(text, anchor), clampOffset(text, head));
+      if (!out) return { ok: false, why: 'no-op' };
+      const payload = await runTransaction(null, {
+        operation: 'block-command',
+        objectKind: 'block',
+        range: { from: block.from, to: block.to },
+        next: model.splitLines(out.text),
+        verify: null,
+        selectionBefore: null,
+        selectionAfter: null,
+        group: 'block-command',
+      });
+      return {
+        ok: payload.committed === true || payload.unchanged === true,
+        status: payload.status,
+        why: payload.why,
+      };
+    }
+
+    /**
+     * ⭐ **表格行列操作**（`design/0078` §2.3）：活动格 → 纯计划 → 一次整块提交。
+     *
+     * ⚠️ 结构拒绝（`uneven` / `header-row` / …）走 `note()` 中性提示，⛔ 不报红色失败：
+     * 这是"这里不能这么做"，不是"程序坏了"。
+     *
+     * @param {string} cmd
+     * @returns {Promise<{ok:boolean, status?:string, why?:string}>}
+     */
+    async function tableOp(cmd) {
+      const mod = LIVE.table;
+      const info = activeCellInfo();
+      if (!mod || !info || state !== 'editing') return { ok: false, why: 'no-cell' };
+      if (!session || !ident) return { ok: false, why: 'no-document' };
+      const startLine = info.line;
+      const flat = info.flat;
+      const index = info.blockIndex;
+      const left = await leave({ reason: 'table-op' });
+      if (!left.ok) return { ok: false, why: 'commit-failed' };
+      if (!session) return { ok: false, why: 'no-document' };
+      const block = blockContainingLine(startLine - 1) || blockAt(index);
+      if (!block) return { ok: false, why: 'no-block' };
+      const cells = cellsOf(block.index);
+      if (!cells) {
+        note(t('status.table-rejected', { why: t('status.table-why.no-cells') }));
+        return { ok: false, why: 'no-cells' };
+      }
+      const blockLines = session.lines().slice(block.from, block.to);
+      const out = mod.apply(cmd, blockLines, cells, { startLine: block.startLine, flat: flat });
+      if (!out.ok) {
+        note(t('status.table-rejected', { why: t(`status.table-why.${out.why}`) }));
+        return { ok: false, why: out.why };
+      }
+      const payload = await runTransaction(null, {
+        operation: 'table-op',
+        objectKind: 'table',
+        range: { from: block.from, to: block.to },
+        next: out.lines,
+        verify: null,
+        selectionBefore: null,
+        selectionAfter: null,
+        group: 'table-op',
+      });
+      return {
+        ok: payload.committed === true || payload.unchanged === true,
+        status: payload.status,
+        why: payload.why,
+      };
+    }
+
+    /**
+     * 活动格的**表格能力**（菜单置灰用；只读，⛔ 不产生改动）。
+     * `null` = 没有活动格 / 不在编辑态 / 这张表没有格子。
+     * @returns {Object|null}
+     */
+    function tableCapabilities() {
+      const mod = LIVE.table;
+      const info = activeCellInfo();
+      if (!mod || typeof mod.capacity !== 'function' || !info
+        || state !== 'editing' || !session) return null;
+      const block = blockAt(info.blockIndex);
+      if (!block) return null;
+      const cells = cellsOf(block.index);
+      if (!cells) return null;
+      const lines = session.lines().slice(block.from, block.to);
+      const cap = mod.capacity(lines, cells, { startLine: block.startLine, flat: info.flat });
+      if (!cap || cap.ok !== true) return cap || null;
+      return {
+        ok: true,
+        uneven: cap.uneven,
+        columns: cap.columns,
+        column: cap.column,
+        rowIndex: cap.rowIndex,
+        rowCount: cap.rowCount,
+        blockIndex: block.index,
+      };
+    }
+
     const api = {
       state: function () {
         return state;
       },
       activeIndex: function () {
         return active ? active.index : null;
+      },
+      /**
+       * ⭐ `design/0061` L4：**只读**的活动视图（选中浮动格式栏用的最小暴露）。
+       *
+       * 返回的是 `main.js::makeLiveView` 的适配对象（`dom` / `lines` / `selection`
+       * / `focusAt` …），⛔ **不是** CM6 的 `EditorView`：本控制器刻意不碰 CM6
+       * （文件头的第三条不变量），格式栏自己用 `EditorView.findFromDOM(adapter.dom)`
+       * 取回真视图再 `dispatch`。⛔ 别在这里加写入口——编辑仍然只经 `view.dispatch`。
+       *
+       * @returns {object|null} 没在编辑 / 视图已销毁 ⇒ `null`
+       */
+      activeView: function () {
+        return active && active.view ? active.view : null;
       },
       isEditing: function () {
         return state === 'editing' || state === 'committing';
@@ -1630,6 +2269,10 @@
       canUndo: function () {
         return state === 'viewing' && session !== null && session.stack().size() > 0;
       },
+      /** ⭐ `⇧⌘Z` 能不能用（`bugs/0020` §8）：`Viewing` 态 ＋ 重做栈非空。 */
+      canRedo: function () {
+        return state === 'viewing' && session !== null && session.stack().redoSize() > 0;
+      },
       blocks: function () {
         return table;
       },
@@ -1640,16 +2283,54 @@
       /**
        * ⭐ **当前活动目标是不是一格里**（`null` = 块形态 / 没在编辑）。
        * `main.js` 用它决定 `reseat` 要重取"整块"还是"第 n 格"、以及 `Tab`/`Enter` 走格。
+       *
+       * ⚠️ 它**故意不看 `state`**：`leave()` 提交落定之前 `active` 不清（失败时要保住
+       *    输入），而 `reseat` 恰好需要那一刻的格（重渲后把视图挂回原格）。跨格导航的
+       *    基准请用 `activeCellForNav()`——两者混用就是"快速连按以旧格为基准"的根因。
        */
-      activeCell: function () {
-        if (!active || !active.cell) return null;
-        return {
-          blockIndex: active.index,
-          flat: active.cell.flat,
-          line: active.cell.line,
-          from: active.cell.from,
-          to: active.cell.to,
-        };
+      activeCell: activeCellInfo,
+      /**
+       * ⭐ **跨格导航的基准格**（`bugs/0104` 连按）：只在**真正处于编辑态**时返回。
+       *
+       * 现象：`leave()` 提交期间 `state` 是 `'committing'`、`active` 仍是**旧格**；
+       * 快速连按时第二次按键若拿 `activeCell()` 当基准，会以旧格再排队一次 `begin`
+       * （目标跳格或回到同一格）。⇒ 提交中 / 准备中一律给 `null`，调用方
+       * （`main.js::navigateCell`）据此把按键按普通按键处理，⛔ 不吞键。
+       */
+      activeCellForNav: function () {
+        if (state !== 'editing') return null;
+        return activeCellInfo();
+      },
+      /** ⭐ `design/0078`：块命令（一条命令 = 一次整块提交 = 一次撤销）。 */
+      blockCommand: blockCommand,
+      /** ⭐ `design/0078`：表格行列操作（同上；没有活动格时返回 `{ok:false}`）。 */
+      tableOp: tableOp,
+      /** ⭐ `design/0078`：活动格的表格能力（菜单置灰用，只读）。 */
+      tableCapabilities: tableCapabilities,
+      /**
+       * ⭐ **把光标挪到屏幕上的某一点**（`bugs/0069`）：用户点的那一处**就是**正在编辑的这一格时，
+       * 这一下只该改选区，⛔ 不该走 `begin()`——那条路会 `leave('switch')`：提交 ＋ 整篇重渲 ＋
+       * 重新申请写授权 ＋ 换宿主，落点还得在重渲之后**重新**把屏幕坐标映射回新布局 ⇒
+       * 实测停在最后一个字之前（用户 2026-11-04：「行尾无法插入光标」「使用 → 无法走到行尾」）。
+       * ⚠️ 只对**活动视图**生效：没在编辑 / 视图没了 ⇒ `false`，调用方按原路走。
+       * @param {{x:number, y:number}} point 视口坐标（`event.clientX/clientY`）
+       * @returns {boolean}
+       */
+      focusPoint: function (point) {
+        // ⭐ 失败必须**可诊断**（缺陷：纵向跨格后光标悄悄落在格首、没有任何提示）：
+        //    契约仍是 `return false`（⛔ 不抛——抛会走到全局 `reportFatal`，用户看到
+        //    「启动失败」），但同时走既有 console 诊断通道写明是哪一条不满足，
+        //    调用方（`main.js::crossCellVertical`）再据此降级到默认格首。
+        if (state !== 'editing' || !active || !active.view) {
+          console.warn('[rmd-live] focusPoint：当前不在编辑态（state=' + state + '），定位请求忽略');
+          return false;
+        }
+        if (typeof active.view.focusAt !== 'function') {
+          console.warn('[rmd-live] focusPoint：活动视图没有 focusAt，定位请求忽略');
+          return false;
+        }
+        active.view.focusAt(point);
+        return true;
       },
       issues: function () {
         return issues;
@@ -1677,10 +2358,21 @@
       reseat: reseat,
       save: save,
       undo: undo,
+      /** ⭐ `⇧⌘Z`（`Viewing` 态）：重做最近一次撤销的提交（`bugs/0020` §8）。 */
+      redo: redo,
       reset: reset,
       /** 进入时拿到的信封（`save()` 要还回去；`main.js` 也要用它显示那条提示）。 */
       envelope: function () {
         return lastEnvelope;
+      },
+      /**
+       * ⭐ **最近一次事务的完整载荷**（`design/0059` 阶段 A）：五种状态、修订、选前/选后选区、
+       * 对象种类与操作种类。⚠️ 只读观测口（探针与判据拿它和实际执行对表）；
+       * ⛔ 不参与判定，也⛔ 不能当"这次提交成功"的凭据——那要看 `status`。
+       * @returns {TxPayload|null}
+       */
+      lastTransaction: function () {
+        return lastTx;
       },
     };
 

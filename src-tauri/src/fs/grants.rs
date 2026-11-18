@@ -198,6 +198,154 @@ impl SessionGrants {
         }
     }
 
+    /// ⭐ **导出落点闸门**（`design/0076` §2.1.5 / `INV-EXP-03`）。
+    ///
+    /// # 为什么它不是 [`check_writable`](Self::check_writable)
+    ///
+    /// `check_writable` 要求目标**恒等于当前文档**（编辑器只写它正在显示的那一份）；
+    /// 导出恰恰相反——它要写一个**当前文档之外**的新文件。⛔ 复用 `check_writable`
+    /// 在功能上就不可能（`design/0076` §2.2 G）。
+    ///
+    /// # 为什么它也不复用 `authorize_file`
+    ///
+    /// 那会把"另存一次的落点"变成**可读路径**并粘在会话里（`roots`/`files` 是授权真值，
+    /// `INV-FS-03/04`）——用户只在系统面板里选了一次"存到这里"，那**不是**授权我们
+    /// 以后读那个目录。⇒ 本函数**只判、不写**：⛔ 不碰 `roots`/`files`、⛔ 不落盘。
+    ///
+    /// # 顺序固定（`design/0076` §2.1.5 六步）
+    ///
+    /// 1. 必须**绝对路径**，且最后一段是 [`std::path::Component::Normal`]（拒 `.` / `..` / 空名）；
+    /// 2. 父目录必须存在且**自身不是软链**（`symlink_metadata`，⛔ 不跟软链判断父）；
+    /// 3. `parent.canonicalize()` → 目标 = 规范化父目录 + 文件名；
+    /// 4. 目标已存在时：**软链 / 目录 / 其它非普通文件一律拒**；普通文件允许覆盖
+    ///    （系统面板已让用户确认过），并**记下它当前的权限位**；
+    /// 5. 目标等于**当前文档**的真实路径 ⇒ 拒（防止把源文档覆盖成 HTML）；
+    /// 6. **不修改 `roots` / `files`**，不落盘。
+    ///
+    /// ⚠️ `current` 与 [`check_writable`](Self::check_writable) 同一条理由：
+    /// "当前文档是哪份"是 [`Session`](crate::commands::Session) 的状态，
+    /// ⛔ 不是授权对象的状态；传进来让本函数保持**纯**（§7 的用例不需要命令层）。
+    ///
+    /// ⚠️ **能保证什么、不能保证什么**：能保证"检查完成前不返回、拒绝无副作用、
+    /// 返回的目标落在已规范化的父目录下"；⛔ **不保证对象身份不变**——检查与 `rename`
+    /// 之间外部进程仍可替换目录或文件（同 `design/0038` 的边界说明）。
+    /// 这是**读侧永远不承担的写风险**：本函数只允许写**用户刚在面板里点过**的那一个名字。
+    pub fn check_export_target(
+        &self,
+        path: &Path,
+        current: Option<&Path>,
+    ) -> Result<(PathBuf, Option<u32>), Denied> {
+        self.export_target_steps(path, current)
+    }
+
+    /// ⭐ **保存未命名文档的落点闸门**（`design/0082` §2.1 ④ ③）。
+    ///
+    /// 六步与 [`check_export_target`](Self::check_export_target) **完全同一份实现**
+    /// （[`export_target_steps`](Self::export_target_steps)，⛔ 不复制），只多**一条**
+    /// 扩展名判据：
+    ///
+    /// - 用户手打的名字**没有**后缀 ⇒ 补 `.md`（面板的过滤器就是 Markdown，
+    ///   默认名也带 `.md`——这一条只兜"用户把后缀删了"）；
+    /// - 有后缀但**不是** Markdown ⇒ `Denied::Export(TargetInvalid 之外的 NotMarkdown)`。
+    ///
+    /// ⚠️ 后缀判据复用 `tree::is_markdown`（⭐ 全仓**唯一**一份，`design/0034` §2.1），
+    /// 它只认 `.md`。⛔ 别在这里"顺手放宽"成 `.markdown`：树里看不见的后缀
+    /// 会让"存好了却找不到"，而那是设计没打算承担的第二个判据。
+    ///
+    /// ⚠️ 与导出同一条边界：**只判、不写**——⛔ 不碰 `roots`/`files`、⛔ 不落盘。
+    /// 授权那一步在 `save_untitled` 的**写成功之后**（`INV-FS-04` 第六处）。
+    pub fn check_save_target(
+        &self,
+        path: &Path,
+        current: Option<&Path>,
+    ) -> Result<(PathBuf, Option<u32>), Denied> {
+        use crate::error::ExportReason;
+
+        // ① 扩展名（唯一多出来的那一步）
+        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+            return Err(Denied::export(ExportReason::TargetInvalid));
+        };
+        let path = if Path::new(name).extension().is_none() {
+            path.with_file_name(format!("{name}.md"))
+        } else if crate::fs::tree::is_markdown(name) {
+            path.to_path_buf()
+        } else {
+            return Err(Denied::export(ExportReason::TargetInvalid));
+        };
+
+        // ②～⑥ 与导出同源
+        self.export_target_steps(&path, current)
+    }
+
+    /// `check_export_target` / `check_save_target` 共用的**六步**（`design/0076` §2.1.5）。
+    ///
+    /// ⚠️ 只做"这个落点能不能写"的结构判定：⛔ 不碰 `roots`/`files`、⛔ 不落盘。
+    /// 两个调用方的差别**只有**扩展名那一步，🔒 六步本身不许分叉
+    /// （分叉的表现是"导出能写、保存不能"或反过来——两边单独看都对）。
+    fn export_target_steps(
+        &self,
+        path: &Path,
+        current: Option<&Path>,
+    ) -> Result<(PathBuf, Option<u32>), Denied> {
+        use crate::error::ExportReason;
+
+        // ① 绝对路径 ＋ 最后一段是普通名字
+        if !path.is_absolute() {
+            return Err(Denied::export(ExportReason::TargetInvalid));
+        }
+        let Some(std::path::Component::Normal(name)) = path.components().next_back() else {
+            return Err(Denied::export(ExportReason::TargetInvalid));
+        };
+        let Some(parent) = path.parent() else {
+            return Err(Denied::export(ExportReason::TargetInvalid));
+        };
+
+        // ② 父目录存在且**自身不是软链**。⚠️ 用 `symlink_metadata`：跟链判断等于
+        //    把"父目录是软链"这一事实抹掉，而它正是设计要拒的形态。
+        let parent_meta =
+            std::fs::symlink_metadata(parent).map_err(|_| Denied::export(ExportReason::TargetInvalid))?;
+        if !parent_meta.is_dir() {
+            return Err(Denied::export(ExportReason::TargetInvalid));
+        }
+
+        // ③ 规范化父目录 ＋ 原样文件名
+        let parent_real =
+            parent.canonicalize().map_err(|_| Denied::export(ExportReason::TargetInvalid))?;
+        let target = parent_real.join(name);
+
+        // ④ 已存在：只接受**普通文件**，并继承它的权限位
+        let mode = match std::fs::symlink_metadata(&target) {
+            Ok(m) if m.file_type().is_symlink() => {
+                // ⛔ 软链一律拒：替换软链会写穿到它指向的地方，而用户选的是这个"名字"。
+                return Err(Denied::export(ExportReason::TargetInvalid));
+            }
+            Ok(m) if m.is_file() => {
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    Some(m.permissions().mode())
+                }
+                #[cfg(not(unix))]
+                {
+                    None
+                }
+            }
+            Ok(_) => return Err(Denied::export(ExportReason::TargetInvalid)), // 目录 / 设备…
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,       // 新建
+            Err(_) => return Err(Denied::export(ExportReason::TargetInvalid)),
+        };
+
+        // ⑤ 不能把**当前文档**覆盖掉（哪怕它此刻是普通文件）
+        if let Some(cur) = current {
+            if target == *cur {
+                return Err(Denied::export(ExportReason::TargetIsDocument));
+            }
+        }
+
+        // ⑥ ⛔ 到此为止：`roots`/`files` 一个字节没动，也没有任何磁盘写入。
+        Ok((target, mode))
+    }
+
     /// ⭐ **重命名的条目闸门**（`design/0035` §3.3.2 / `INV-RENAME-06`）。
     ///
     /// 六步，顺序即优先级。返回**规范化后的真实路径**，改名目标 = 它的父目录 + 新名字。
@@ -1365,5 +1513,208 @@ mod tests {
         let err = g.authorize_file_recorded(rel, &real).expect_err("相对写法不得命中记录");
         assert!(matches!(err, Denied::NotAuthorized { .. } | Denied::NotFound { .. }));
         assert!(g.files().is_empty(), "相对写法不得留下授权");
+    }
+
+    // ————————————————————————————————————————————————————————————————
+    // `design/0076` §2.1.5：导出落点闸门
+    // ————————————————————————————————————————————————————————————————
+
+    /// ⭐ `INV-EXP-03` 的正例：合法新建 ⇒ 返回（规范化父目录 + 原文件名, `None`），
+    /// 且**授权集合一个字节没变**（导出落点不是授权）。
+    #[test]
+    fn 导出落点_合法新建且不动授权() {
+        let t = TestDir::new("export-ok");
+        let dir = t.dir("out");
+        let doc = t.file("doc.md", "# hi");
+        let mut g = SessionGrants::new();
+        g.authorize_root(&t.path).unwrap();
+        let roots_before = g.roots().to_vec();
+        let files_before = g.files().to_vec();
+
+        let target = dir.join("doc.html");
+        let (real, mode) = g
+            .check_export_target(&target, Some(&fs::canonicalize(&doc).unwrap()))
+            .expect("合法落点");
+        assert_eq!(real, fs::canonicalize(&dir).unwrap().join("doc.html"));
+        assert_eq!(mode, None, "新建目标没有既有权限位");
+        assert!(!real.exists(), "闸门只判，⛔ 不落盘");
+        assert_eq!(g.roots(), roots_before.as_slice(), "⛔ 不许改 roots");
+        assert_eq!(g.files(), files_before.as_slice(), "⛔ 不许改 files");
+    }
+
+    /// 相对路径 / 末段是 `..` / 父目录不存在 / 父目录是文件 ⇒ `TargetInvalid`。
+    #[test]
+    fn 导出落点_非法路径一律拒() {
+        let t = TestDir::new("export-invalid");
+        let dir = t.dir("out");
+        let file = t.file("afile", "x");
+        let g = SessionGrants::new();
+
+        for p in [
+            PathBuf::from("relative/doc.html"),   // 相对
+            dir.join(".."),                       // 末段不是 Normal（`..`）
+            dir.clone(),                          // 目标是已存在的目录（第 ④ 步拒）
+            dir.join("nope").join("doc.html"),    // 父目录不存在
+            file.join("doc.html"),                // 父目录是文件
+        ] {
+            match g.check_export_target(&p, None) {
+                Err(Denied::Export { reason: crate::error::ExportReason::TargetInvalid }) => {}
+                other => panic!("{p:?} 应当 TargetInvalid，实得 {other:?}"),
+            }
+        }
+    }
+
+    /// 目标的**父目录是软链** ⇒ 拒（`symlink_metadata` 的口径，⛔ 不跟链）。
+    #[test]
+    fn 导出落点_父目录是软链被拒() {
+        let t = TestDir::new("export-parent-symlink");
+        let real_dir = t.dir("real");
+        std::os::unix::fs::symlink(&real_dir, t.path.join("linkdir")).unwrap();
+        let g = SessionGrants::new();
+        let p = t.path.join("linkdir/doc.html");
+        assert!(matches!(
+            g.check_export_target(&p, None),
+            Err(Denied::Export { reason: crate::error::ExportReason::TargetInvalid })
+        ));
+    }
+
+    /// 目标本身是**软链**或**目录** ⇒ 拒；普通文件 ⇒ 允许并回带它当前的权限位。
+    #[test]
+    fn 导出落点_目标类型决定放行() {
+        let t = TestDir::new("export-target-type");
+        let dir = t.dir("out");
+        let g = SessionGrants::new();
+
+        // 软链：拒（替换会写穿到它指向的地方）
+        let victim = t.file("victim.md", "keep");
+        std::os::unix::fs::symlink(&victim, dir.join("sl.html")).unwrap();
+        assert!(matches!(
+            g.check_export_target(&dir.join("sl.html"), None),
+            Err(Denied::Export { reason: crate::error::ExportReason::TargetInvalid })
+        ));
+
+        // 目录：拒
+        let sub = dir.join("sub");
+        fs::create_dir(&sub).unwrap();
+        assert!(matches!(
+            g.check_export_target(&sub, None),
+            Err(Denied::Export { reason: crate::error::ExportReason::TargetInvalid })
+        ));
+
+        // 普通文件：允许，并回带现有权限位
+        let existing = dir.join("old.html");
+        fs::write(&existing, "old").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&existing, fs::Permissions::from_mode(0o640)).unwrap();
+        }
+        let (real, mode) = g.check_export_target(&existing, None).expect("普通文件可覆盖");
+        assert_eq!(real, fs::canonicalize(&existing).unwrap());
+        #[cfg(unix)]
+        assert_eq!(mode.map(|m| m & 0o7777), Some(0o640), "要继承原权限位");
+        #[cfg(not(unix))]
+        assert_eq!(mode, None);
+        assert_eq!(fs::read(&existing).unwrap(), b"old", "闸门⛔ 不写盘");
+    }
+
+    /// 目标是**当前文档** ⇒ `TargetIsDocument`（⛔ 不归 `TargetInvalid`：
+    /// 前端给的话术不同——"换个位置" vs "别覆盖你正在读的这篇"）。
+    #[test]
+    fn 导出落点_不得覆盖当前文档() {
+        let t = TestDir::new("export-same-doc");
+        let doc = t.file("out/doc.md", "# hi");
+        let doc_real = fs::canonicalize(&doc).unwrap();
+        let g = SessionGrants::new();
+        match g.check_export_target(&doc_real, Some(&doc_real)) {
+            Err(Denied::Export { reason: crate::error::ExportReason::TargetIsDocument }) => {}
+            other => panic!("应当 TargetIsDocument，实得 {other:?}"),
+        }
+    }
+
+    // ————————————————————————————————————————————————————————————————
+    // `design/0082` §2.1 ④：保存未命名文档的落点闸门
+    // ————————————————————————————————————————————————————————————————
+
+    /// ⭐ 正例：**没有扩展名** ⇒ 补 `.md`，并返回规范化父目录下的那个名字。
+    ///
+    /// ⚠️ 系统面板的默认名带 `.md`、过滤器也是 Markdown；这一条兜的是
+    /// "用户在面板里把后缀删了"——补上是唯一能让文件在树里**看得见**的处置。
+    #[test]
+    fn 保存落点_无扩展名补_md_且不动授权() {
+        let t = TestDir::new("save-noext");
+        let dir = t.dir("out");
+        let mut g = SessionGrants::new();
+        g.authorize_root(&t.path).unwrap();
+        let roots_before = g.roots().to_vec();
+        let files_before = g.files().to_vec();
+
+        let (real, mode) = g.check_save_target(&dir.join("未命名"), None).expect("合法落点");
+        assert_eq!(real, fs::canonicalize(&dir).unwrap().join("未命名.md"));
+        assert_eq!(mode, None);
+        assert!(!real.exists(), "闸门只判，⛔ 不落盘");
+        assert_eq!(g.roots(), roots_before.as_slice(), "⛔ 不许改 roots");
+        assert_eq!(g.files(), files_before.as_slice(), "⛔ 不许改 files");
+    }
+
+    /// ⭐ **已有 `.md` 原样保留**（⛔ 不变成 `a.md.md`），大小写不敏感（`tree::is_markdown` 的口径）。
+    #[test]
+    fn 保存落点_已有_md_后缀原样保留() {
+        let t = TestDir::new("save-md");
+        let dir = t.dir("out");
+        let g = SessionGrants::new();
+
+        let (real, _) = g.check_save_target(&dir.join("笔记.md"), None).expect("合法");
+        assert_eq!(real.file_name().unwrap(), "笔记.md");
+        let (upper, _) = g.check_save_target(&dir.join("A.MD"), None).expect("大小写不敏感");
+        assert_eq!(upper.file_name().unwrap(), "A.MD");
+    }
+
+    /// ⭐ 非 Markdown 扩展名 ⇒ 拒（`TargetInvalid`）。
+    ///
+    /// ⚠️ `.markdown` 也在拒的一侧：全仓后缀判据只有 `tree::is_markdown` 一份
+    /// （它只认 `.md`）——放行一个树里看不见的名字，用户会以为"保存丢了"。
+    #[test]
+    fn 保存落点_非_md_扩展名被拒() {
+        let t = TestDir::new("save-badext");
+        let dir = t.dir("out");
+        let g = SessionGrants::new();
+        for name in ["a.txt", "a.markdown", "a."] {
+            match g.check_save_target(&dir.join(name), None) {
+                Err(Denied::Export { reason: crate::error::ExportReason::TargetInvalid }) => {}
+                other => panic!("{name} 应当 TargetInvalid，实得 {other:?}"),
+            }
+        }
+    }
+
+    /// ⭐ 六步与导出**同源**（抽出来的 `export_target_steps`，⛔ 不复制）：
+    /// 这里抽三条最容易"复制之后只改一份"的判据来钉住接线。
+    #[test]
+    fn 保存落点_六步与导出同源() {
+        let t = TestDir::new("save-steps");
+        let dir = t.dir("out");
+        let real_dir = t.dir("real");
+        std::os::unix::fs::symlink(&real_dir, t.path.join("linkdir")).unwrap();
+        let g = SessionGrants::new();
+
+        // ② 父目录是软链 ⇒ 拒
+        assert!(matches!(
+            g.check_save_target(&t.path.join("linkdir/a.md"), None),
+            Err(Denied::Export { reason: crate::error::ExportReason::TargetInvalid })
+        ));
+        // ④ 目标是已存在的目录 ⇒ 拒（哪怕它叫 `a.md`）
+        let d = dir.join("a.md");
+        fs::create_dir(&d).unwrap();
+        assert!(matches!(
+            g.check_save_target(&d, None),
+            Err(Denied::Export { reason: crate::error::ExportReason::TargetInvalid })
+        ));
+        // ⑤ 不许覆盖当前文档
+        let doc = t.file("out/doc.md", "# hi");
+        let doc_real = fs::canonicalize(&doc).unwrap();
+        assert!(matches!(
+            g.check_save_target(&doc_real, Some(&doc_real)),
+            Err(Denied::Export { reason: crate::error::ExportReason::TargetIsDocument })
+        ));
     }
 }
