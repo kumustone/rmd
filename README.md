@@ -1,93 +1,176 @@
-# rmd — a Markdown reader for large documents and local folders
+# rmd — a Markdown workspace for reading and editing, built for large documents and folders
 
-Browse, search, and read source repositories, project documentation, and local Markdown collections on macOS.
-Find files across folders, navigate long documents, and resume reading where you left off.
+Read, search, edit, and export Markdown on macOS — for source repositories, documentation trees, and
+long-form text that is slow in a browser tab and unreadable as raw source.
 
 [中文说明](README.zh-CN.md) · [Download](https://github.com/kumustone/rmd/releases/latest) · [Changelog](CHANGELOG.md) · [Build from source](BUILDING.md)
 
-**Requires macOS 13+ and Apple Silicon.**
-
-> This README describes the current development branch. The document list, empty-folder filtering,
-> configurable folder exclusions, and sidebar search are development features. Check the corresponding
-> [release notes](https://github.com/kumustone/rmd/releases/latest) for the features in the download.
+**Requires macOS 13+ on Apple Silicon.**
 
 [![rmd reading view with Chinese typography, an outline, syntax highlighting, math, and a table](assets/screenshots/theme-light.png)](assets/screenshots/theme-light.png)
 
-## Features
+## Why rmd
 
-### Reading and navigating large documents
+**A whole folder is one query away.** Opening a folder builds a single filename index over every
+Markdown file below it: 100,000 files in 201 folders index in **122 ms**, and a query that matches
+tens of thousands of names still answers in **48–54 ms**. `⌘P` searches that index — you never expand
+directories by hand.
 
-- Read technical documentation with syntax highlighting, math, diagrams, and tables.
-- Jump between sections using the outline, or use `⌘F` to search the current document's rendered text.
-- Resume at your saved reading position when you reopen a document.
-- Adjust font size, line height, and content width. Choose light, dark, warm, or system-following themes.
+**Reading and editing are the same page.** Click a paragraph, list, table cell, or code block and an
+editor opens exactly where the block stands; leave it and the page returns. Both states are drawn on
+one typographic scale — heading colours, block spacing and list markers come from the same
+definitions — instead of a second rendering that approximates the first. In-place editing is opt-in in
+this release — see [Enable in-place editing](#enable-in-place-editing).
 
-Stage-by-stage measurements cover generated documents of roughly **100 KB–10 MB**, including prose,
-headings, code, and tables. See [Performance](#performance).
+**Documents are rendered before they reach the page.** Syntax highlighting, math (MathML) and Mermaid
+diagrams are produced in Rust, and the generated markup is rebuilt against a whitelist. No script
+from a document runs in the webview, and no third-party JavaScript is loaded to draw one.
 
-### Browsing large folders (development)
+**Your files stay where they are.** No account, no import step, no sync, no telemetry. Reads follow
+the grants you give to a folder or a file, one session at a time.
 
-- The **file tree** loads directory levels on demand for browsing project structure.
-- The **document list** brings indexed Markdown files from the folder and its subfolders into one view,
-  with parent paths to distinguish files with the same name.
-- Rows are appended in batches, up to **5,000**. If more files are indexed, the list shows the displayed
-  and total counts; filename search remains available to locate other documents.
-- Reopening a folder restores the last document and tree expansion state. Switching between tree and
-  list views keeps the current document open.
+**Reading is most of the work, so resuming it is one keystroke.** In a codebase, far more time goes
+into reading READMEs, design notes, and runbooks than into writing them. rmd turns the empty view into
+a page you can act from: `⌘L` returns to it from any document, with new document, open, recent
+directories, and favourites on it — each with its shortcut. `⌘D` keeps the document you reopen most
+often on that page; closing a document does not lose your place in history.
 
-### Folder filtering (development)
+## Feature list
 
-- Hide files and folders whose names start with a dot.
-- Default exclusions such as `node_modules`, `target`, `dist`, and `build` appear dimmed and are not
-  scanned. The exclusion list can be changed in the configuration file.
-- Hide folders whose subtrees contain no Markdown documents according to the index, keeping the
-  branches that lead to documents.
-- Keep incompletely scanned subtrees visible; the document list reports incomplete indexing.
+At a glance: browse and search a folder of Markdown, read it with typography built for long Chinese
+and English text, edit it in place or in source, and take the result out as HTML or PDF. The tables
+below list what the app does today, including the cases it does not handle.
 
-Filtering reduces navigation clutter without moving or deleting files on disk.
+### Start page
 
-### Fast filename search
+`⌘L` returns to the start page from any document. It is not a placeholder: new document (`⌘N`),
+open (`⌘O`), recent directories, and favourites are all on the page, each with its shortcut, so
+continuing yesterday's reading takes one key instead of a file dialog. `⌘D` favourites the current
+document, and `⌘[` walks back through the documents you were reading.
 
-- Use `⌘P` to find files in the current folder and its subfolders without expanding each directory.
-- Fuzzy matching helps locate a file by name; select a result to open it.
-- The development version also has a persistent sidebar search box backed by the same index as `⌘P`.
-- The index includes `.md` files. Filename search and searching within the current document have
-  separate controls.
+### Markdown support
+
+| Syntax and rendering | Supported | Notes |
+|---|:---:|---|
+| CommonMark: headings, emphasis, links, images, lists, blockquotes, rules, code | ✅ | |
+| GFM tables | ✅ | `<br>` inside a cell becomes a line break |
+| GFM task lists | ✅ | Checkboxes are clickable in the reading view |
+| Strikethrough, autolinks, footnotes | ✅ | |
+| Fenced code with syntax highlighting | ✅ | Highlighting has a budget; blocks over it are shown as complete plain text and counted in the status bar |
+| Math: `$…$` and `$$…$$` | ✅ | Rendered as MathML |
+| Mermaid diagrams | ✅ | 12 kinds: flowchart, sequence, class, state, ER, pie, mindmap, journey, gitGraph, timeline, sankey, architecture. Other kinds fall back to a code block with a visible reason |
+| Heading anchors and in-document links | ✅ | |
+| Relative links to other Markdown files | ✅ | Open in rmd with the same permission checks as the sidebar |
+| Image preview and zoom | ✅ | |
+| YAML frontmatter | ❌ | Not parsed; shown as document text |
+| GitHub alerts (`> [!NOTE]`) | ❌ | Shown as ordinary blockquotes |
+| Embedded HTML and scripts | ❌ | Dropped, not executed; `<br>` inside a table cell is the one exception |
+
+### Reading
+
+| Feature | Supported |
+|---|:---:|
+| Outline view in the sidebar | ✅ |
+| Find in the document (`⌘F`, `⌘G` / `⇧⌘G`) | ✅ |
+| Reading position remembered per document | ✅ |
+| Font size, line height, content width | ✅ |
+| Light, dark, warm, and follow-system themes | ✅ |
+| Image zoom overlay | ✅ |
+
+### Editing
+
+In-place editing is opt-in in this release; see [Enable in-place editing](#enable-in-place-editing).
+Split view works without a flag.
+
+| Capability | In place | Split view |
+|---|:---:|:---:|
+| Paragraphs, headings, lists, quotes, code blocks | ✅ | ✅ |
+| Table cells | ✅ | ✅ |
+| Task item checkboxes, clicked to toggle | ✅ | — |
+| Floating format bar (headings, links, table rows and columns) | ✅ | — |
+| Replace inside the source (`⌥⌘F`) | — | ✅ |
+| Vim keybindings | — | ✅ |
+| Undo / redo | ✅ | ✅ |
+| IME composition stays in place | ✅ | ✅ |
+| Save to disk (`⌘S`) | ✅ | ✅ |
+| External editor (`⇧⌘E`) and reload on disk change | ✅ | ✅ |
+
+Leaving a block applies the change to the open document; `⌘S` writes it to the file.
+
+- `⌘↵` starts a new paragraph after the block instead of leaving editing. `Tab` / `⇧Tab` nest and
+  outdent list items one level at a time, with the subtree following its parent.
+- `⌘N` creates an unnamed document immediately and asks for a location on the first save.
+- Automatic reload is paused for files whose measured render time is too high; the notice bar then
+  offers *Reload now* instead of reloading silently.
+
+### Folders, search, and navigation
+
+| Feature | Supported |
+|---|:---:|
+| File tree, one directory level at a time | ✅ |
+| Flat document list with parent paths | ✅ |
+| 5,000-row list cap that reports shown and total counts | ✅ |
+| Fuzzy filename search over the whole folder (`⌘P`) | ✅ |
+| Persistent search box in the sidebar | ✅ |
+| Rebuild the filename index (`⌘R`) | ✅ |
+| Dot-files hidden; configurable ignore list | ✅ |
+| Folders with no Markdown below them hidden | ✅ |
+| Incompletely scanned subtrees kept visible and reported | ✅ |
+| Start page with new document, recents, and favourites (`⌘L`) | ✅ |
+| Favourite a document or folder (`⌘D`) | ✅ |
+| Back and forward through documents (`⌘[` / `⌘]`, mouse side buttons) | ✅ |
+| Drop a file or folder on a window to open it | ✅ |
+| Reveal in Finder | ✅ |
+
+### Export and macOS integration
+
+| Feature | Supported |
+|---|:---:|
+| Save as HTML (`⇧⌘S`) | ✅ |
+| Export as PDF (`⇧⌘P`) | ✅ |
+| Copy as Markdown, HTML, plain text, or rich text | ✅ |
+| Paste as literal Markdown (`⇧⌘L`) | ✅ |
+| Native window tabs (`⌘T`) and multiple windows (`⇧⌘N`) | ✅ |
+| Command-line tool installed from the app (`rmd file.md`, `rmd ./docs`) | ✅ |
+| Opening from a terminal or the Dock brings the window forward | ✅ |
+| Chinese and English interface | ✅ |
 
 ## Install and get started
 
-### Download the app
+### Download
 
 Download the `.dmg` from [Releases](https://github.com/kumustone/rmd/releases/latest), then drag
 `rmd.app` into `/Applications`. Checksums and version-specific changes are on the same release page.
 
-The current build is ad-hoc signed and has not been notarized by Apple. If macOS blocks it, first try
-opening the app, then go to **System Settings → Privacy & Security → Open Anyway** and follow the
-system prompts. See [Apple's instructions](https://support.apple.com/en-us/102445).
+The build is ad-hoc signed and has not been notarized by Apple. If macOS blocks it, first try opening
+the app, then go to **System Settings → Privacy & Security → Open Anyway** and follow the system
+prompts. See [Apple's instructions](https://support.apple.com/en-us/102445).
 
 ### Browse and read
 
-1. Open a folder with `⌘O`, or a single Markdown file with `⇧⌘O`.
-2. Browse the file tree. In the development version, use the file-panel toggle to switch to the document list.
-3. Find a document by filename with `⌘P`, then navigate its content using the outline and `⌘F`.
+1. `⌘O` opens the panel (recents first, then browse a folder or a file); `⇧⌘O` goes straight to a
+   single Markdown file.
+2. Switch the file panel between tree and document list, then use `⌘P` to jump to a file by name.
+3. Navigate the document with the outline and `⌘F`.
 
 ### Open files from the terminal
 
-In the app, choose **rmd → Install Command Line Tool…** and select a location:
+Choose **rmd → Install Command Line Tool…** in the app and pick a location:
 
-- `~/.local/bin`: no administrator permission required. If it is not on `PATH`, the app provides setup instructions.
-- `/usr/local/bin`: installation requires administrator authorization.
+- `~/.local/bin`: no administrator permission required. If it is not on `PATH`, the app provides
+  setup instructions.
+- `/usr/local/bin`: requires administrator authorization.
 
 The app checks whether the command is available after installation. It does not modify your shell
 configuration; the same menu provides an uninstall action.
 
 ```bash
-rmd README.md     # Open a file
-rmd ./docs        # Open a folder
+rmd README.md     # open a file
+rmd ./docs        # open a folder
 ```
 
-The command links to the executable inside the app. Replacing the app at the same path preserves the
-link; moving the app requires reinstalling the command.
+The command links to the executable inside the app. Replacing the app at the same path keeps the link
+working; moving the app requires reinstalling the command.
 
 <details>
 <summary>Install the command-line link manually</summary>
@@ -100,16 +183,32 @@ ln -s /Applications/rmd.app/Contents/MacOS/rmd "$HOME/.local/bin/rmd"
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
-The `export` applies to the current terminal only. Configure `PATH` for your shell to make it persistent.
-If a command already exists at that location, use the app menu to manage it.
+The `export` applies to the current terminal only. Configure `PATH` for your shell to make it
+persistent. If a command already exists at that location, use the app menu to manage it.
 </details>
 
 For dependencies, source builds, and app packaging, see [BUILDING.md](BUILDING.md).
 
+## Enable in-place editing
+
+In-place editing is a new input path, so it still ships behind a flag. Add one key to the
+configuration file and restart rmd:
+
+```json
+{
+  "live_edit": true
+}
+```
+
+The file is `~/Library/Application Support/io.github.kumustone.rmd/config.json`. If it already exists,
+add the key to the existing object instead of replacing the file; if it does not exist yet, create it
+with the content above. Restart rmd. With the key absent the reading surface is unchanged and `⌘E`
+still gives the split view.
+
 ## Performance
 
-Measured on an **Apple M2 Pro with 16 GB RAM, macOS 27.0**, using release builds. All figures below
-are medians, measured on 2026-10-24.
+Measured on an **Apple M2 Pro with 16 GB RAM, macOS 27.0**, using release builds on 2026-10-24. All
+figures are medians; every row states its scope, and none of them is a keystroke-to-pixels timing.
 
 | Scenario | Result | Scope |
 |---|---:|---|
@@ -120,21 +219,84 @@ are medians, measured on 2026-10-24.
 | Complete appending 5,000 document-list rows | 113 ms | Offscreen DOM construction and layout |
 
 The first query also pays the index-build cost. These figures exclude IPC, real-window compositing,
-and first paint, so they are not complete file-open or input-response timings. Full methodology,
-large-document stage timings, and reproduction steps are in the [performance documentation](assets/performance/).
-The folder, list, and search baselines describe the development branch; version scope is recorded there.
+and first paint.
 
-## Reading settings and optional editing
+Document pipeline, per stage, Rust side only, on ~10.5 MB generated files:
 
-rmd is designed primarily for reading. To change the current document, explicitly enter split-view
-editing: Markdown source on the left and a rendered preview on the right, with optional Vim keybindings.
-You can also open the document in an external editor; rmd reloads it when it changes on disk.
-The interface supports Chinese and English.
+| Stage | Prose | Table-dense |
+|---|---:|---:|
+| Read from disk and validate UTF-8 | 8.8 ms | 9.6 ms |
+| Parse with comrak | 11.0 ms | 109.2 ms |
+| Render HTML (highlighting, math, diagrams) | 3.8 ms | 65.7 ms |
+
+Stages are parts of one pipeline, not additive open time: the app's open path also includes IPC,
+WebView parsing, layout, and first paint. A code-heavy 10 MB file renders in **402 ms** because
+highlighting stops at its budget, not because highlighting became cheap — 2,973 of 25,310 code blocks
+are highlighted and the other 22,337 are shown as complete escaped text. Full methodology, all 17 corpus
+files, and reproduction steps are in the [performance documentation](assets/performance/).
+
+## Keyboard shortcuts
+
+| Files and windows | Shortcut |
+|---|---|
+| Open… | `⌘O` |
+| Open File… | `⇧⌘O` |
+| New File… | `⌘N` |
+| Save | `⌘S` |
+| Search by File Name… | `⌘P` |
+| Refresh File Index | `⌘R` |
+| Open in External Editor | `⇧⌘E` |
+| Save as HTML… | `⇧⌘S` |
+| Export as PDF… | `⇧⌘P` |
+| New Window | `⇧⌘N` |
+| New Tab | `⌘T` |
+
+| Reading and navigation | Shortcut |
+|---|---|
+| Go to Start Page | `⌘L` |
+| Back / Forward (documents) | `⌘[` / `⌘]` |
+| Toggle Favorite | `⌘D` |
+
+| Finding | Shortcut |
+|---|---|
+| Find… | `⌘F` |
+| Find and Replace… | `⌥⌘F` |
+| Find Next / Previous | `⌘G` / `⇧⌘G` |
+
+| Editing | Shortcut |
+|---|---|
+| Toggle Editing (split view) | `⌘E` |
+| New paragraph after block (in-place) | `⌘↵` |
+| Select All Text | `⌘A` |
+| Undo / Redo | `⌘Z` / `⇧⌘Z` |
+| Copy as Markdown | `⇧⌘M` |
+| Copy as HTML Source | `⇧⌘K` |
+| Copy as Plain Text | `⌥⌘P` |
+| Copy as Rich Text | `⇧⌘R` |
+| Paste as Literal Markdown | `⇧⌘L` |
+
+| View | Shortcut |
+|---|---|
+| Show/Hide Sidebar | `⌘B` |
+| Show/Hide Top Bar | `⇧⌘B` |
+| Increase / Decrease / Reset Font Size | `⌘=` / `⌘-` / `⌘0` |
+| Line Numbers | `⌃⌘L` |
+| Zen Mode | `⌃⌘Z` |
+| Zoom In / Out / Actual Size | `⌃⌘=` / `⌃⌘-` / `⌃⌘0` |
+| Settings… | `⌘,` |
+
+The same list is shown in Settings and is generated from one table in the backend; custom keybindings
+are not supported.
+
+## Settings and themes
+
+Font size, line height, content width, theme, and interface language are changed in Settings.
 
 <details>
 <summary>View the light, dark, and warm themes</summary>
 
-The same document in three themes. Font size, line height, and content width are independently adjustable.
+The same document in three themes. Light, dark, and warm are independent of the system appearance;
+the fourth option follows it.
 
 | Light | Dark | Warm |
 | :---: | :---: | :---: |
@@ -142,32 +304,26 @@ The same document in three themes. Font size, line height, and content width are
 
 </details>
 
-## Keyboard shortcuts
-
-| Action | Shortcut |
-|---|---|
-| Open folder / open file | `⌘O` / `⇧⌘O` |
-| Quick open by filename | `⌘P` |
-| Refresh file index | `⌘R` |
-| Search the current document's rendered text | `⌘F` |
-| Show or hide sidebar / top bar | `⌘B` / `⇧⌘B` |
-| Settings | `⌘,` |
-| Open in external editor | `⇧⌘E` |
-| Toggle split-view editing | `⌘E` |
-
-The complete shortcut list is in Settings. Custom keybindings are not currently supported.
-
 ## Local files and privacy
 
 Documents stay in local folders, with no import step, account, telemetry, or cloud synchronization.
 File reads follow the permissions granted for files and folders. Document scripts are not executed;
-external links open in the system browser. See [SECURITY.md](SECURITY.md) for security details and reporting.
+external links open in the system browser. See [SECURITY.md](SECURITY.md) for security details and
+reporting.
+
+## What rmd is not
+
+rmd is not a knowledge base, a note-taking system, or a sync client. It does not maintain a second
+copy of your notes, does not manage accounts, and does not edit files you have not opened. It is a
+window onto a folder of Markdown files, with enough editing to keep working inside that window.
 
 ## Building and contributing
 
 rmd uses Rust, Tauri 2, and the system WKWebView, without bundling a separate browser engine. The UI
-uses plain JavaScript, with CodeMirror 6 for split-view editing. Running the app does not require Node.js.
+uses plain JavaScript, with CodeMirror 6 for split-view editing. Running the app does not require
+Node.js.
 
+- [Architecture](ARCHITECTURE.md)
 - [Build from source](BUILDING.md)
 - [Contributing](CONTRIBUTING.md)
 - [GPL-3.0-or-later license](LICENSE)

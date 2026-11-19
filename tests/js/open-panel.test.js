@@ -59,7 +59,7 @@ function snap(root, lastFile, last) {
   return { root: root, last_file: lastFile || '', last: last === true };
 }
 
-const HOME = '/Users/kumu/docs';
+const HOME = '/Users/example/docs';
 
 // ── ① 行序：文件行在同一条目录行之前（§3.1） ─────────────────────────
 

@@ -92,7 +92,7 @@ test('0005/last_file 非字符串或为空时那一格不画', () => {
 });
 
 test('0005/中文根路径的名字与 ~ 缩写都按原串算', () => {
-  const out = S.rows([{ root: '/Users/kumu/资料/笔记' }]);
+  const out = S.rows([{ root: '/Users/example/资料/笔记' }]);
   assert.strictEqual(out[0].name, '笔记');
   assert.strictEqual(out[0].path, '~/资料/笔记');
 });
